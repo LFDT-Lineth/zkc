@@ -147,7 +147,7 @@ func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint, out
 	for i, cp := range checkpoints {
 		// Construct ith tracing future
 		futures[i] = func() (util.Option[Shard[F]], []error) {
-			var steps = strategy.shardSteps
+			var steps = strategy.ShardSteps
 			// Increment steps for all except first shard to account for the
 			// fact that restoring at the exact point the breakpoint was
 			// triggered will naturally trigger it again.
@@ -157,7 +157,7 @@ func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint, out
 			// Replicate outputs
 			replicateOutputs(cp, outputs)
 			// Trace ith shard
-			steps, oshard, errs1 := RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.shardFunction, steps)
+			steps, oshard, errs1 := RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.ShardFunction, steps)
 			// Sanity check what happened
 			if oshard.IsEmpty() {
 				// Log failure

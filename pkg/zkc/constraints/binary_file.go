@@ -296,15 +296,19 @@ func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.LazyTrace[F]
 // it simply extracts the outputs at the end.
 func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.ExecutionConfig,
 ) (output map[string]bit.Array, errs []error) {
+	var checkpointing = config.Checkpointing()
 	// TODO: currently, for gogen execution it compiles (and deletes) the gogen
 	// binary every time, which is not optimal.
-	if config.GoGen() {
+	if config.GoGen() && checkpointing.HasValue() {
+		// Fast-mode execution via gogen
+		output, errs = vm.BootAndCheckpointWithGogen(p.RawProgram(), input, checkpointing.Unwrap())
+	} else if config.GoGen() {
 		// Fast-mode execution via gogen
 		output, errs = vm.BootAndExecuteWithGogen(p.RawProgram(), input)
-	} else if strategy := config.Checkpointing(); strategy.HasValue() {
+	} else if checkpointing.HasValue() {
 		// Fast-mode execution via interpreter (with checkpointing)
 		// Boot and execute fast machine
-		output, _, errs = vm.BootAndCheckpoint(p.ExecutionProgram(), input, strategy.Unwrap())
+		output, _, errs = vm.BootAndCheckpoint(p.ExecutionProgram(), input, checkpointing.Unwrap())
 	} else {
 		// Fast-mode execution via interpreter
 		var bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())

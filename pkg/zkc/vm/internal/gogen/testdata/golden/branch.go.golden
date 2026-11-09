@@ -2,62 +2,19 @@
 package golden
 
 import (
+	"fmt"
 	"math/bits"
 	"slices"
 )
 
-// failure is a ZkC execution failure (a rejected trace, not a bug); Run
-// recovers it into its error result.
-type failure string
-
-func (e failure) Error() string { return string(e) }
-
-func fail(msg string) { panic(failure(msg)) }
-
 // Input ROM "data".
-var mem_data []uint64
+var zkc_data = ReadOnlyMemory{"data", nil}
 
 // Output WOM "result".
-var mem_result []uint64
+var zkc_result = WriteOnceMemory{"result", nil}
 
-func memWrite(s []uint64, addr uint64, v uint64) []uint64 {
-	if n := addr + 1; uint64(len(s)) < n {
-		s = slices.Grow(s, int(n)-len(s))[:n]
-	}
-	s[addr] = v
-	return s
-}
-
-func womWrite(s []uint64, addr uint64, v uint64, msg string) []uint64 {
-	if addr < uint64(len(s)) && s[addr] != v {
-		fail(msg)
-	}
-	return memWrite(s, addr, v)
-}
-
-// Run executes the program on the given input memories, returning its
-// output memories, or an error if the execution fails (a rejected trace).
-func Run(in map[string][]uint64) (out map[string][]uint64, err error) {
-	defer func() {
-		r := recover()
-		if f, ok := r.(failure); ok {
-			out, err = nil, f
-			return
-		}
-		if r != nil {
-			panic(r)
-		}
-		out = map[string][]uint64{}
-		out["result"] = mem_result
-	}()
-	mem_data = in["data"]
-	mem_result = nil
-	fn_main()
-	return
-}
-
-// fn_main corresponds to ZkC function "main".
-func fn_main() {
+// zkc_main corresponds to ZkC function "main".
+func zkc_main() {
 	var r0 uint64 // x
 	var r1 uint64 // y
 	var r2 uint64 // $2
@@ -67,7 +24,7 @@ func fn_main() {
 	// [0.1] read x = data[$2]
 	{
 		start := r2
-		r0 = mem_data[start+0]
+		r0 = zkc_data.read(start + 0)
 		if r0 >= 1<<8 {
 			fail("bit overflow (value exceeds u8)")
 		}
@@ -101,8 +58,50 @@ L_0_6:
 	// [0.7] write result[$3] = y
 	{
 		start := r3
-		mem_result = womWrite(mem_result, start+0, r1, "address already written for write-only memory result")
+		zkc_result.write(start+0, r1)
 	}
 	// [0.8] ret
 	return
+}
+
+// ===============================================================================
+// Termination Helpers
+// ===============================================================================
+// failure is a ZkC execution failure (a rejected trace, not a bug); the
+// harness recovers it and exits with code 1.
+type failure string
+
+func (e failure) Error() string { return string(e) }
+
+func fail(msg string) { panic(failure(msg)) }
+
+// ===============================================================================
+// Memory Helpers
+// ===============================================================================
+// ReadOnlyMemory represents a ZkC read-only (input) memory
+type ReadOnlyMemory struct {
+	name string
+	data []uint64
+}
+
+func (m *ReadOnlyMemory) read(addr uint64) uint64 {
+	if addr < uint64(len(m.data)) {
+		return m.data[addr]
+	}
+	return 0
+}
+
+// WriteOnceMemory represents a ZkC write-once memory
+type WriteOnceMemory struct {
+	name string
+	data []uint64
+}
+
+func (m *WriteOnceMemory) write(addr uint64, v uint64) {
+	if addr < uint64(len(m.data)) && m.data[addr] != v {
+		fail(fmt.Sprintf("address already written for write-once memory %s", m.name))
+	} else if n := addr + 1; uint64(len(m.data)) < n {
+		m.data = slices.Grow(m.data, int(n)-len(m.data))[:n]
+	}
+	m.data[addr] = v
 }

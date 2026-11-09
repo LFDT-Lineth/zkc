@@ -55,7 +55,7 @@ func TestGenFuzz(t *testing.T) {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				m := compileUint(t, tc.src, shape.fastMode)
 
-				binary, err := gogen.Compile(m)
+				binary, err := gogen.Compile(m, gogen.DEFAULT_CONFIG)
 				//
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)

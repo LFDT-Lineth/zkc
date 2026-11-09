@@ -19,6 +19,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf8209"
@@ -34,11 +35,11 @@ import (
 var generateCmd = &cobra.Command{
 	Use:   "generate [flags] file1.zkc file2.zkc ...",
 	Short: "generate native Go source from a zkc program.",
-	Long: `Compile a zkc program into native Go source exposing Run(inputs) (outputs, error):
-the generated-code alternative to interpreting the word machine ("fast execution mode").
-By default the artefact is a package main carrying a JSON stdin/stdout harness, so it
-can be built and run standalone; naming any other package via --pkg yields an
-importable package suitable for go:generate + ahead-of-time compilation.`,
+	Long: `Compile a zkc program into native Go source: the generated-code alternative to
+interpreting the word machine ("fast execution mode").  The artefact is a package main
+carrying a JSON stdin/stdout harness, so it can be built and run standalone.  Naming
+any other package via --pkg omits the harness (and hence any entry point); such output
+is only useful for inspecting the generated functions.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, generateCmds)
 	},
@@ -60,13 +61,19 @@ var generateFlags FlagChecks
 
 func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build  = GetBuildConfig[F](cmd, field)
-		output = GetString(cmd, "output")
-		pkg    = GetString(cmd, "pkg")
+		build         = GetBuildConfig[F](cmd, field)
+		output        = GetString(cmd, "output")
+		pkg           = GetString(cmd, "pkg")
+		checkpointing = GetString(cmd, "checkpointing")
+		strategy      util.Option[vm.ShardingStrategy]
 	)
 	// Ensure gogen flag is set by default
 	if err := cmd.Flags().Set("gogen", "true"); err != nil {
 		panic(err)
+	}
+	// Including checkpointing configuration (if this makes sense).
+	if checkpointing != "" {
+		strategy = util.Some(parseShardingConfig(checkpointing))
 	}
 	// Sanity permitted flag combinations
 	checkFlags(cmd, generateFlags)
@@ -74,8 +81,9 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 	_, binfile := Build[F, W](build, args...)
 	// Translate bytecode => word machine
 	src, err := vm.GoGenGenerate(binfile.RawProgram(), vm.GoGenConfig{
-		Package: packageName(pkg),
-		Source:  sourceProvenance(args),
+		Package:       packageName(pkg),
+		Source:        sourceProvenance(args),
+		CheckPointing: strategy,
 	})
 	if err != nil {
 		log.Error(err)
@@ -93,7 +101,7 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 // packageName determines the generated package name: the --pkg flag when set,
 // otherwise "main" (which carries the standalone JSON harness).  Deriving a
 // name from the output filename proved surprising — `-o test.go` yielded an
-// unrunnable `package test` — so the importable case is always explicit.
+// unrunnable `package test` — so the non-main case is always explicit.
 func packageName(pkg string) string {
 	if pkg != "" {
 		return pkg
@@ -122,6 +130,7 @@ func init() {
 	rootCmd.AddCommand(generateCmd)
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
 	generateCmd.Flags().String("pkg", "", "generated package name (default main, which carries the standalone harness)")
+	generateCmd.Flags().String("checkpointing", "", "specify checkpointing strategy")
 	// Gogen does not currently support splitting (for now)
 	generateFlags.Exclude("gogen", "split")
 }

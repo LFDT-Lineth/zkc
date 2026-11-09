@@ -111,7 +111,7 @@ func fieldTestProgram[W vm.Word[W]]() vm.Program[W] {
 func TestGenFieldOps(t *testing.T) {
 	const koalabear = 0x7f000001 // 2^31 - 2^24 + 1
 
-	binary, err := gogen.Compile(fieldTestProgram[vm.Uint]())
+	binary, err := gogen.Compile(fieldTestProgram[vm.Uint](), gogen.DEFAULT_CONFIG)
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
 	}

@@ -15,22 +15,18 @@ package vm
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 )
 
 // ShardingStrategy is used to configure parallel tracing.
-type ShardingStrategy struct {
-	// Function around which sharding pivots.  That is, the function for which
-	// checkpoints are made.
-	shardFunction string
-	// Maximum executions of the given function to execute in each shard.
-	shardSteps uint64
-}
+type ShardingStrategy = descriptor.ShardingStrategy
 
 // NewShardingStrategy constructs a simple strategy which splits the trace into
 // some number of shards, where each shard represents at most n executions of
 // the given function.
 func NewShardingStrategy(fun string, n uint64) ShardingStrategy {
-	return ShardingStrategy{fun, n}
+	return ShardingStrategy{ShardFunction: fun, ShardSteps: n}
 }
 
 // CheckPointer extends a given sharding strategy with a given function
@@ -38,11 +34,11 @@ func NewShardingStrategy(fun string, n uint64) ShardingStrategy {
 type CheckPointer struct {
 	ShardingStrategy
 	//
-	checkpoint func(CheckPoint)
+	checkpoint func(checkpoint.CheckPoint)
 }
 
 // NewCheckPointer associates a checkpointing function with a given sharding strategy.
-func NewCheckPointer(strategy ShardingStrategy, handler func(CheckPoint)) CheckPointer {
+func NewCheckPointer(strategy ShardingStrategy, handler func(checkpoint.CheckPoint)) CheckPointer {
 	return CheckPointer{strategy, handler}
 }
 

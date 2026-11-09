@@ -811,7 +811,7 @@ func TestGenDifferential(t *testing.T) {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				p := compileUint(t, tc.src, shape.fastMode)
 
-				binary, err := gogen.Compile(p)
+				binary, err := gogen.Compile(p, gogen.DEFAULT_CONFIG)
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
@@ -849,7 +849,7 @@ func TestGenDifferential(t *testing.T) {
 func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 	var (
 		data        = bit.NewArray(nil, 0, bit.BigEndian)
-		binary, err = gogen.Compile(compileUint(t, doubleSrc, false))
+		binary, err = gogen.Compile(compileUint(t, doubleSrc, false), gogen.DEFAULT_CONFIG)
 	)
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)

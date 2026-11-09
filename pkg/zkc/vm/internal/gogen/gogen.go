@@ -13,7 +13,9 @@
 package gogen
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,7 +25,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
@@ -32,12 +36,44 @@ import (
 // failure, as opposed to any other kind of internal error.
 var ErrMachineFailure = errors.New("machine failure")
 
+// Config controls the shape of the generated artefact.
+type Config struct {
+	// Package is the name of the generated Go package.  The package "main"
+	// additionally gets a JSON stdin/stdout main() harness (used by Compile and
+	// the differential tests), which is the only supported way of executing
+	// the generated code.  Any other name yields a package without a harness
+	// or entry point, useful only for inspecting the generated functions.
+	Package string
+	// NoIntervals disables the flow-sensitive interval analysis, falling back
+	// to width-derived bounds only (more emitted checks, otherwise identical
+	// semantics).  A debugging escape hatch.
+	NoIntervals bool
+	// Source, when non-empty, is recorded in the generated header (e.g.
+	// "keccakf.zkc sha256:ab12…"), so go:generate workflows can detect a stale
+	// artefact by comparing it against the current source.
+	Source string
+	// CheckPointing strategy
+	CheckPointing util.Option[descriptor.ShardingStrategy]
+}
+
+// WithCheckPointing returns a config with the checkpointing strategy updated
+// accordingly, but which is otherwise identical.
+func (p Config) WithCheckPointing(strategy descriptor.ShardingStrategy) Config {
+	p.CheckPointing = util.Some(strategy)
+	//
+	return p
+}
+
+// DEFAULT_CONFIG provides a default configuration config which is generally
+// sufficient for small, self-contained tests.
+var DEFAULT_CONFIG = Config{}
+
 // Compile compiles a ZkC program into a GoGen program which can be
 // executed, or an error indicating some kind of compilation failure.
-func Compile(program descriptor.Program[word.Uint]) (Binary, error) {
+func Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
 	// Generate native Go source for the word machine.
 	var (
-		src, err = Generate(program, Config{})
+		src, err = Generate(program, config)
 		dir      string
 	)
 	//
@@ -98,40 +134,59 @@ func (p *Binary) Free() error {
 	return nil
 }
 
-// Run executes the compiled gogen binaryon the given input memories, returning
-// the output memories, along with any errors arising.
-//
-// Inputs and outputs are raw memory bytes keyed by memory name, exactly as
-// vm.BootAndExecute consumes/produces them: the generated harness shares the
-// JSON-hex encoding `zkc exec` accepts.
-//
-// The generated binary's debug/printf output and any fail message are written
-// to stderr; callers pass the sink they want those statements forwarded to
-// (os.Stderr for `exec --gogen`, io.Discard for differential tests, which
-// compare outputs rather than messages).
+// Path returns the path of this binary executable.
+func (p *Binary) Path() string {
+	return p.path
+}
+
+// Run executes the compiled gogen binary on the given input, returning the
+// output, and any errors arising.  Finally, any output from the program (e.g.
+// from debug/print statements) is written to the given stderr writer.
 func (p *Binary) Run(in map[string]bit.Array, stderr io.Writer) (map[string]bit.Array, error) {
+	return p.CheckPoint(in, func(checkpoint.CheckPoint) {
+		panic("checkpoint received")
+	}, stderr)
+}
+
+// CheckPoint executes the compiled gogen binary on the given input, returning
+// the output, and any errors arising.  Furthermore, the consumer function is
+// called for any checkpoints generated during the process.  Finally, any output
+// from the program (e.g. from debug/print statements) is written to the given
+// stderr writer.
+func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.CheckPoint), stderr io.Writer,
+) (map[string]bit.Array, error) {
+	//
 	var (
-		// Convert inputs into JSON
-		input, err = MarshalInputs(in)
+		output map[string]bit.Array
+		// byteconsumer is responsible for converting a byte array into a
+		// checkpoint, and passing it onto the checkpoint consumer.
+		byteConsumer = func(line []byte) error {
+			// Parse json
+			if combo, err := unmarshalCombo(line); err != nil {
+				return fmt.Errorf("decoding generated output %q: %v", string(line), err)
+			} else if combo.HasSecond() {
+				consumer(combo.Second())
+			} else {
+				output = combo.First()
+			}
+			//
+			return nil
+		}
 	)
-	//
-	if err != nil {
+	// Marshal input data into bytes
+	if input, err := marshalInputs(in); err != nil {
+		return nil, err
+	} else if err = runRaw(p.path, input, byteConsumer, stderr); err != nil {
 		return nil, err
 	}
-	//
-	output, err := runRaw(p.path, input, stderr)
-	//
-	if err != nil {
-		return nil, err
-	}
-	//
-	return UnmarshalOutputs(output)
+	// Decode final output
+	return output, nil
 }
 
 // MarshalInputs renders input memories as the JSON the generated harness reads:
 // one "0x…" hex string per memory.  Benchmarks pre-marshal once so the timed
 // loop measures the executor, not the marshalling.
-func MarshalInputs(in map[string]bit.Array) ([]byte, error) {
+func marshalInputs(in map[string]bit.Array) ([]byte, error) {
 	raw := make(map[string]string, len(in))
 	for name, bits := range in {
 		raw[name] = "0x" + bits.String()
@@ -140,46 +195,132 @@ func MarshalInputs(in map[string]bit.Array) ([]byte, error) {
 	return json.Marshal(raw)
 }
 
-// UnmarshalOutputs is the opposite of MarshalInputs --- it converts the JSON
-// output from a machine execution back into a more structured form.
-func UnmarshalOutputs(output []byte) (map[string]bit.Array, error) {
-	var raw map[string]string
-	//
-	if err := json.Unmarshal(output, &raw); err != nil {
-		return nil, fmt.Errorf("decoding generated output %q: %v", string(output), err)
+func unmarshalCombo(line []byte) (util.Union[map[string]bit.Array, checkpoint.CheckPoint], error) {
+	var (
+		raw   map[string]string
+		combo util.Union[map[string]bit.Array, checkpoint.CheckPoint]
+		cp    checkpoint.CheckPoint
+	)
+	// Parse line
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return combo, fmt.Errorf("decoding generated output %q: %v", string(line), err)
 	}
+	// Distinguish checkpoint from output
+	if data, ok := raw["$"]; ok {
+		// Parse input array
+		bytes, err := hex.DecodeString(strings.TrimPrefix(data, "0x"))
+		// Check for errors
+		if err != nil {
+			return combo, err
+		} else if err = cp.Unmarshal(bytes); err != nil {
+			return combo, err
+		}
+		//
+		return util.Union2[map[string]bit.Array](cp), nil
+	}
+	// Parse output
+	var out, err = unmarshalOutput(raw)
+	//
+	return util.Union1[map[string]bit.Array, checkpoint.CheckPoint](out), err
+}
 
+func unmarshalOutput(raw map[string]string) (map[string]bit.Array, error) {
+	// Parse output
 	out := make(map[string]bit.Array, len(raw))
-
+	//
 	for name, s := range raw {
 		bytes, err := bit.ParseArray(strings.TrimPrefix(s, "0x"))
+		//
 		if err != nil {
-			return nil, fmt.Errorf("decoding generated output %q: %v", name, err)
+			return out, fmt.Errorf("decoding generated output %q: %v", name, err)
 		}
-
+		//
 		out[name] = bytes
 	}
-
+	// Done
 	return out, nil
 }
 
-func runRaw(path string, input []byte, stderr io.Writer) ([]byte, error) {
+func runRaw(path string, input []byte, consumer func([]byte) error, stderr io.Writer) error {
 	var (
-		stdout bytes.Buffer
 		cmd    = exec.Command(path)
+		stdout io.ReadCloser
+		err    error
 	)
 	//
 	cmd.Stdin = bytes.NewReader(input)
-	cmd.Stdout = &stdout
 	cmd.Stderr = stderr
-	//
-	if err := cmd.Run(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 1 {
-			return nil, ErrMachineFailure
-		}
+	// Construct output pipe
+	if stdout, err = cmd.StdoutPipe(); err != nil {
+		return err
+	} else if err = cmd.Start(); err != nil {
+		return err
+	}
+	// Process output lines
+	if err = readLines(stdout, consumer); err != nil {
+		// Nobody will read stdout anymore, so the process must be terminated
+		// (otherwise it could block forever writing to a full pipe).  Wait is
+		// then required to release the process and close the pipe.
+		//nolint:errcheck
+		cmd.Process.Kill()
+		//nolint:errcheck
+		cmd.Wait()
 		//
-		return nil, err
+		return err
+	}
+	// Wait for process to terminate
+	var ee *exec.ExitError
+	//
+	if err = cmd.Wait(); errors.As(err, &ee) && ee.ExitCode() == 1 {
+		// Catch machine failure
+		return ErrMachineFailure
 	}
 	//
-	return stdout.Bytes(), nil
+	return err
+}
+
+// readLines splits r into newline-terminated lines and passes each one to the
+// given consumer, stopping at the first error.  Unlike bufio.Scanner, there is
+// no upper bound on the length of a line.  Each line is passed to the consumer
+// as-is, including its terminating newline (if any); this is tolerated by the
+// JSON decoder, so no trimming is performed.  The slice passed to the consumer
+// is only valid until the consumer returns.
+func readLines(r io.Reader, consumer func([]byte) error) error {
+	var (
+		reader = bufio.NewReader(r)
+		// line accumulates fragments of a line which does not fit within the
+		// reader's internal buffer.  Its capacity is retained across lines.
+		line []byte
+	)
+	//
+	for {
+		chunk, err := reader.ReadSlice('\n')
+		// Line exceeds internal buffer, hence accumulate and keep reading.
+		// Sentinel errors from bufio.Reader are never wrapped, so direct
+		// comparison is sufficient (and cheaper than errors.Is).
+		if err == bufio.ErrBufferFull {
+			line = append(line, chunk...)
+			continue
+		} else if err != nil && err != io.EOF {
+			return err
+		}
+		// Complete any line being accumulated.  Afterwards, line is reset to
+		// the (possibly grown) buffer returned by append, so the largest buffer
+		// seen is retained for subsequent long lines.  For short lines, chunk
+		// is a view of the reader's buffer so no copy is needed.
+		if len(line) > 0 {
+			chunk = append(line, chunk...)
+			line = chunk[:0]
+		}
+		// Skip empty tail at EOF (i.e. input ended with a newline)
+		if len(chunk) > 0 {
+			if err := consumer(chunk); err != nil {
+				return err
+			}
+		}
+		//
+		if err == io.EOF {
+			return nil
+		}
+	}
 }

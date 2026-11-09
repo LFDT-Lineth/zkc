@@ -57,7 +57,12 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 
 	c.block(func() {
 		c.linef("start := %s", start)
-
+		//
+		switch mi.role {
+		case ramScratch, fixedScratch, pagedScratch:
+			c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
+		}
+		//
 		for i, d := range x.Data {
 			// A discarded data line binds no register: skip the load (the
 			// address offset i is explicit, so later lines are unaffected).
@@ -90,15 +95,15 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 			case fixedScratch:
 				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
 				bound = widthMax(widthOf(dataRegs[i]))
-			case ramScratch:
-				expr = fmt.Sprintf("memGet(%s, start+%d)", mi.varName, i)
-				bound = widthMax(widthOf(dataRegs[i]))
-			case pagedScratch:
-				expr = fmt.Sprintf("%s.get(start + %d)", mi.varName, i)
-				bound = widthMax(widthOf(dataRegs[i]))
-			default: // input ROM: untrusted contents
-				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
+			case romInput:
+				expr = fmt.Sprintf("romRead(%s, start + %d)", mi.varName, i)
 				bound = widthMax(64)
+			case ramScratch:
+				expr = fmt.Sprintf("ramRead(%s, start + %d)", mi.varName, i)
+				bound = widthMax(widthOf(dataRegs[i]))
+			default:
+				expr = fmt.Sprintf("pagedRamRead(%s, start + %d)", mi.varName, i)
+				bound = widthMax(widthOf(dataRegs[i]))
 			}
 
 			g.assignSingle(c, l, operand{expr: expr, max: bound})
@@ -140,7 +145,12 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 
 	c.block(func() {
 		c.linef("start := %s", start)
-
+		//
+		switch mi.role {
+		case ramScratch, fixedScratch, pagedScratch:
+			c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
+		}
+		//
 		for i, s := range x.Data {
 			src, e := g.registerOperand(fn, s)
 			if e != nil {
@@ -153,26 +163,19 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 			}
 
 			switch mi.role {
-			case pagedScratch:
-				c.linef("%s.set(start+%d, %s)", mi.varName, i, src.expr)
 			case fixedScratch:
 				c.linef("%s[start+%d] = %s", mi.varName, i, src.expr)
 			case womOutput:
-				c.linef("%s = womWrite(%s, start+%d, %s, %q)", mi.varName, mi.varName, i, src.expr, womFailMsg(mi.name))
+				c.linef("%s = womWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+			case ramScratch:
+				c.linef("%s = ramWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
 			default:
-				c.linef("%s = memWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+				c.linef("%s = pagedRamWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
 			}
 		}
 	})
 
 	return inner
-}
-
-// womFailMsg is the failure reported when a write-once memory cell is written
-// a second time with a different value (mirroring the interpreter's
-// WriteOnce.Write message).
-func womFailMsg(name string) string {
-	return fmt.Sprintf("address already written for write-only memory %s", name)
 }
 
 // addrExpr mirrors the interpreter's decodeAddress: fold the address registers

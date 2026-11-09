@@ -1,0 +1,30 @@
+input data(c:u16) -> (b:u8)
+#[paged]
+memory ram[u32](addr:u16) -> (b:u8)
+
+fn main<ram>() {
+    var n:u16 = data[0] as u16
+    //
+    copy!(0, n)
+}
+
+#[global]
+fn copy<ram>(i:u16, n:u16) -> ! {
+    if i == n {
+        finalise!(n)
+    }
+    // recursive case
+    ram[i] = data[i + 1]
+    //
+    copy!(i + 1, n)
+}
+
+fn finalise<ram>(n:u16) -> ! {
+    for i:u16 = 0; i<n; i = i + 1 {
+        if ram[i] != data[i + 1] {
+            fail
+        }
+    }
+    // terminate
+    done
+}

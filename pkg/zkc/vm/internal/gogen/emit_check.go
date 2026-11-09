@@ -83,29 +83,28 @@ func widthFailMsg(w uint) string {
 	return fmt.Sprintf("bit overflow (value exceeds u%d)", w)
 }
 
-// emitFailureHelpers writes the failure type and the fail helper, which every
+// emitTerminationHelpers writes the failure type and the fail helper, which every
 // generated program uses (the fall-off-the-end guard alone guarantees that).
-func emitFailureHelpers(c *code) {
-	c.line("// failure is a ZkC execution failure (a rejected trace, not a bug); Run")
-	c.line("// recovers it into its error result.")
+func emitTerminationHelpers(c *code, usesDone bool) {
+	c.commentf("===============================================================================")
+	c.commentf("Termination Helpers")
+	c.commentf("===============================================================================")
+
+	c.line("// failure is a ZkC execution failure (a rejected trace, not a bug); the")
+	c.line("// harness recovers it and exits with code 1.")
 	c.line("type failure string")
 	c.line("")
 	c.line("func (e failure) Error() string { return string(e) }")
 	c.line("")
 	c.line("func fail(msg string) { panic(failure(msg)) }")
 	c.line("")
-}
-
-// emitDoneHelpers writes the doneSignal type and the done helper.  A DONE
-// terminates the whole program successfully from within a no-return
-// function, however deeply nested the call — like fail, this unwinds via
-// panic rather than an ordinary return, but Run recovers it as success
-// rather than an error.
-func emitDoneHelpers(c *code) {
-	c.line("// doneSignal marks early, successful termination via `done`; Run")
-	c.line("// recovers it and reports success rather than an error.")
-	c.line("type doneSignal struct{}")
-	c.line("")
-	c.line("func done() { panic(doneSignal{}) }")
-	c.line("")
+	//
+	if usesDone {
+		c.line("// doneSignal marks early, successful termination via `done`; the")
+		c.line("// harness recovers it and writes the outputs as on a normal return.")
+		c.line("type doneSignal struct{}")
+		c.line("")
+		c.line("func done() { panic(doneSignal{}) }")
+		c.line("")
+	}
 }
