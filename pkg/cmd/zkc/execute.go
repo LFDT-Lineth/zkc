@@ -68,12 +68,24 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	//
 	execConfig := vm.DEFAULT_EXECUTION_CONFIG.
 		WithGoGen(build.gogen)
-	// Including checkpointing configuration (if this makes sense).
-	if checkpointing != "" {
-		execConfig = execConfig.WithCheckpointing(parseShardingConfig(checkpointing))
-	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binfile := Build[F, W](build, args[1:]...)
+	// Including checkpointing configuration (if this makes sense).
+	if checkpointing != "" {
+		var (
+			strategy = parseShardingConfig(checkpointing)
+			// checkpoint identifier
+			checkpointId uint
+			//
+			statsFn = func(cp vm.CheckPoint) {
+				logCheckpointStats(checkpointId, cp)
+				//
+				checkpointId++
+			}
+		)
+		//
+		execConfig = execConfig.WithCheckpointing(vm.NewCheckPointer(strategy, statsFn))
+	}
 	// =====================================================
 	// Trace / Execute
 	// =====================================================
@@ -99,6 +111,23 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		//
 		os.Exit(4)
 	}
+}
+
+func logCheckpointStats(id uint, cp vm.CheckPoint) {
+	var (
+		npages uint
+		nbytes uint
+	)
+	//
+	for _, m := range cp.Memories() {
+		for _, p := range m.Pages() {
+			nbytes += uint(len(p.Bytes()))
+		}
+		//
+		npages += uint(len(m.Pages()))
+	}
+	//
+	log.Info(fmt.Sprintf("Checkpoint %d has %d pages over %s bytes.", id, npages, humanCount(true, nbytes)))
 }
 
 // ============================================================================

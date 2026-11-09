@@ -98,12 +98,14 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string]bit.Array, n uin
 // checkpoints it according to a given strategy.  This produces some number of
 // checkpoints, the final outputs, an indication as to whether this execution can
 // be traced, and any errors arising.
-func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strategy ShardingStrategy,
-) (checkpoints []CheckPoint, outputs map[string]bit.Array, traceable bool, errors []error) {
+func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strategy CheckPointer,
+) (outputs map[string]bit.Array, traceable bool, errors []error) {
 	var (
 		err   error
 		steps uint64
 		stats = util.NewPerfStats()
+		// record how many checkpoints
+		nCheckpoints uint
 		// specify how many steps each shard will be
 		clk = util.NewCounter(strategy.shardSteps)
 		//
@@ -112,7 +114,7 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 	// Locate the function whose calls are to be checkpointed.
 	fid, ok := pr.HasModule(strategy.shardFunction)
 	if !ok {
-		return nil, nil, false, []error{
+		return nil, false, []error{
 			fmt.Errorf("unknown function \"%s\"", strategy.shardFunction),
 		}
 	}
@@ -122,7 +124,7 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 	// cross shards over the bus.  Any other function can yield an incomplete
 	// trace (or failing call lookups), so refuse it up front.
 	if fn, ok := pr.Module(fid).(*Function[W]); !ok || !fn.Kind().IsGlobal() {
-		return nil, nil, false, []error{
+		return nil, false, []error{
 			fmt.Errorf("cannot shard on \"%s\" (shard function must be #[global])", strategy.shardFunction),
 		}
 	}
@@ -134,21 +136,23 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 	bci.BreakPointer(func(_ uint32) bool {
 		// Only record once every interval-th invocation of fn.
 		if clk.Tick() {
-			// Append next checkoint
-			checkpoints = append(checkpoints, bci.CheckPoint())
+			// Apply next checkpoint
+			strategy.checkpoint(bci.CheckPoint())
+			// Increase count of checkpoints
+			nCheckpoints++
 		}
 		// Don't interrupt
 		return false
 	})
 	// Decode inputs and boot machine
 	if inputs, errors = DecodeInputs(bci, in); len(errors) != 0 {
-		return nil, nil, false, errors
+		return nil, false, errors
 	} else if err := bci.Boot("main", inputs); err != nil {
-		return nil, nil, false, append(errors, err)
+		return nil, false, append(errors, err)
 	}
 	// Set initial checkpoint to from beginning of execution until the first
 	// time the target function is executed.
-	checkpoints = append(checkpoints, bci.CheckPoint())
+	strategy.checkpoint(bci.CheckPoint())
 	// Execute machine to generate checkpoints
 	if steps, err = ExecuteAll(bci, math.MaxUint); err != nil {
 		errors = append(errors, err)
@@ -160,9 +164,9 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 		traceable = true
 	}
 	// Log stats
-	stats.Log(fmt.Sprintf("Machine execution (%d steps, %d checkpoints)", steps, len(checkpoints)))
+	stats.Log(fmt.Sprintf("Machine execution (%d steps, %d checkpoints)", steps, nCheckpoints))
 	// Done
-	return checkpoints, outputs, traceable, errors
+	return outputs, traceable, errors
 }
 
 // BootAndTrace boots a machine from the given inputs and traces according to

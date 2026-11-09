@@ -33,6 +33,19 @@ func NewShardingStrategy(fun string, n uint64) ShardingStrategy {
 	return ShardingStrategy{fun, n}
 }
 
+// CheckPointer extends a given sharding strategy with a given function
+// to be called on each checkpoint.
+type CheckPointer struct {
+	ShardingStrategy
+	//
+	checkpoint func(CheckPoint)
+}
+
+// NewCheckPointer associates a checkpointing function with a given sharding strategy.
+func NewCheckPointer(strategy ShardingStrategy, handler func(CheckPoint)) CheckPointer {
+	return CheckPointer{strategy, handler}
+}
+
 // ============================================================================
 // ExecutionConfig
 // ============================================================================
@@ -42,12 +55,18 @@ type ExecutionConfig struct {
 	// Specified whether or not to use gogen
 	gogen bool
 	// Specifies whether or not to use a sharding strategy.
-	shardingStrategy util.Option[ShardingStrategy]
+	strategy util.Option[CheckPointer]
 }
 
 // DEFAULT_EXECUTION_CONFIG defines a default configuration for fast-mode execution.
 var DEFAULT_EXECUTION_CONFIG = ExecutionConfig{
 	gogen: false,
+}
+
+// Checkpointing determines whether a given checkpoint function should be
+// applied (or not).
+func (tb ExecutionConfig) Checkpointing() util.Option[CheckPointer] {
+	return tb.strategy
 }
 
 // GoGen determines whether (or not) gogen should be used for fast-mode
@@ -66,8 +85,8 @@ func (tb ExecutionConfig) WithGoGen(flag bool) ExecutionConfig {
 
 // WithCheckpointing updates the configuration to employ a specific checking
 // strategy.  Otherwise, by default, no sharding is performed.
-func (tb ExecutionConfig) WithCheckpointing(strategy ShardingStrategy) ExecutionConfig {
-	tb.shardingStrategy = util.Some(strategy)
+func (tb ExecutionConfig) WithCheckpointing(strategy CheckPointer) ExecutionConfig {
+	tb.strategy = util.Some(strategy)
 	//
 	return tb
 }

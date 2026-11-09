@@ -114,10 +114,13 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string]bit.Ar
 func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string]bit.Array,
 ) (map[string]bit.Array, util.Option[trace.LazyTrace[F]], []error) {
 	var (
+		checkpoints []CheckPoint
 		//
-		strategy = p.config.shardingStrategy.Unwrap()
+		strategy = NewCheckPointer(p.config.shardingStrategy.Unwrap(), func(cp CheckPoint) {
+			checkpoints = append(checkpoints, cp)
+		})
 		// fast mode execution to generate checkpoints
-		checkpoints, outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
+		outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
 		//
 		futures []trace.Future[F]
 		//

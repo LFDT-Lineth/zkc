@@ -430,7 +430,7 @@ func getShardStats[F field.Element[F]](shard trace.Shard[F]) shardStats {
 
 // humanCount formats a (potentially large) count using K/M/G suffixes, matching
 // the corset trace command's cell-count formatting.
-func humanCount(enable bool, total uint64) string {
+func humanCount[T uint64 | uint](enable bool, total T) string {
 	switch {
 	case enable && total > oneG:
 		return fmt.Sprintf("%.01fG", float64(total)/oneG)
