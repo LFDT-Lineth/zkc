@@ -184,22 +184,22 @@ func lowerBitwiseAndOrXor[W Word[W]](
 		)
 
 		if resIsId(b.Op, c, mask) {
-			return []Bytecode[W]{bytecode.AddConst(b.Target, []bytecode.RegisterId{b.Left}, zero)}
+			return []Bytecode[W]{bytecode.AddConst(b.Target, []bytecode.RegisterId{b.Left}, zero, b.Bitwidth)}
 		}
 
 		if resultIsNull(b.Op, c) {
 			return []Bytecode[W]{
-				bytecode.LoadConst(b.Target, zero)}
+				bytecode.LoadConst(b.Target, zero, b.Bitwidth)}
 		}
 
 		if resultIsMax(b.Op, c, mask) {
 			return []Bytecode[W]{
-				bytecode.LoadConst(b.Target, mask)}
+				bytecode.LoadConst(b.Target, mask, b.Bitwidth)}
 		}
 
 		if resultIsNot(b.Op, c, mask) {
 			return []Bytecode[W]{
-				bytecode.CSubConst(b.Target, []bytecode.RegisterId{b.Left}, mask),
+				bytecode.CSubConst(b.Target, []bytecode.RegisterId{b.Left}, mask, b.Bitwidth),
 			}
 		}
 	}
@@ -241,7 +241,7 @@ func materialiseRight[W Word[W]](b *bytecode.Bitwise[W], registers split.Allocat
 	//
 	reg := registers.Allocate("loxa", util.Some(uint(b.Bitwidth)))
 	//
-	return reg, []Bytecode[W]{bytecode.LoadConst(reg, b.Right.AsConstant())}
+	return reg, []Bytecode[W]{bytecode.LoadConst(reg, b.Right.AsConstant(), b.Bitwidth)}
 }
 
 // alignedBitwidthOf determines the operand width for a bitwise operation over
@@ -274,6 +274,7 @@ func emitUnitBitwise[W Word[W]](op bytecode.Operation, registers split.Allocator
 		zero = word.Const64[W](0)
 		one  = word.Const64[W](1)
 		bit  = util.Some[uint](1)
+		bit16 = util.Cast[uint16](bit.Unwrap())
 	)
 	//
 	switch op {
@@ -285,7 +286,7 @@ func emitUnitBitwise[W Word[W]](op bytecode.Operation, registers split.Allocator
 		prod := registers.Allocate("loxa", bit)
 		//
 		return []Bytecode[W]{
-			bytecode.LoadConst(oneReg, one),
+			bytecode.LoadConst(oneReg, one, bit16),
 			bytecode.SubConst(na, []bytecode.RegisterId{oneReg, left}, zero),
 			bytecode.MulConst(prod, []bytecode.RegisterId{na, right}, one),
 			bytecode.AddConst(target, []bytecode.RegisterId{left, prod}, zero),
@@ -298,7 +299,7 @@ func emitUnitBitwise[W Word[W]](op bytecode.Operation, registers split.Allocator
 		r := registers.Allocate("loxa", bit)
 		//
 		return []Bytecode[W]{
-			bytecode.LoadConst(oneReg, one),
+			bytecode.LoadConst(oneReg, one, bit16),
 			bytecode.SubConst(nb, []bytecode.RegisterId{oneReg, right}, zero),
 			bytecode.SubConst(na, []bytecode.RegisterId{oneReg, left}, zero),
 			bytecode.MulConst(l, []bytecode.RegisterId{left, nb}, one),
@@ -345,12 +346,13 @@ func newDecomposedNaryHelper[W Word[W]](
 		// the appropriate pairwise combinator.
 		for i, op := range bitwiseOps {
 			agg := b.newComputed("agg")
+			bw16 := util.Cast[uint16](b.width)
 
 			if op == bytecode.OP_AND {
 				one := word.Const64[W](1)
-				b.emit(bytecode.LoadConst(agg, one))
+				b.emit(bytecode.LoadConst(agg, one, bw16))
 			} else {
-				b.emit(bytecode.LoadConst(agg, zero))
+				b.emit(bytecode.LoadConst(agg, zero, bw16))
 			}
 
 			for _, inp := range b.inputs {
@@ -506,6 +508,7 @@ func (p *bitwiseHelperBuilder[W]) newComputedWidth(prefix string, width uint) by
 func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs bytecode.RegisterId) bytecode.RegisterId {
 	zero := word.Const64[W](0)
 	one := word.Const64[W](1)
+	bw16 := util.Cast[uint16](p.width)
 
 	switch op {
 	case bytecode.OP_AND:
@@ -516,7 +519,7 @@ func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs byt
 	case bytecode.OP_OR:
 		// a + (1-a)*b avoids the intermediate overflow of (a+b) when a=b=1
 		oneReg := p.newComputed("or_one")
-		p.emit(bytecode.LoadConst(oneReg, one))
+		p.emit(bytecode.LoadConst(oneReg, one, bw16))
 
 		na := p.newComputed("or_na")
 		p.emit(bytecode.SubConst(na, []bytecode.RegisterId{oneReg, lhs}, zero))
@@ -531,7 +534,7 @@ func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs byt
 	case bytecode.OP_XOR:
 		// a*(1-b) + (1-a)*b avoids intermediate overflow when a=b=1
 		oneReg := p.newComputed("xor_one")
-		p.emit(bytecode.LoadConst(oneReg, one))
+		p.emit(bytecode.LoadConst(oneReg, one, bw16))
 
 		nb := p.newComputed("xor_nb")
 		p.emit(bytecode.SubConst(nb, []bytecode.RegisterId{oneReg, rhs}, zero))

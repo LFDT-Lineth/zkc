@@ -281,7 +281,7 @@ func concatAssignment[W word.Word[W]](chunk partCat, alloc Allocator[W]) (codes 
 	if noSources && noTargets {
 		return codes
 	} else if noSources {
-		return append(codes, bytecode.LoadConstVec(chunk.targets, zero))
+		return append(codes, bytecode.LoadConstVec(chunk.targets, zero, util.Cast[uint16](descriptor.BitwidthOf(alloc, chunk.targets...).Unwrap()))
 	} else if noTargets {
 		targets = []RegisterId{alloc.ZeroRegister()}
 	}

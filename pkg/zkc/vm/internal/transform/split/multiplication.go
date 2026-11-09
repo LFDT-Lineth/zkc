@@ -618,10 +618,11 @@ func reassembleToTarget[W word.Word[W]](alloc Allocator[W], outs, targetLimbs []
 	for i, tl := range targetLimbs {
 		var cell []RegisterId
 		//
-		cell, pieces = takePieces(alloc, pieces, widths[i])
+		bw := widths[i]
+		cell, pieces = takePieces(alloc, pieces, bw)
 		//
 		if len(cell) == 0 {
-			insns = append(insns, bytecode.LoadConst(tl, zero))
+			insns = append(insns, bytecode.LoadConst(tl, zero, util.Cast[uint16](bw)))
 		} else {
 			insns = append(insns, bytecode.AssignV[W]([]RegisterId{tl}, cell...))
 		}

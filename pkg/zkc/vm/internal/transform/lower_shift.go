@@ -334,7 +334,7 @@ func shiftByConst[W Word[W]](b *shiftHelperBuilder[W], op bytecode.Operation,
 		// then target = keep : zeros, i.e. (a << shift) mod 2^width.
 		return []Bytecode[W]{
 			bytecode.AddVec[W]([]bytecode.RegisterId{keep, drop}, []bytecode.RegisterId{a}),
-			bytecode.LoadConst(zeros, zero),
+			bytecode.LoadConst(zeros, zero, util.Cast[uint16](shift)),
 			bytecode.AssignV[W]([]bytecode.RegisterId{target}, zeros, keep),
 		}
 	default:
@@ -365,6 +365,7 @@ func newShiftGuardHelper[W Word[W]](maxWidth, amtWidth, levelID uint) descriptor
 	outShl, outShr := b.outShl, b.outShr
 	depth := shiftChainDepth(maxWidth)
 	zero := word.Const64[W](0)
+	bw16 := util.Cast[uint16](b.width)
 
 	if depth == 0 {
 		// maxWidth == 1: if n == 0: return (a, a)
@@ -388,8 +389,8 @@ func newShiftGuardHelper[W Word[W]](maxWidth, amtWidth, levelID uint) descriptor
 		b.emit(bytecode.NewRet[W]())
 	}
 	// out_shl, out_shr = 0, 0
-	b.emit(bytecode.LoadConst(outShl, zero))
-	b.emit(bytecode.LoadConst(outShr, zero))
+	b.emit(bytecode.LoadConst(outShl, zero, bw16))
+	b.emit(bytecode.LoadConst(outShr, zero, bw16))
 	b.emit(bytecode.NewRet[W]())
 
 	return descriptor.NewFunction(shiftHelperName(maxWidth, amtWidth), b.regs(), descriptor.BYTECODE_FUNCTION, nil,
