@@ -44,13 +44,16 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 	)
 	// Initialise module
 	mod = mod.Init(name, false, false, false, fn.IsNative(), false)
-	// Add all registers
-	mod.AddRegisters(regs...)
-	// Native functions are backed by an external circuit, so we emit only the
-	// register layout and skip all framing / instruction-level constraints.
+	// Native functions are backed by an external circuit, so we emit only their
+	// interface (input / output registers) and skip all framing /
+	// instruction-level constraints.
 	if fn.IsNative() {
+		mod.AddRegisters(regs[:tracer.NativeInterfaceWidth(*fn)]...)
+		//
 		return mod
 	}
+	// Add all registers
+	mod.AddRegisters(regs...)
 
 	ret = register.NewId(mod.Width())
 	// Add control registers for Multi Line Instruction

@@ -535,17 +535,13 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 	case mod.IsNative():
 		// Native circuit: report only its interface (input / output registers),
 		// both before and after splitting.  Its internal registers and
-		// constraints belong to the native circuit, so are not counted.
+		// constraints belong to the native circuit, so are not counted (nor are
+		// they present in the AIR module).
 		info := preSplit[mod.Name()]
 		stats.typ = "native"
 		stats.preSplit = info.widths
 		stats.preNative = info.native
-		//
-		for _, r := range mod.Registers() {
-			if r.IsInputOutput() {
-				stats.postRegs++
-			}
-		}
+		stats.postRegs = mod.Width()
 	default:
 		// Regular module (function or memory): report the full breakdown.
 		info := preSplit[mod.Name()]

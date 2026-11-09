@@ -56,6 +56,62 @@ func initOneLineFunction[W Word[W], F Element[F]](f vm.Function[W]) (module *tra
 	return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(f.Name(), regs))
 }
 
+// ============================================================================
+// Native Functions
+// ============================================================================
+
+// NativeInterfaceWidth returns the number of interface registers of a native
+// function, i.e. its input and output registers.  These always form a prefix of
+// the function's registers (call lookups rely on this, addressing the callee's
+// inputs then outputs positionally from 0).  A native function is backed by an
+// external circuit, so only its interface is visible to the trace and the
+// constraints: its internal registers are never traced.
+func NativeInterfaceWidth[W Word[W]](f vm.Function[W]) uint {
+	var n uint
+	//
+	for _, r := range f.Registers() {
+		if !r.IsInputOutput() {
+			break
+		}
+		//
+		n++
+	}
+	//
+	return n
+}
+
+// initNativeFunction initialises a trace module for a native function.  The
+// format of a trace row for a native function is:
+//
+// +--------+---------+
+// | INPUTS | OUTPUTS |
+// +--------+---------+
+//
+// There is exactly one row per call, and no control lines (e.g. $ret / $pc).
+func initNativeFunction[W Word[W], F Element[F]](f vm.Function[W]) *trace.ModuleBuilder[F] {
+	var regs = array.Map(f.Registers()[:NativeInterfaceWidth(f)], toTraceRegister)
+	//
+	return trace.InitModuleBuilder[F](trace.NewModuleDescriptor(f.Name(), regs))
+}
+
+// traceNativeFunction materialises the trace row of a native function call.
+// Only the terminal line of a call is traced: since parameters are read-only,
+// it holds both the call's arguments and its final return values.  Hence, each
+// call produces exactly one row, regardless of how many lines its body spans.
+func traceNativeFunction[W Word[W], F Element[F]](m *trace.ModuleBuilder[F], st vm.State[W], scratch []F) {
+	if !st.IsTerminal() {
+		return
+	}
+	//
+	var row = scratch[:m.Width()]
+	// Copy over the interface registers (a prefix of the frame)
+	for i, v := range st.Frame()[:m.Width()] {
+		row[i] = wordToField[W, F](v)
+	}
+	//
+	m.Append(row...)
+}
+
 // traceOneLineFunction materialises a trace row for a one-line function.
 func traceOneLineFunction[W Word[W], F Element[F]](f vm.Function[W], m *trace.ModuleBuilder[F], st vm.State[W],
 	scratch []F) {
