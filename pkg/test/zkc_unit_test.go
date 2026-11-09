@@ -948,9 +948,16 @@ func Test_ZkcUnit_Shift_14(t *testing.T) {
 // ===================================================================
 // [#Native] Tests
 // ===================================================================
+
 // TODO: https://github.com/LFDT-Lineth/zkc/issues/2326 reenbale gogen once this is fixed
 func Test_ZkcUnit_Native_01(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/native_01", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+// native functiun should be MLI but is still traced as OLI
+// TODO: https://github.com/LFDT-Lineth/zkc/issues/2326 reenbale gogen once this is fixed
+func Test_ZkcUnit_Native_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_02", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 // ===================================================================
