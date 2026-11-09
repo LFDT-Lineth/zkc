@@ -121,10 +121,12 @@ func factorLimbEqualityCode[W Word[W]](b Bytecode[W], registers split.Allocator[
 		bits  = make([]bytecode.RegisterId, n)
 		zeros = make([]W, n)
 		insns []Bytecode[W]
+		u1 = util.Some[uint](1)
+		u1_16 = util.Cast[uint16](u1.Unwrap())
 	)
 	// Materialise each limb inequality into a fresh bit via a diamond.
 	for k := range n {
-		bits[k] = registers.Allocate("fle", util.Some[uint](1))
+		bits[k] = registers.Allocate("fle", u1)
 		zeros[k] = zero
 		//
 		insns = append(insns,
@@ -133,11 +135,11 @@ func factorLimbEqualityCode[W Word[W]](b Bytecode[W], registers split.Allocator[
 				bytecode.NewRegisterVector(lhs[k]),
 				bytecode.NewRegisterOperand[W](rhs[k])),
 			// bk = 1  (limbs differ)
-			bytecode.LoadConst(bits[k], one),
+			bytecode.LoadConst(bits[k], one, u1_16),
 			// skip 1  => jump over "bk = 0"
 			bytecode.NewSkip[W](1),
 			// bk = 0  (limbs equal)
-			bytecode.LoadConst(bits[k], zero),
+			bytecode.LoadConst(bits[k], zero, u1_16),
 		)
 	}
 	// Finally, re-emit the original skip testing "b1..bn == 0" (respectively

@@ -323,44 +323,44 @@ func validateConcatBitwidth[W word.Word[W]](env Environment[W], regs []RegisterI
 
 // AddConst constructs an addition instruction computing
 // "target = sum(sources) + constant" into a single target register.
-func AddConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_ADD, []RegisterId{target}, sources, constant)
+func AddConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
+	return NewArith(OP_ADD, []RegisterId{target}, sources, constant, bitwidth)
 }
 
 // AddVec constructs a vectored addition instruction computing
 // "targets = sum(sources)" (i.e. with no constant addend), where targets is a
 // multi-limb register vector.
-func AddVec[W word.Word[W]](targets []RegisterId, sources []RegisterId) *Arith[W] {
+func AddVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, bitwidth uint16) *Arith[W] {
 	var zero W
 	//
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	return NewArith(OP_ADD, targets, sources, zero)
+	return NewArith(OP_ADD, targets, sources, zero, bitwidth)
 }
 
 // AddVecConst constructs a vectored addition instruction computing
 // "targets = sum(sources) + constant", where targets is a multi-limb register
 // vector.
-func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_ADD, targets, sources, constant)
+func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
+	return NewArith(OP_ADD, targets, sources, constant, bitwidth)
 }
 
 // Assign constructs a move instruction which copies the source register into the
 // target register.
-func Assign[W word.Word[W]](target RegisterId, source RegisterId) *Arith[W] {
+func Assign[W word.Word[W]](target RegisterId, source RegisterId, bitwidth uint16) *Arith[W] {
 	var zero W
 	//
-	return NewArith(OP_ADD, []RegisterId{target}, []RegisterId{source}, zero)
+	return NewArith(OP_ADD, []RegisterId{target}, []RegisterId{source}, zero, bitwidth)
 }
 
 // AssignV constructs a concatenation instruction which joins the source
 // registers into the target register vector.
-func AssignV[W word.Word[W]](targets []RegisterId, sources ...RegisterId) Bytecode[W] {
+func AssignV[W word.Word[W]](targets []RegisterId, bitwidth uint16, sources ...RegisterId) Bytecode[W] {
 	util.Assert(len(targets) > 0, "at least one target required")
 	util.Assert(len(sources) > 0, "at least one source required")
 	// Avoid (expensive) concat instruction
 	if len(targets) == 1 && len(sources) == 1 {
-		return Assign[W](targets[0], sources[0])
+		return Assign[W](targets[0], sources[0], bitwidth)
 	}
 	//
 	return &Cat[W]{Targets: targets, Sources: sources}
@@ -398,16 +398,16 @@ func NewSkipIf[W word.Word[W]](op Condition, skip uint16, left RegisterVector, r
 // LoadConst constructs a load-constant (LDC) instruction which assigns the
 // given constant to the target register.
 // TODO: constant register, see: https://github.com/LFDT-Lineth/zkc/issues/1838
-func LoadConst[W word.Word[W]](target RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_ADD, []RegisterId{target}, nil, constant)
+func LoadConst[W word.Word[W]](target RegisterId, constant W, bitwidth uint16) *Arith[W] {
+	return NewArith(OP_ADD, []RegisterId{target}, nil, constant, bitwidth)
 }
 
 // LoadConstVec constructs a load-constant (LDC) instruction which assigns the
 // given constant to the target registers.
-func LoadConstVec[W word.Word[W]](targets []RegisterId, constant W) *Arith[W] {
+func LoadConstVec[W word.Word[W]](targets []RegisterId, constant W, bitwidth uint16) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	return NewArith(OP_ADD, targets, nil, constant)
+	return NewArith(OP_ADD, targets, nil, constant, bitwidth)
 }
 
 // MultiwaySkip constructs a multiway-skip (SMW) instruction which dispatches on
@@ -419,22 +419,22 @@ func MultiwaySkip[W word.Word[W]](source RegisterId, cases []SwitchCase[W]) *Swi
 
 // MulConst constructs a multiplication instruction computing
 // "target = product(sources) * constant" into a single target register.
-func MulConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_MUL, []RegisterId{target}, sources, constant)
+func MulConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
+	return NewArith(OP_MUL, []RegisterId{target}, sources, constant, bitwidth)
 }
 
 // MulVecConst constructs a vectored multiplication instruction computing
 // "targets = product(sources) * constant", where targets is a multi-limb
 // register vector.
-func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+func MulVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
 	if len(sources) == 0 {
 		// Bypass multiplication
-		return NewArith(OP_ADD, targets, nil, constant)
+		return NewArith(OP_ADD, targets, nil, constant, bitwidth)
 	}
 	//
-	return NewArith(OP_MUL, targets, sources, constant)
+	return NewArith(OP_MUL, targets, sources, constant, bitwidth)
 }
 
 // NewMemRead constructs a memory-read instruction.  The data registers receive
@@ -450,32 +450,32 @@ func NewMemRead[W word.Word[W]](id uint16, address []RegisterId, data []Register
 
 // SubConst constructs a subtraction instruction computing
 // "target = sources[0] - ... - constant" into a single target register.
-func SubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_SUB, []RegisterId{target}, sources, constant)
+func SubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
+	return NewArith(OP_SUB, []RegisterId{target}, sources, constant, bitwidth)
 }
 
 // SubVecConst constructs a vectored subtraction instruction computing
 // "targets = sources[0] - ... - constant", where targets is a multi-limb
 // register vector.
-func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	return NewArith(OP_SUB, targets, sources, constant)
+	return NewArith(OP_SUB, targets, sources, constant, bitwidth)
 }
 
 // CSubConst constructs subtraction instruction computing from a constant
 // "target = constant - source[0] ... - source[n]" into a single target register.
-func CSubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W) *Arith[W] {
-	return NewArith(OP_CSUB, []RegisterId{target}, sources, constant)
+func CSubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
+	return NewArith(OP_CSUB, []RegisterId{target}, sources, constant, bitwidth)
 }
 
 // SubConstVec constructs a vectored subtraction instruction computing from a constant
 // "targets = constant - source[0] ... - source[n]", where targets is a multi-limb
 // register vector.
-func SubConstVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+func SubConstVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
-	arith := NewArith(OP_CSUB, targets, sources, constant)
+	arith := NewArith(OP_CSUB, targets, sources, constant, bitwidth)
 
 	return arith
 }

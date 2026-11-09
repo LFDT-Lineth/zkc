@@ -177,6 +177,8 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 		bits  = make([]descriptor.RegisterId, n)
 		zero  = word.Const64[W](0)
 		one   = word.Const64[W](1)
+		u1    = util.Some[uint](1)
+		u1_16 = util.Cast[uint16](u1.Unwrap())
 	)
 	//
 	if n == 0 {
@@ -184,7 +186,7 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 	}
 	// Materialise every case's match into a fresh bit register, unconditionally.
 	for j, cse := range sw.Cases {
-		bits[j] = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_%d", switchIndex, j+1), util.Some[uint](1))
+		bits[j] = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_%d", switchIndex, j+1), u1)
 		//
 		codes = append(codes,
 			// skip_if r == v_j 2  => match, jump to "b_j = 1"
@@ -192,11 +194,11 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 				bytecode.NewRegisterVector(sw.Source),
 				bytecode.NewConstantOperand(cse.Value)),
 			// b_j = 0  (no match)
-			bytecode.LoadConst(bits[j], zero),
+			bytecode.LoadConst(bits[j], zero, u1_16),
 			// skip 1  => jump over "b_j = 1"
 			bytecode.NewSkip[W](1),
 			// b_j = 1  (match)
-			bytecode.LoadConst(bits[j], one))
+			bytecode.LoadConst(bits[j], one, u1_16))
 	}
 	// Derive the default bit: b_default = 1 - b_0 - ... - b_{n-1}, which is 1
 	// exactly when no case matched.  Enforcing b_default to be a u1 enforces

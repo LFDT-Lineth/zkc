@@ -23,11 +23,11 @@ import (
 
 // NewArith constructs a new arithmetic instruction computing
 // "targets = sources[0] op sources[1] op ... op constant".
-func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W) *Arith[W] {
+func NewArith[W word.Word[W]](op Operation, targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
 	util.Assert(len(targets) > 0, "missing target register(s)")
 	util.Assert(len(sources) > 0 || op == OP_ADD, "missing source register(s)")
 	//
-	return &Arith[W]{op, constant, sources, targets}
+	return &Arith[W]{op, constant, sources, targets, bitwidth}
 }
 
 // Arith (arithmetic) instruction encodes a wide range of related arithmetic
@@ -37,6 +37,8 @@ type Arith[W word.Word[W]] struct {
 	Constant W
 	Source   []RegisterId
 	Target   []RegisterId
+	// Bitwidth of operands
+	Bitwidth uint16
 }
 
 // IsUnit returns true if this is a "unit" operation.  That is, an assignment of

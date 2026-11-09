@@ -354,10 +354,11 @@ func (t *threader[W]) materialise(s stampState, target bytecode.RegisterId) Byte
 	var constant W
 	//
 	constant = constant.SetUint64(s.off)
+	bw := util.Cast[uint16](t.alloc.Register(target).Bitwidth().Unwrap())
 	//
 	switch {
 	case s.base.IsEmpty():
-		return bytecode.LoadConst(target, constant)
+		return bytecode.LoadConst(target, constant, bw)
 	case s.off == 0:
 		return bytecode.Assign[W](target, s.base.Unwrap())
 	default:
