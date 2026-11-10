@@ -1404,9 +1404,9 @@ func (p *Interpreter[W]) executeAdd_2n1(pc uint32, codes []uint32, stack []W) (u
 // executeAdd_1n1c implements ADDC: stack[rd] = stack[rs] + constant.
 func (p *Interpreter[W]) executeAdd_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                 = stack[rs]
-		res, overflow       = val.Add(constant)
+		rs, rd, constant, _, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                    = stack[rs]
+		res, overflow          = val.Add(constant)
 	)
 	//
 	if overflow {
@@ -2175,9 +2175,9 @@ func (p *Interpreter[W]) executeMul_2n1(pc uint32, codes []uint32, stack []W) (u
 // executeMul_1n1c implements MULC: stack[rd] = stack[rs] * constant.
 func (p *Interpreter[W]) executeMul_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                 = stack[rs]
-		hi, lo              = val.Mul(constant)
+		rs, rd, constant, _, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                    = stack[rs]
+		hi, lo                 = val.Mul(constant)
 	)
 	//
 	if hi.Cmp64(0) != 0 {
@@ -2272,9 +2272,9 @@ func executeShr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 // executeSub_1n1c implements SUBC: stack[rd] = stack[rs] - constant.
 func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                 = stack[rs]
-		res, underflow      = val.Sub(constant)
+		rs, rd, constant, _, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                    = stack[rs]
+		res, underflow         = val.Sub(constant)
 	)
 	//
 	if underflow {
@@ -2302,9 +2302,9 @@ func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, st
 // executeCSub_1c1n implements CSUB: stack[rd] = constant - stack[rs].
 func (p *Interpreter[W]) executeCSub_1c1n(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                 = stack[rs]
-		res, underflow      = constant.Sub(val)
+		rs, rd, constant, bw, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                    = stack[rs]
+		res, underflow         = constant.Sub(val)
 	)
 	//
 	if underflow {
@@ -2319,7 +2319,7 @@ func (p *Interpreter[W]) executeCSub_1c1n(pc uint32, codes []uint32, pool []W, s
 		)
 		sm1, _ := zero.Not(rs_width).Sub64(1)
 		//
-		bitwidth := max(rd_width, 1+max(constant.BitLen(), sm1.BitLen()))
+		bitwidth := max(rd_width, 1+max(uint(bw), sm1.BitLen()))
 		// slice enough values
 		res = res.Slice(bitwidth)
 	}
