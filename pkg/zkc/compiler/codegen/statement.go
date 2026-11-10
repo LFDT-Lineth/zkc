@@ -658,7 +658,8 @@ func (p *StmtCompiler) compileFieldConst(c vm.Uint, _ []uint, target RegisterId,
 	return []Bytecode{vm.AddModP(target, nil, c)}
 }
 
-func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, targets []vm.RegisterId, bitwidth util.Option[uint]) []Bytecode {
+func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, targets []vm.RegisterId,
+	bitwidth util.Option[uint]) []Bytecode {
 	var nargs []Expr
 	//
 	nargs = append(nargs, args...)
@@ -733,7 +734,8 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 	return append(insns, vm.Call[vm.Uint](id, arguments, returns))
 }
 
-func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterPacket, bitwidth util.Option[uint],
+func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterPacket,
+	bitwidth util.Option[uint],
 ) []Bytecode {
 	return []Bytecode{vm.AssignV[vm.Uint](target, util.Cast[uint16](bitwidth.Unwrap()), util.Cast[RegisterId](e.Variable))}
 }
