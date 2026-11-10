@@ -1204,6 +1204,20 @@ func Test_ZkcInvalid_Global_04(t *testing.T) {
 }
 
 // ===================================================================
+// Native Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Native_01(t *testing.T) {
+	// recursive native function
+	checkZkcInvalid(t, "zkc/invalid/native_01")
+}
+
+func Test_ZkcInvalid_Native_02(t *testing.T) {
+	// native function calling another function
+	checkZkcInvalid(t, "zkc/invalid/native_02")
+}
+
+// ===================================================================
 // Test Helpers
 // ===================================================================
 

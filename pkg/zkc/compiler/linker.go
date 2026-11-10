@@ -14,6 +14,7 @@ package compiler
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -87,6 +88,10 @@ type Linker struct {
 	srcmaps      source.Maps[any]
 	declarations []decl.Unresolved
 	names        map[string]bool
+	// native is the name of the native function whose body is currently being
+	// linked, or "" when not linking the body of a native function.  This is
+	// used to reject any function call made from within a native function.
+	native string
 }
 
 // NewLinker constructs a new linker
@@ -224,6 +229,14 @@ func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []sour
 		effects[i], es = p.linkEffect(e)
 		//
 		errs1 = append(errs1, es...)
+	}
+	// A native function is backed by an external circuit which exposes only its
+	// interface (inputs / outputs): its body is neither traced nor constrained.
+	// Hence, it cannot make calls, since these would have no row to connect
+	// their call lookups to.
+	if slices.Contains(fn.Annotations(), "native") {
+		p.native = fn.Name()
+		defer func() { p.native = "" }()
 	}
 	// link code
 	for i, c := range fn.Code {
@@ -659,6 +672,14 @@ func (p *Linker) resolve(name symbol.Unresolved, node any) (symbol.Resolved, []s
 			// now, check arity
 			if msg, err := checkSymbolKind(c, name); err {
 				return sym, p.srcmaps.SyntaxErrors(node, msg)
+			}
+			// check for a call made from within a native function
+			if _, isFn := c.(*decl.UnresolvedFunction); isFn && p.native != "" {
+				if c.Name() == p.native {
+					return sym, p.srcmaps.SyntaxErrors(node, "native function cannot be recursive")
+				}
+				//
+				return sym, p.srcmaps.SyntaxErrors(node, "native function cannot call a function")
 			}
 			// hit
 			return symbol.NewResolved(c.Name(), name.Kind, uint(i)), nil

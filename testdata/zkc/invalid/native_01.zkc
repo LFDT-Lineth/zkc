@@ -1,0 +1,14 @@
+//error:8:13-21:native function cannot be recursive
+// native functions must not call themselves.
+#[native]
+fn f(x:u8) -> (r:u8) {
+    if x == 0 {
+        r = 0
+    } else {
+        r = f(x - 1)
+    }
+}
+
+fn main() {
+    var x:u8 = f(1)
+}

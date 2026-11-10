@@ -194,6 +194,8 @@ func validateProgram(program ast.Program, field field.Config, srcmaps source.Map
 	errors = append(errors, validate.InlineFunctions(program, srcmaps)...)
 	// Check #[global] functions can actually be placed on the bus
 	errors = append(errors, validate.GlobalFunctions(program, srcmaps)...)
+	// Check #[native] functions make no calls
+	errors = append(errors, validate.NativeFunctions(program, srcmaps)...)
 	// Check no static tables have more rows than max-static-height
 	errors = append(errors, validate.StaticTableHeight(program, srcmaps, maxStaticHeight)...)
 	//
