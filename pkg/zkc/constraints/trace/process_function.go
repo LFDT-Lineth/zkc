@@ -61,23 +61,9 @@ func initOneLineFunction[W Word[W], F Element[F]](f vm.Function[W]) (module *tra
 // ============================================================================
 
 // NativeInterfaceWidth returns the number of interface registers of a native
-// function, i.e. its input and output registers.  These always form a prefix of
-// the function's registers (call lookups rely on this, addressing the callee's
-// inputs then outputs positionally from 0).  A native function is backed by an
-// external circuit, so only its interface is visible to the trace and the
-// constraints: its internal registers are never traced.
+// function, i.e. its input and output registers.
 func NativeInterfaceWidth[W Word[W]](f vm.Function[W]) uint {
-	var n uint
-	//
-	for _, r := range f.Registers() {
-		if !r.IsInputOutput() {
-			break
-		}
-		//
-		n++
-	}
-	//
-	return n
+	return f.NumInputs() + f.NumOutputs()
 }
 
 // initNativeFunction initialises a trace module for a native function.  The

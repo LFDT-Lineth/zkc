@@ -1,0 +1,23 @@
+// Test for a native function with several inputs / outputs
+
+pub input data(address:u1) -> (word:u8)
+
+#[native]
+fn copy(x:u8, y:u8) -> (r1:u8, r2:u8) {
+    r1 = y
+    r2 = x
+}
+
+fn main() {
+    var x:u8 = data[0]
+    var y:u8 = data[1]
+
+    var r1:u8
+    var r2:u8
+
+    r1, r2 = copy(x, y)
+
+    if (r2 != x) || (r1 != y) {
+        fail
+    }
+}
