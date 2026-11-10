@@ -496,6 +496,11 @@ func Test_ZkcUnit_Basic_117(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_117", DEFAULT_UNIT_CONFIG)
 }
 
+// basic_115 constant subtractions on u32, so the values are register-split.
+func Test_ZkcUnit_Basic_118(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_118", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // If Tests
 // ===================================================================
