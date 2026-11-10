@@ -233,7 +233,7 @@ func IsSubtractWithBorrow[W word.Word[W]](code BytecodeArith[W], env descriptor.
 		rhsBitwidth uint
 	)
 	if code.Op == OP_CSUB {
-		rhsBitwidth = descriptor.CalculateCSubBitwidth(code.Source, code.Constant, env).Unwrap()
+		rhsBitwidth = descriptor.CalculateCSubBitwidth(code.Source, code.Constant, code.Bitwidth, env).Unwrap()
 	} else {
 		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
 	}
