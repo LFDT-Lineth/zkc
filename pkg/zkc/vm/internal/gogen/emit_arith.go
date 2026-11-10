@@ -67,7 +67,7 @@ func (g *generator) emitArith(c *code, fn *descFunction, x *bytecode.Arith[word.
 
 		return g.emitSub(c, srcs, konst, store, wrap)
 	case bytecode.OP_CSUB:
-		wrap, err := g.csubWrapWidth(fn, x.Source, x.Constant)
+		wrap, err := g.csubWrapWidth(fn, x.Source, x.Constant, x.Bitwidth)
 		if err != nil {
 			return err
 		}
@@ -206,8 +206,10 @@ func (g *generator) subWrapWidth(fn *descFunction, sources []regId, constant wor
 	return 1 + max(lhs, uint(rhsMax.BitLen())), nil
 }
 
-// csubWrapWidth mirrors subWrapWidth: the width of constant - sources.
-func (g *generator) csubWrapWidth(fn *descFunction, sources []regId, constant word.Uint) (uint, error) {
+// csubWrapWidth mirrors CalculateCSubBitwidth: the width of constant - sources.
+// bitwidth is the operation width, which bounds the constant
+func (g *generator) csubWrapWidth(fn *descFunction, sources []regId, constant word.Uint, bitwidth uint16,
+) (uint, error) {
 	lhs := uint(constant.BigInt().BitLen())
 	rhsMax := big.NewInt(0)
 
@@ -222,7 +224,7 @@ func (g *generator) csubWrapWidth(fn *descFunction, sources []regId, constant wo
 	// Negative values do not need to represent zero.
 	rhsMax.Sub(rhsMax, big.NewInt(1))
 
-	return 1 + max(lhs, uint(rhsMax.BitLen())), nil
+	return 1 + max(uint(bitwidth), max(lhs, uint(rhsMax.BitLen()))), nil
 }
 
 // emitCSub emits `target = const - sources[0] - sources[1] - …`.

@@ -48,7 +48,7 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 		// underflows.  See encodeArith_2n1c.
 		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant, p.Bitwidth, env)
 	default:
-		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant, env)
+		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant, p.Bitwidth, env)
 	}
 }
 
@@ -381,12 +381,12 @@ func DecodeMove_1s1(pc uint32, codes []uint32) (rs, rd uint16, n uint32) {
 // encodeArith_vec encodes the general (multi-target, multi-source) vectored form
 // of an arithmetic instruction (ADD_nm/SUB_nm/MUL_nm).
 func encodeArith_vec[W word.Word[W]](aop bytecode.Operation, targets []RegisterId, sources []RegisterId,
-	constant W, env Environment[W]) []uint32 {
+	constant W, operandWidth uint16, env Environment[W]) []uint32 {
 	var (
 		// determine total bitwidth of lhs
 		lhs_bitwidth = descriptor.BitwidthOf(env.RegisterMap(), targets...).Unwrap()
 		// determine bitwidth required for rhs
-		rhs_bitwidth = calculateArithBitwidth(aop, sources, constant, env.RegisterMap())
+		rhs_bitwidth = calculateArithBitwidth(aop, sources, constant, operandWidth, env.RegisterMap())
 		// determine overall bitwidth
 		bitwidth = max(lhs_bitwidth, rhs_bitwidth)
 	)
@@ -458,7 +458,7 @@ func DecodeArith_nm[W word.Word[W]](pc uint32, codes []uint32, pool []W) (
 }
 
 func calculateArithBitwidth[W word.Word[W]](aop bytecode.Operation, sources []RegisterId, constant W,
-	env descriptor.RegisterMap[W]) uint {
+	operandWidth uint16, env descriptor.RegisterMap[W]) uint {
 	//
 	var bitwidth util.Option[uint]
 	//
@@ -468,7 +468,7 @@ func calculateArithBitwidth[W word.Word[W]](aop bytecode.Operation, sources []Re
 	case bytecode.OP_SUB:
 		bitwidth = descriptor.CalculateSubBitwidth(sources, constant, env)
 	case bytecode.OP_CSUB:
-		bitwidth = descriptor.CalculateCSubBitwidth(sources, constant, env)
+		bitwidth = descriptor.CalculateCSubBitwidth(sources, constant, operandWidth, env)
 	case bytecode.OP_MUL:
 		bitwidth = descriptor.CalculateMulBitwidth(sources, constant, env)
 	default:
