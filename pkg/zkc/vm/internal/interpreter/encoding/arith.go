@@ -38,7 +38,7 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 	case n == 1 && m == 1 && cz:
 		return encodeMove_1s1(p.Source[0], p.Target[0])
 	case n == 1 && m == 1:
-		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant, env)
+		return encodeArith_1n1c(p.Op, p.Source[0], p.Target[0], p.Constant, p.Bitwidth, env)
 	case n == 2 && m == 1 && cz:
 		return encodeArith_2n1(p.Op, p.Source[0], p.Source[1], p.Target[0])
 	case n == 2 && m == 1 && !bytecode.IsSubtractOperation(p.Op):
@@ -46,7 +46,7 @@ func Arith[W word.Word[W]](p bytecode.Arith[W], env Environment[W]) []uint32 {
 		// which is not equivalent to the single wrap (at CalculateSubBitwidth
 		// width) that the vectored form performs when the first step
 		// underflows.  See encodeArith_2n1c.
-		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant, env)
+		return encodeArith_2n1c(p.Op, p.Source[0], p.Source[1], p.Target[0], p.Constant, p.Bitwidth, env)
 	default:
 		return encodeArith_vec(p.Op, p.Target, p.Source, p.Constant, env)
 	}
@@ -115,15 +115,20 @@ func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 // +--------+--------+--------+--------+
 // |  imm8  |   rs   |   rd   | opcode |
 // +--------+--------+--------+--------+
+// |       n/a       |     bitwidth    |
+// +-----------------+-----------------+
 //
 // Here, rs is a u8 source register, rd is a u8 destination register, imm8 is
-// the small constant operand and opcode is ADDC, SUBC or MULC.  The wide form
-// replaces the constant operand with a u16 constant pool identifier, moving
-// the (now u16) registers into a subsequent word:
+// the small constant operand and opcode is ADDC, SUBC or MULC.  The
+// following word carries the operand bitwidth.  The wide form replaces the
+// constant operand with a u16 constant pool identifier, moving the (now u16)
+// registers into a third word:
 //
 // +--------+--------+--------+--------+
 // |       cid       |  wop   |  WIDE  |
 // +--------+--------+--------+--------+
+// |       n/a       |     bitwidth    |
+// +-----------------+-----------------+
 // |       rs        |        rd       |
 // +-----------------+-----------------+
 //
@@ -137,7 +142,7 @@ func DecodeArith_2n1(pc uint32, codes []uint32) (rs0, rs1, rd uint16, n uint32) 
 // wraps per-instruction on underflow, so splitting it would wrap at the wrong
 // width — SUB must use the vectored form instead (see Arith).
 func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint16, constant W,
-	env Environment[W]) []uint32 {
+	bitwidth uint16, env Environment[W]) []uint32 {
 	// Sanity check
 	if bytecode.IsSubtractOperation(aop) {
 		panic("two-step encoding unsound for subtraction")
@@ -147,48 +152,54 @@ func encodeArith_2n1c[W word.Word[W]](aop bytecode.Operation, rs0, rs1, rd uint1
 	// one-source instruction operating in place on the target.
 	codes := encodeArith_2n1(aop, rs0, rs1, rd)
 	//
-	return append(codes, encodeArith_1n1c(aop, rd, rd, constant, env)...)
+	return append(codes, encodeArith_1n1c(aop, rd, rd, constant, bitwidth, env)...)
 }
 
 // encodeArith_1n1c encodes a one-source, one-target arithmetic-with-constant
-// instruction (ADDC/SUBC/MULC).
+// instruction (ADDC/SUBC/MULC/CSUB).
 func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, constant W,
-	env Environment[W]) []uint32 {
+	bitwidth uint16, env Environment[W]) []uint32 {
 	//
 	var (
 		offset = uint32(aop - bytecode.OP_ADD)
 		opcode = ADDC + uint32(aop-bytecode.OP_ADD)
 	)
 	// The wide (pooled) form carries a constant of arbitrary width; the narrow
-	// form only a u8 immediate.
+	// form only a u8 immediate.  Both carry the operand bitwidth in the
+	// following word.
 	if IsWideRegisters(rs, rd) || constant.Cmp64(0xff) > 0 {
 		return []uint32{
 			uint32(env.ConstantIndex(constant))<<16 | (WIDE_ADDC+offset)<<8 | WIDE,
+			uint32(bitwidth),
 			uint32(rd) | uint32(rs)<<16,
 		}
 	}
 	//
 	return []uint32{
 		uint32(constant.Uint64())<<24 | uint32(rs)<<16 | uint32(rd)<<8 | opcode,
+		uint32(bitwidth),
 	}
 }
 
 // DecodeArith_1n1c decodes a one-source-plus-constant arithmetic instruction,
-// returning the source and destination registers, constant and instruction width.
-func DecodeArith_1n1c[W word.Word[W]](pc uint32, codes []uint32, pool []W) (rs, rd uint16, constant W, n uint32) {
+// returning the source and destination registers, constant, operand bitwidth
+// and instruction width.
+func DecodeArith_1n1c[W word.Word[W]](pc uint32, codes []uint32, pool []W) (rs, rd uint16, constant W, bitwidth uint16, n uint32) {
+	bitwidth = uint16(codes[pc+1])
+	//
 	if IsWideForm(pc, codes) {
 		constant = pool[codes[pc]>>16]
-		rd = RegisterId(codes[pc+1] & 0xffff)
-		rs = RegisterId(codes[pc+1] >> 16)
+		rd = RegisterId(codes[pc+2] & 0xffff)
+		rs = RegisterId(codes[pc+2] >> 16)
 		//
-		return rs, rd, constant, 2
+		return rs, rd, constant, bitwidth, 3
 	}
 	//
 	constant = constant.SetUint64(uint64((codes[pc] >> 24) & 0xff))
 	rd = RegisterId((codes[pc] >> 8) & 0xff)
 	rs = RegisterId((codes[pc] >> 16) & 0xff)
 	//
-	return rs, rd, constant, 1
+	return rs, rd, constant, bitwidth, 2
 }
 
 // ============================================================================
