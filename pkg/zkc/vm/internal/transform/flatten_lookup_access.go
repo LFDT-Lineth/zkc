@@ -194,6 +194,7 @@ func snapshotUses[W Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 			// copy.
 			if bw.IsEmpty() {
 				var zero W
+				//
 				insns = append(insns, bytecode.NewFieldArith(bytecode.OP_ADDMOD_P, tmp,
 					[]bytecode.RegisterId{use}, zero))
 			} else {

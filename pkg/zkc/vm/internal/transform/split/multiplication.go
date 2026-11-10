@@ -387,6 +387,7 @@ func scalarStep[W word.Word[W]](alloc Allocator[W], g uint, a []RegisterId, k W,
 			}
 			//
 			var wb = uint(kj.BigInt().BitLen())
+			//
 			var pp = allocSubLimbs(alloc, "pp", g, wa+wb)
 			//
 			insns = append(insns, bytecode.MulVecConst(pp, []RegisterId{ai}, kj, util.Cast[uint16](wa+wb)))

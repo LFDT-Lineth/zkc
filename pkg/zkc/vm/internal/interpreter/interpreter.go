@@ -2317,6 +2317,7 @@ func (p *Interpreter[W]) executeCSub_1c1n(pc uint32, codes []uint32, pool []W, s
 			rd_width = module.Register(rd).Bitwidth().Unwrap()
 			rs_width = module.Register(rs).Bitwidth().Unwrap()
 		)
+		//
 		sm1, _ := zero.Not(rs_width).Sub64(1)
 		//
 		bitwidth := max(rd_width, 1+max(uint(bw), sm1.BitLen()))
