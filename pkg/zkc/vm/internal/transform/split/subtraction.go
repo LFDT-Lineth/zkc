@@ -124,7 +124,8 @@ func breakupSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
 		// Create "fake" register to use for addition
 		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
 		// Sum the sources only
-		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source, zero, util.Cast[uint16](bitwidth))
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source, zero,
+			util.Cast[uint16](bitwidth))
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
 		// create new subtraction
@@ -135,11 +136,13 @@ func breakupSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
 		// Create "fake" register to use for addition
 		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
 		// Create addition for splitting
-		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:], insn.Constant, util.Cast[uint16](bitwidth))
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:],
+			insn.Constant, util.Cast[uint16](bitwidth))
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
 		// create new subtraction
-		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero, insn.Bitwidth)
+		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg},
+			zero, insn.Bitwidth)
 	}
 	//
 	return pre, sub, nmapping

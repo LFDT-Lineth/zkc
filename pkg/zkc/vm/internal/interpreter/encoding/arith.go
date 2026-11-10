@@ -184,7 +184,8 @@ func encodeArith_1n1c[W word.Word[W]](aop bytecode.Operation, rs, rd uint16, con
 // DecodeArith_1n1c decodes a one-source-plus-constant arithmetic instruction,
 // returning the source and destination registers, constant, operand bitwidth
 // and instruction width.
-func DecodeArith_1n1c[W word.Word[W]](pc uint32, codes []uint32, pool []W) (rs, rd uint16, constant W, bitwidth uint16, n uint32) {
+func DecodeArith_1n1c[W word.Word[W]](pc uint32, codes []uint32, pool []W) (rs, rd uint16, constant W,
+	bitwidth uint16, n uint32) {
 	bitwidth = uint16(codes[pc+1])
 	//
 	if IsWideForm(pc, codes) {

@@ -109,7 +109,8 @@ func lowerRelationalSkipIf[W Word[W]](
 	//
 	insns := []Bytecode[W]{
 		// sign::lo = lhs - rhs
-		bytecode.SubVecConst([]bytecode.RegisterId{lo, sign}, []bytecode.RegisterId{lhs, rhs}, zero, util.Cast[uint16](castBandWidth)),
+		bytecode.SubVecConst([]bytecode.RegisterId{lo, sign}, []bytecode.RegisterId{lhs, rhs}, zero,
+			util.Cast[uint16](castBandWidth)),
 	}
 	// Finally emit the SkipIf with the appropriate condition on the sign bit
 	finalCond := bytecode.CONDITION_EQ
@@ -176,7 +177,8 @@ func lowerRelationalSkipIfConst[W Word[W]](
 	//
 	insns := []Bytecode[W]{
 		// sign::lo = lhs - constant
-		bytecode.SubVecConst([]bytecode.RegisterId{lo, sign}, []bytecode.RegisterId{lhs}, constant, util.Cast[uint16](castBandWidth)),
+		bytecode.SubVecConst([]bytecode.RegisterId{lo, sign}, []bytecode.RegisterId{lhs}, constant,
+			util.Cast[uint16](castBandWidth)),
 	}
 	// Finally emit the SkipIf with the appropriate condition on the sign bit
 	finalCond := bytecode.CONDITION_EQ
