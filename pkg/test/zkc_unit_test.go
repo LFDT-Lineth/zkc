@@ -486,6 +486,18 @@ func Test_ZkcUnit_Basic_115(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_115", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Basic_116(t *testing.T) {
+	// #2007: support implicit sign bit
+	checkZkcUnit(t, "zkc/unit/basic_116", DEFAULT_UNIT_CONFIG.
+		GoGen(false).Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_117(t *testing.T) {
+	// #2007: support implicit sign bit, for now constraint generation panics.
+	test_util.CheckConstraintPanic(t, "zkc/unit/basic_117",
+		"subtract with borrow bytecode missing sign bit")
+}
+
 // ===================================================================
 // If Tests
 // ===================================================================

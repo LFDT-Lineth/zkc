@@ -140,9 +140,11 @@ func (p *InstructionTranslator[W, F]) translateCSub(code *vm.BytecodeArith[W], e
 		isSbb        = vm.IsSubtractWithBorrow(*code, enclosing)
 		hasSignedBit = hasSignedBit(code.Target, enclosing)
 	)
-	// Rebalance only when splitting appended a u1 borrow
+	// 
 	if isSbb && hasSignedBit {
 		return p.translateSignedCSub(code.Target, code.Source, code.Constant)
+	} else if isSbb {
+		panic("subtract with borrow bytecode missing sign bit")
 	}
 	//
 	return p.translateUnsignedCSub(code.Target, code.Source, code.Constant)
