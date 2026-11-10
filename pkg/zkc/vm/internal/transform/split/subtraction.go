@@ -114,7 +114,7 @@ func breakupSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W],
 		bitwidth uint
 		sub      *bytecode.Arith[W]
 		tmpReg   RegisterId
-		nmapping descriptor.LimbsMap[W]
+		nmapping LimbsMap[W]
 		pre      []Bytecode[W]
 		fakeAdd  *bytecode.Arith[W]
 	)
