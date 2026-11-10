@@ -28,6 +28,9 @@ type partAdd[W word.Word[W]] struct {
 	targets  []RegisterId
 	sources  []RegisterId
 	constant W
+	// bitwidth is the width of this chunk's targets before a carry line is
+	// appended.
+	bitwidth uint16
 }
 
 // Addition splits an add instruction into one (or more) add instructions,
@@ -85,12 +88,14 @@ func initialiseAddChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W]
 			c   = lazy.IfDefault(i < nConstants, lazy.Read(i, constants))
 		)
 		//
-		codes = append(codes, partAdd[W]{lhs, mapAddRhs(rhs), c})
+		codes = append(codes, partAdd[W]{lhs, mapAddRhs(rhs), c, addChunkBitwidth(alloc, lhs)})
 	}
 	// Handle overhangs.  This arises e.g. when assigning a small constant to a
 	// wide target register.
 	for stack.Size() > 0 {
-		codes = append(codes, partAdd[W]{[]RegisterId{stack.Pop()}, nil, zero})
+		var limb = []RegisterId{stack.Pop()}
+		//
+		codes = append(codes, partAdd[W]{limb, nil, zero, addChunkBitwidth(alloc, limb)})
 	}
 	//
 	return codes, stack.post
@@ -127,6 +132,12 @@ func insertAddCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partAdd[W]
 	return chunks
 }
 
+// addChunkBitwidth is the width of a chunk's targets before any carry line is
+// appended.
+func addChunkBitwidth[W word.Word[W]](alloc Allocator[W], targets []RegisterId) uint16 {
+	return util.Cast[uint16](descriptor.BitwidthOf(alloc, targets...).Unwrap())
+}
+
 func addRhsBitwidth[W word.Word[W]](chunk partAdd[W], mapping descriptor.RegisterMap[W]) uint {
 	return descriptor.CalculateAddBitwidth(chunk.sources, chunk.constant, mapping).Unwrap()
 }
@@ -146,5 +157,5 @@ func mapAddRhs(rhs []util.Option[RegisterId]) []RegisterId {
 // addAssignment lowers a chunk back into a concrete unsigned-add instruction.
 func addAssignment[W word.Word[W]](_ uint, chunk partAdd[W]) Bytecode[W] {
 	// Done
-	return bytecode.AddVecConst(chunk.targets, chunk.sources, chunk.constant)
+	return bytecode.AddVecConst(chunk.targets, chunk.sources, chunk.constant, chunk.bitwidth)
 }

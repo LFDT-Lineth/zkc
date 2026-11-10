@@ -151,7 +151,7 @@ func lowerBitwiseShlShr[W Word[W]](
 	if truncate {
 		high := registers.Allocate("shl_res_high", util.Some(maxWidth-width))
 		code = append(code, bytecode.AddVec[W](
-			[]bytecode.RegisterId{b.Target, high}, []bytecode.RegisterId{result}))
+			[]bytecode.RegisterId{b.Target, high}, []bytecode.RegisterId{result}, util.Cast[uint16](maxWidth)))
 	}
 
 	return code
@@ -168,7 +168,7 @@ func inlineBitwiseNot[W Word[W]](b *bytecode.Bitwise[W], registers split.Allocat
 
 	return []Bytecode[W]{
 		// CSUB with constant = mask
-		bytecode.SubConstVec([]bytecode.RegisterId{b.Target}, []bytecode.RegisterId{b.Left}, mask),
+		bytecode.SubConstVec([]bytecode.RegisterId{b.Target}, []bytecode.RegisterId{b.Left}, mask, b.Bitwidth),
 	}
 }
 

@@ -275,7 +275,7 @@ func newRecursiveRangeModule[W Word[W]](name string, width uint, s rangeSplit,
 		// (little-endian targets, so lo receives the low bits).  The subsequent
 		// checks read lo/hi via in-vector forwarding, so they see the destructured
 		// values.
-		codes = []Bytecode[W]{bytecode.AddVec[W]([]bytecode.RegisterId{loID, hiID}, []bytecode.RegisterId{valID})}
+		codes = []Bytecode[W]{bytecode.AddVec[W]([]bytecode.RegisterId{loID, hiID}, []bytecode.RegisterId{valID}, util.Cast[uint16](width))}
 	)
 	// Range-check each half to:
 	// a static table (<= maxStaticWidth): nothing to do here, the lookup will be added at constraint generation.

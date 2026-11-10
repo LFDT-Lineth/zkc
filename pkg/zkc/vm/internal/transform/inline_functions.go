@@ -18,6 +18,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -212,11 +213,11 @@ func inlineCallSite[W Word[W]](code []BytecodeVector[W], pc, k uint, call *bytec
 	// remapped.
 	preCodes := remapJumps(bytecode.NewVector(codes[:k]...), pc, delta)
 	// Construct entry vector (argument copies), falling through into the body.
-	vPre := buildEntryVector[W](preCodes.Bytecodes, shadows.entryCopies, pc+1)
+	vPre := buildEntryVector[W](preCodes.Bytecodes, shadows.entryCopies, pc+1, alloc)
 	// Construct callee body
 	body := buildInlinedBody[W](callee, shadows.registers, pc+1, exitPC)
 	// Construct exit vector (output copies)
-	vPost := buildExitVector[W](codes[k+1:], shadows.exitCopies)
+	vPost := buildExitVector[W](codes[k+1:], shadows.exitCopies, alloc)
 	// Splice, remapping all jumps within original caller vectors (including
 	// v_post, whose codes originate from vector pc).
 	ncode := make([]BytecodeVector[W], 0, uint(len(code))+delta)
@@ -418,12 +419,13 @@ func sameShape[W Word[W]](a, b Register[W]) bool {
 // be in order to execute --- which matters when the call was the sole code of
 // its vector and no argument copies were needed.
 func buildEntryVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
-	bodyPC uint) BytecodeVector[W] {
+	bodyPC uint, alloc split.Allocator[W]) BytecodeVector[W] {
 	//
 	var ncodes = slices.Clone(codes)
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source))
+		bw := util.Cast[uint16](alloc.Register(c.target).Bitwidth().Unwrap())
+		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source, bw))
 	}
 	// Fall through into the callee body, which immediately follows.  Observe
 	// that appending here cannot disturb any skip within codes, since skip
@@ -441,11 +443,13 @@ func buildEntryVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
 // call's return registers, followed by all codes succeeding the call.  Placing
 // the copies here (rather than at each return site within the body) ensures they
 // are emitted exactly once.
-func buildExitVector[W Word[W]](codes []Bytecode[W], copies []registerCopy) BytecodeVector[W] {
+func buildExitVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
+	alloc split.Allocator[W]) BytecodeVector[W] {
 	var ncodes []Bytecode[W]
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source))
+		bw := util.Cast[uint16](alloc.Register(c.target).Bitwidth().Unwrap())
+		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source, bw))
 	}
 	//
 	ncodes = append(ncodes, codes...)
@@ -501,7 +505,14 @@ func substituteRegisters[W Word[W]](insn Bytecode[W], sub []bytecode.RegisterId)
 		return bytecode.NewFieldArith(insn.Op, substituteId(insn.Target, sub), substituteIds(insn.Sources, sub),
 			insn.Constant)
 	case *bytecode.Cat[W]:
-		return bytecode.AssignV[W](substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub)...)
+		// Copy the Cat directly. AssignV requires a bitwidth and stores it only
+		// for a single-register move, which it returns as an Assign. A Cat
+		// cannot have that shape, and every other shape is rebuilt as a Cat
+		// with the width discarded.
+		return &bytecode.Cat[W]{
+			Targets: substituteIds(insn.Targets, sub),
+			Sources: substituteIds(insn.Sources, sub),
+		}
 	case *bytecode.UintToField[W]:
 		return &bytecode.UintToField[W]{Target: substituteId(insn.Target, sub), Source: substituteIds(insn.Source, sub)}
 	case *bytecode.FieldToUint[W]:
