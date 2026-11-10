@@ -1,0 +1,10 @@
+pub input data(address:u8) -> (word:u16)
+pub output out(address:u8) -> (word:u16)
+
+// 0x100 does not fit in a byte, so this one-target constant subtraction is
+// encoded as WIDE_CSUB.
+fn main() {
+    var x:u16 = data[0]
+    var r:u16 = 0x100 - x
+    out[0] = r
+}
