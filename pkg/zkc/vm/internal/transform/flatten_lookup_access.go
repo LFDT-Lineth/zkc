@@ -191,7 +191,7 @@ func snapshotUses[W Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 
 			// If the register has no width, it is a field register.
 			// the temporary stays native and the snapshot is a field
-			// copy. 
+			// copy.
 			if bw.IsEmpty() {
 				var zero W
 				insns = append(insns, bytecode.NewFieldArith(bytecode.OP_ADDMOD_P, tmp,

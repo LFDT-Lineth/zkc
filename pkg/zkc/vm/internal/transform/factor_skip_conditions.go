@@ -277,11 +277,11 @@ func factorSkipIf[W Word[W]](
 	registers split.Allocator[W],
 ) []Bytecode[W] {
 	var (
-		zero = word.Const64[W](0)
-		one  = word.Const64[W](1)
-		u1   = util.Some[uint](1)
+		zero  = word.Const64[W](0)
+		one   = word.Const64[W](1)
+		u1    = util.Some[uint](1)
 		u1_16 = util.Cast[uint16](u1.Unwrap())
-		b    = registers.Allocate("fsc", u1)
+		b     = registers.Allocate("fsc", u1)
 	)
 	//
 	return []Bytecode[W]{

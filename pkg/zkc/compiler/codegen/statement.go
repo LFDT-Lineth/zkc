@@ -536,7 +536,7 @@ func destructUnit[T any](p *StmtCompiler, args T, bitwidth uint, mapping []uint,
 	// Translate expression
 	insns := fn(args, bitwidth, mapping, tmp)
 	// Cast bitwidth to uint16
-	bw16  := util.Cast[uint16](bitwidth)
+	bw16 := util.Cast[uint16](bitwidth)
 	// Generate destruct
 	return append(insns, vm.AddVec[vm.Uint](targets, []RegisterId{tmp}, bw16))
 }
