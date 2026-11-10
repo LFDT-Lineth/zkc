@@ -492,6 +492,10 @@ func Test_ZkcUnit_Basic_116(t *testing.T) {
 		GoGen(false).Constraints(false))
 }
 
+func Test_ZkcUnit_Basic_117(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_117", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // If Tests
 // ===================================================================
