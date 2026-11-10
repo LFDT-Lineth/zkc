@@ -1,19 +1,29 @@
-pub input data(address:u2) -> (word:u64)
+pub input data(address:u16) -> (word:u8)
 
-// Regression test: a concatenation whose operands straddle register limbs
-// (u40::u8::u16 into a u64).  On fields with a 48-bit bandwidth and 32-bit
-// registers (e.g. MAMABEAR_32), splitting assigned only the u8::u16 operands to
-// the low u32 limb of the target, placing the u40 operand at bit 32 instead of
-// bit 24 (and overflowing the high u32 limb).
+// Subtraction from a constant (CSUB).  Inputs are a and b, followed by the
+// expected value of each case.
 fn main() {
-    var x:u40 = data[0] as u40
-    var y:u8 = data[1] as u8
-    var z:u16 = data[2] as u16
-    var expected:u64 = data[3]
+    var a:u8 = data[0]
+    var b:u8 = data[1]
+    // CSUB_1c1n cases
+    var csub_1c1n_case0:u8 = 3 - a
+    var csub_1c1n_case1:u8 = 3 - a - 2
+
+    // CSUB_nm cases
+    var csub_2n1m:u8 = 3 - a - b
+    var csub_1n2m_0:u4
+    var csub_1n2m_1:u4
+    csub_1n2m_1::csub_1n2m_0 = 171 - a
     //
-    var actual:u64 = x::y::z
-    //
-    if actual != expected {
+    if csub_1c1n_case0 != data[2] {
+        fail
+    } else if csub_1c1n_case1 != data[3] {
+        fail
+    } else if csub_2n1m != data[4] {
+        fail
+    } else if (csub_1n2m_1 as u8) != data[5] {
+        fail
+    } else if (csub_1n2m_0 as u8) != data[6] {
         fail
     }
 }
