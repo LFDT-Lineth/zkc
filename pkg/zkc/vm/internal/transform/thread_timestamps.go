@@ -360,9 +360,9 @@ func (t *threader[W]) materialise(s stampState, target bytecode.RegisterId) Byte
 	case s.base.IsEmpty():
 		return bytecode.LoadConst(target, constant, bw)
 	case s.off == 0:
-		return bytecode.Assign[W](target, s.base.Unwrap())
+		return bytecode.Assign[W](target, s.base.Unwrap(), bw)
 	default:
-		return bytecode.AddConst(target, []bytecode.RegisterId{s.base.Unwrap()}, constant)
+		return bytecode.AddConst(target, []bytecode.RegisterId{s.base.Unwrap()}, constant, bw)
 	}
 }
 

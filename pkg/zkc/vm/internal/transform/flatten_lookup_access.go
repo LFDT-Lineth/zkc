@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"slices"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -185,8 +186,9 @@ func snapshotUses[W Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 	//
 	for i, use := range ids {
 		if snapshot[i] {
-			tmp := registers.Allocate("fla", registers.Register(use).Bitwidth())
-			insns = append(insns, bytecode.Assign[W](tmp, use))
+			bw := registers.Register(use).Bitwidth().Unwrap()
+			tmp := registers.Allocate("fla", util.Some(bw))
+			insns = append(insns, bytecode.Assign[W](tmp, use, util.Cast[uint16](bw)))
 			ids[i] = tmp
 		}
 	}

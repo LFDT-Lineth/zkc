@@ -205,12 +205,12 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 	// that at most one b_j is 1 (each being a bit itself).
 	//
 	var (
-		bdef = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
+		bdef = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), u1)
 	)
 
 	codes = append(codes,
 		// b_default = one - b_0 - ... - b_{n-1}
-		bytecode.CSubConst(bdef, bits, one))
+		bytecode.CSubConst(bdef, bits, one, u1_16))
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.

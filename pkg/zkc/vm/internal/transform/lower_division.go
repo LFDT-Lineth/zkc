@@ -115,22 +115,24 @@ func divisorWidth[W Word[W]](y bytecode.Operand[W], registers split.Allocator[W]
 func expandDivMod[W Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[W], nX, nY uint,
 	registers split.Allocator[W]) []Bytecode[W] {
 	var (
-		zero = word.Const64[W](0)
-		one  = word.Const64[W](1)
-		qy   = registers.Allocate("qy", util.Some(nX))
-		qyr  = registers.Allocate("qy_plus_r", util.Some(nX))
-		rw1  = registers.Allocate("rw1", util.Some(nY))
-		z    = registers.ZeroRegister()
+		zero  = word.Const64[W](0)
+		one   = word.Const64[W](1)
+		qy    = registers.Allocate("qy", util.Some(nX))
+		qyr   = registers.Allocate("qy_plus_r", util.Some(nX))
+		rw1   = registers.Allocate("rw1", util.Some(nY))
+		z     = registers.ZeroRegister()
+		nX_bw = util.Cast[uint16](nX)
+		nY_bw = util.Cast[uint16](nY)
 
 		mulQY, subZ1 Bytecode[W]
 	)
 	//
 	if y.IsConstant() {
-		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q}, y.AsConstant())
-		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{rw1}, y.AsConstant())
+		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q}, y.AsConstant(), nX_bw)
+		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{rw1}, y.AsConstant(), nY_bw)
 	} else {
-		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q, y.AsRegister()}, one)
-		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{y.AsRegister(), rw1}, zero)
+		mulQY = bytecode.MulConst(qy, []bytecode.RegisterId{q, y.AsRegister()}, one, nX_bw)
+		subZ1 = bytecode.SubConst(z, []bytecode.RegisterId{y.AsRegister(), rw1}, zero, nY_bw)
 	}
 	//
 	return []Bytecode[W]{
@@ -140,9 +142,9 @@ func expandDivMod[W Word[W]](q, r, w, x bytecode.RegisterId, y bytecode.Operand[
 			},
 			[]bytecode.Operand[W]{bytecode.NewRegisterOperand[W](x), y}),
 		mulQY,
-		bytecode.AddConst(qyr, []bytecode.RegisterId{qy, r}, zero),
-		bytecode.SubConst(z, []bytecode.RegisterId{x, qyr}, zero),
-		bytecode.AddConst(rw1, []bytecode.RegisterId{r, w}, one),
+		bytecode.AddConst(qyr, []bytecode.RegisterId{qy, r}, zero, nX_bw),
+		bytecode.SubConst(z, []bytecode.RegisterId{x, qyr}, zero, nX_bw),
+		bytecode.AddConst(rw1, []bytecode.RegisterId{r, w}, one, nY_bw),
 		subZ1,
 	}
 }

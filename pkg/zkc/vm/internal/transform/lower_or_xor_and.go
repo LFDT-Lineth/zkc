@@ -271,15 +271,15 @@ func alignedBitwidthOf[W word.Word[W]](regs []Register[W], field field.Config, a
 func emitUnitBitwise[W Word[W]](op bytecode.Operation, registers split.Allocator[W],
 	target, left, right bytecode.RegisterId) []Bytecode[W] {
 	var (
-		zero = word.Const64[W](0)
-		one  = word.Const64[W](1)
-		bit  = util.Some[uint](1)
+		zero  = word.Const64[W](0)
+		one   = word.Const64[W](1)
+		bit   = util.Some[uint](1)
 		bit16 = util.Cast[uint16](bit.Unwrap())
 	)
 	//
 	switch op {
 	case bytecode.OP_AND:
-		return []Bytecode[W]{bytecode.MulConst(target, []bytecode.RegisterId{left, right}, one)}
+		return []Bytecode[W]{bytecode.MulConst(target, []bytecode.RegisterId{left, right}, one, bit16)}
 	case bytecode.OP_OR:
 		oneReg := registers.Allocate("loxa", bit)
 		na := registers.Allocate("loxa", bit)
@@ -287,9 +287,9 @@ func emitUnitBitwise[W Word[W]](op bytecode.Operation, registers split.Allocator
 		//
 		return []Bytecode[W]{
 			bytecode.LoadConst(oneReg, one, bit16),
-			bytecode.SubConst(na, []bytecode.RegisterId{oneReg, left}, zero),
-			bytecode.MulConst(prod, []bytecode.RegisterId{na, right}, one),
-			bytecode.AddConst(target, []bytecode.RegisterId{left, prod}, zero),
+			bytecode.SubConst(na, []bytecode.RegisterId{oneReg, left}, zero, bit16),
+			bytecode.MulConst(prod, []bytecode.RegisterId{na, right}, one, bit16),
+			bytecode.AddConst(target, []bytecode.RegisterId{left, prod}, zero, bit16),
 		}
 	case bytecode.OP_XOR:
 		oneReg := registers.Allocate("loxa", bit)
@@ -300,11 +300,11 @@ func emitUnitBitwise[W Word[W]](op bytecode.Operation, registers split.Allocator
 		//
 		return []Bytecode[W]{
 			bytecode.LoadConst(oneReg, one, bit16),
-			bytecode.SubConst(nb, []bytecode.RegisterId{oneReg, right}, zero),
-			bytecode.SubConst(na, []bytecode.RegisterId{oneReg, left}, zero),
-			bytecode.MulConst(l, []bytecode.RegisterId{left, nb}, one),
-			bytecode.MulConst(r, []bytecode.RegisterId{na, right}, one),
-			bytecode.AddConst(target, []bytecode.RegisterId{l, r}, zero),
+			bytecode.SubConst(nb, []bytecode.RegisterId{oneReg, right}, zero, bit16),
+			bytecode.SubConst(na, []bytecode.RegisterId{oneReg, left}, zero, bit16),
+			bytecode.MulConst(l, []bytecode.RegisterId{left, nb}, one, bit16),
+			bytecode.MulConst(r, []bytecode.RegisterId{na, right}, one, bit16),
+			bytecode.AddConst(target, []bytecode.RegisterId{l, r}, zero, bit16),
 		}
 	default:
 		panic(fmt.Sprintf("unsupported unit bitwise operation: %d", op))
@@ -359,7 +359,7 @@ func newDecomposedNaryHelper[W Word[W]](
 				agg = b.combineBit(op, agg, inp)
 			}
 
-			b.emit(bytecode.Assign[W](b.outputs[i], agg))
+			b.emit(bytecode.Assign[W](b.outputs[i], agg, bw16))
 		}
 	} else {
 		// Recursive case: destructure each operand into a low and a high half
@@ -380,7 +380,7 @@ func newDecomposedNaryHelper[W Word[W]](
 			lo := b.newComputedWidth(fmt.Sprintf("arg_%d_lo", i+1), loWidth)
 			hi := b.newComputedWidth(fmt.Sprintf("arg_%d_hi", i+1), hiWidth)
 			// UintDestruct: split arg into [lo, hi] (little-endian limbs).
-			b.emit(bytecode.AddVec[W]([]bytecode.RegisterId{lo, hi}, []bytecode.RegisterId{arg}))
+			b.emit(bytecode.AddVec[W]([]bytecode.RegisterId{lo, hi}, []bytecode.RegisterId{arg}, util.Cast[uint16](b.width)))
 			lowSrcs[i] = lo
 			highSrcs[i] = hi
 		}
@@ -399,7 +399,7 @@ func newDecomposedNaryHelper[W Word[W]](
 		b.emit(invokeNary[W](hiID, hiIsTable, highSrcs, resHigh))
 
 		for i := range bitwiseOps {
-			b.emit(bytecode.AssignV[W]([]bytecode.RegisterId{b.outputs[i]}, resLow[i], resHigh[i]))
+			b.emit(bytecode.AssignV[W]([]bytecode.RegisterId{b.outputs[i]}, util.Cast[uint16](b.width), resLow[i], resHigh[i]))
 		}
 	}
 
@@ -513,7 +513,7 @@ func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs byt
 	switch op {
 	case bytecode.OP_AND:
 		res := p.newComputed("and")
-		p.emit(bytecode.MulConst(res, []bytecode.RegisterId{lhs, rhs}, one))
+		p.emit(bytecode.MulConst(res, []bytecode.RegisterId{lhs, rhs}, one, bw16))
 
 		return res
 	case bytecode.OP_OR:
@@ -522,13 +522,13 @@ func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs byt
 		p.emit(bytecode.LoadConst(oneReg, one, bw16))
 
 		na := p.newComputed("or_na")
-		p.emit(bytecode.SubConst(na, []bytecode.RegisterId{oneReg, lhs}, zero))
+		p.emit(bytecode.SubConst(na, []bytecode.RegisterId{oneReg, lhs}, zero, bw16))
 
 		prod := p.newComputed("or_prod")
-		p.emit(bytecode.MulConst(prod, []bytecode.RegisterId{na, rhs}, one))
+		p.emit(bytecode.MulConst(prod, []bytecode.RegisterId{na, rhs}, one, bw16))
 
 		res := p.newComputed("or")
-		p.emit(bytecode.AddConst(res, []bytecode.RegisterId{lhs, prod}, zero))
+		p.emit(bytecode.AddConst(res, []bytecode.RegisterId{lhs, prod}, zero, bw16))
 
 		return res
 	case bytecode.OP_XOR:
@@ -537,19 +537,19 @@ func (p *bitwiseHelperBuilder[W]) combineBit(op bytecode.Operation, lhs, rhs byt
 		p.emit(bytecode.LoadConst(oneReg, one, bw16))
 
 		nb := p.newComputed("xor_nb")
-		p.emit(bytecode.SubConst(nb, []bytecode.RegisterId{oneReg, rhs}, zero))
+		p.emit(bytecode.SubConst(nb, []bytecode.RegisterId{oneReg, rhs}, zero, bw16))
 
 		na := p.newComputed("xor_na")
-		p.emit(bytecode.SubConst(na, []bytecode.RegisterId{oneReg, lhs}, zero))
+		p.emit(bytecode.SubConst(na, []bytecode.RegisterId{oneReg, lhs}, zero, bw16))
 
 		l := p.newComputed("xor_l")
-		p.emit(bytecode.MulConst(l, []bytecode.RegisterId{lhs, nb}, one))
+		p.emit(bytecode.MulConst(l, []bytecode.RegisterId{lhs, nb}, one, bw16))
 
 		r := p.newComputed("xor_r")
-		p.emit(bytecode.MulConst(r, []bytecode.RegisterId{na, rhs}, one))
+		p.emit(bytecode.MulConst(r, []bytecode.RegisterId{na, rhs}, one, bw16))
 
 		res := p.newComputed("xor")
-		p.emit(bytecode.AddConst(res, []bytecode.RegisterId{l, r}, zero))
+		p.emit(bytecode.AddConst(res, []bytecode.RegisterId{l, r}, zero, bw16))
 
 		return res
 	default:

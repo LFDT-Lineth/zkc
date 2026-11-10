@@ -255,14 +255,15 @@ func newShiftLevelHelper[W Word[W]](maxWidth, level, subID uint) descriptor.Modu
 	a, n := b.value, b.amount
 	outShl, outShr := b.outShl, b.outShr
 	zero := word.Const64[W](0)
+	bw16 := util.Cast[uint16](b.width)
 
 	if level == 1 {
 		// if n == 0: return (a, a)
 		b.emit(bytecode.NewSkipIf(bytecode.CONDITION_NEQ, 3,
 			bytecode.NewRegisterVector(n),
 			bytecode.NewConstantOperand(zero)))
-		b.emit(bytecode.AddConst(outShl, []bytecode.RegisterId{a}, zero))
-		b.emit(bytecode.AddConst(outShr, []bytecode.RegisterId{a}, zero))
+		b.emit(bytecode.AddConst(outShl, []bytecode.RegisterId{a}, zero, bw16))
+		b.emit(bytecode.AddConst(outShr, []bytecode.RegisterId{a}, zero, bw16))
 		b.emit(bytecode.NewRet[W]())
 		// return (a << 1, a >> 1)
 		b.emitAll(shiftByConst(b, bytecode.OP_SHL, outShl, a, 1))
@@ -273,7 +274,7 @@ func newShiftLevelHelper[W Word[W]](maxWidth, level, subID uint) descriptor.Modu
 		// Destruct n into [nlow:u(level-1), bit:u1] (little-endian).
 		nlow := b.newComputedWidth("$nlow", level-1)
 		bit := b.newComputedWidth("$bit", 1)
-		b.emit(bytecode.AddVec[W]([]bytecode.RegisterId{nlow, bit}, []bytecode.RegisterId{n}))
+		b.emit(bytecode.AddVec[W]([]bytecode.RegisterId{nlow, bit}, []bytecode.RegisterId{n}, bw16))
 		// lo_shl, lo_shr = level_{j-1}(a, nlow)
 		loShl := b.newComputedWidth("$lo_shl", maxWidth)
 		loShr := b.newComputedWidth("$lo_shr", maxWidth)
@@ -298,7 +299,7 @@ func (p *shiftHelperBuilder[W]) emitDiamond(bit, target, source bytecode.Registe
 	p.emit(bytecode.NewSkipIf(bytecode.CONDITION_NEQ, 2,
 		bytecode.NewRegisterVector(bit),
 		bytecode.NewConstantOperand(zero)))
-	p.emit(bytecode.AddConst(target, []bytecode.RegisterId{source}, zero))
+	p.emit(bytecode.AddConst(target, []bytecode.RegisterId{source}, zero, util.Cast[uint16](p.width)))
 	p.emit(bytecode.NewSkip[W](uint16(len(shifted))))
 	p.emitAll(shifted)
 }
@@ -316,6 +317,7 @@ func shiftByConst[W Word[W]](b *shiftHelperBuilder[W], op bytecode.Operation,
 ) []Bytecode[W] {
 	var (
 		width = b.width
+		bw16  = util.Cast[uint16](width)
 		zero  = word.Const64[W](0)
 		drop  = b.newComputedWidth("$drop", shift)
 		keep  = b.newComputedWidth("$keep", width-shift)
@@ -325,17 +327,17 @@ func shiftByConst[W Word[W]](b *shiftHelperBuilder[W], op bytecode.Operation,
 	case bytecode.OP_SHR:
 		// Destruct a into [drop, keep] (little-endian): keep = a >> shift.
 		return []Bytecode[W]{
-			bytecode.AddVec[W]([]bytecode.RegisterId{drop, keep}, []bytecode.RegisterId{a}),
-			bytecode.AddConst(target, []bytecode.RegisterId{keep}, zero),
+			bytecode.AddVec[W]([]bytecode.RegisterId{drop, keep}, []bytecode.RegisterId{a}, bw16),
+			bytecode.AddConst(target, []bytecode.RegisterId{keep}, zero, bw16),
 		}
 	case bytecode.OP_SHL:
 		zeros := b.newComputedWidth("$zeros", shift)
 		// Destruct a into [keep, drop] (little-endian): keep = a mod 2^(width-shift),
 		// then target = keep : zeros, i.e. (a << shift) mod 2^width.
 		return []Bytecode[W]{
-			bytecode.AddVec[W]([]bytecode.RegisterId{keep, drop}, []bytecode.RegisterId{a}),
+			bytecode.AddVec[W]([]bytecode.RegisterId{keep, drop}, []bytecode.RegisterId{a}, bw16),
 			bytecode.LoadConst(zeros, zero, util.Cast[uint16](shift)),
-			bytecode.AssignV[W]([]bytecode.RegisterId{target}, zeros, keep),
+			bytecode.AssignV[W]([]bytecode.RegisterId{target}, bw16, zeros, keep),
 		}
 	default:
 		panic("expected shift operation")
@@ -372,14 +374,14 @@ func newShiftGuardHelper[W Word[W]](maxWidth, amtWidth, levelID uint) descriptor
 		b.emit(bytecode.NewSkipIf(bytecode.CONDITION_NEQ, 3,
 			bytecode.NewRegisterVector(n),
 			bytecode.NewConstantOperand(zero)))
-		b.emit(bytecode.AddConst(outShl, []bytecode.RegisterId{a}, zero))
-		b.emit(bytecode.AddConst(outShr, []bytecode.RegisterId{a}, zero))
+		b.emit(bytecode.AddConst(outShl, []bytecode.RegisterId{a}, zero, bw16))
+		b.emit(bytecode.AddConst(outShr, []bytecode.RegisterId{a}, zero, bw16))
 		b.emit(bytecode.NewRet[W]())
 	} else {
 		// Destruct n into [vlow:u_depth, vhigh:u(amtWidth-depth)] (little-endian).
 		vlow := b.newComputedWidth("$vlow", depth)
 		vhigh := b.newComputedWidth("$vhigh", amtWidth-depth)
-		b.emit(bytecode.AddVec[W]([]bytecode.RegisterId{vlow, vhigh}, []bytecode.RegisterId{n}))
+		b.emit(bytecode.AddVec[W]([]bytecode.RegisterId{vlow, vhigh}, []bytecode.RegisterId{n}, util.Cast[uint16](amtWidth)))
 		// if vhigh == 0: return level_depth(a, vlow)
 		b.emit(bytecode.NewSkipIf(bytecode.CONDITION_NEQ, 2,
 			bytecode.NewRegisterVector(vhigh),
