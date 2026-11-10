@@ -140,7 +140,7 @@ func (p *InstructionTranslator[W, F]) translateCSub(code *vm.BytecodeArith[W], e
 		isSbb        = vm.IsSubtractWithBorrow(*code, enclosing)
 		hasSignedBit = hasSignedBit(code.Target, enclosing)
 	)
-	// 
+	//
 	if isSbb && hasSignedBit {
 		return p.translateSignedCSub(code.Target, code.Source, code.Constant)
 	} else if isSbb {

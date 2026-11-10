@@ -2303,8 +2303,8 @@ func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, st
 func (p *Interpreter[W]) executeCSub_1c1n(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
 		rs, rd, constant, bw, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                    = stack[rs]
-		res, underflow         = constant.Sub(val)
+		val                     = stack[rs]
+		res, underflow          = constant.Sub(val)
 	)
 	//
 	if underflow {
