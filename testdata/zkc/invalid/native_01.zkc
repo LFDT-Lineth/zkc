@@ -1,4 +1,4 @@
-//error:8:13-21:native function cannot be recursive
+//error:8:13-21:native function cannot call a function
 // native functions must not call themselves.
 #[native]
 fn f(x:u8) -> (r:u8) {

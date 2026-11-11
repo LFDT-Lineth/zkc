@@ -88,10 +88,6 @@ type Linker struct {
 	srcmaps      source.Maps[any]
 	declarations []decl.Unresolved
 	names        map[string]bool
-	// native is the name of the native function whose body is currently being
-	// linked, or "" when not linking the body of a native function.  This is
-	// used to reject any function call made from within a native function.
-	native string
 }
 
 // NewLinker constructs a new linker
@@ -186,7 +182,7 @@ func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxErro
 		}
 
 		if d.Contents != nil {
-			contents, errs4 = p.linkExprs(d.Contents...)
+			contents, errs4 = p.linkExprs(d.Contents, false)
 		}
 
 		resolved := decl.NewMemory[symbol.Resolved](d.Name(), d.Kind, timestampType, addressVars, dataVars, contents)
@@ -210,7 +206,7 @@ func (p *Linker) linkDeclaration(index uint) (decl.Resolved, []source.SyntaxErro
 // const LENGTH_IN_BYTES :u32 = 256
 // const LENGTH_IN_BITS  :u32 = 8 * LENGTH_IN_BYTES
 func (p *Linker) linkConstant(cn decl.UnresolvedConstant) (decl.Resolved, []source.SyntaxError) {
-	expr, errs1 := p.linkExpr(cn.ConstExpr)
+	expr, errs1 := p.linkExpr(cn.ConstExpr, false)
 	datatype, errs2 := p.linkType(cn.DataType)
 	//
 	return decl.NewConstant[symbol.Resolved](cn.Name(), datatype, expr), append(errs1, errs2...)
@@ -221,6 +217,11 @@ func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []sour
 		effects = make([]*symbol.Resolved, len(fn.Effects))
 		code    = make([]stmt.Resolved, len(fn.Code))
 		errs1   []source.SyntaxError
+		// A native function is backed by an external circuit which exposes
+		// only its interface (inputs / outputs): its body is neither traced
+		// nor constrained.  Hence, it cannot make calls, since these would
+		// have no row to connect their call lookups to.
+		native = slices.Contains(fn.Annotations(), "native")
 	)
 	// link effects
 	for i, e := range fn.Effects {
@@ -230,19 +231,11 @@ func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []sour
 		//
 		errs1 = append(errs1, es...)
 	}
-	// A native function is backed by an external circuit which exposes only its
-	// interface (inputs / outputs): its body is neither traced nor constrained.
-	// Hence, it cannot make calls, since these would have no row to connect
-	// their call lookups to.
-	if slices.Contains(fn.Annotations(), "native") {
-		p.native = fn.Name()
-		defer func() { p.native = "" }()
-	}
 	// link code
 	for i, c := range fn.Code {
 		var es []source.SyntaxError
 		//
-		code[i], es = p.linkStatement(c)
+		code[i], es = p.linkStatement(c, native)
 		//
 		errs1 = append(errs1, es...)
 	}
@@ -258,7 +251,7 @@ func (p *Linker) linkFunction(fn decl.UnresolvedFunction) (decl.Resolved, []sour
 func (p *Linker) linkEffect(effect *symbol.Unresolved,
 ) (*symbol.Resolved, []source.SyntaxError) {
 	// resolve this effect
-	ne, err := p.resolve(*effect, effect)
+	ne, err := p.resolve(*effect, effect, false)
 	// take its address
 	neffect := &ne
 	// copy over source map info
@@ -285,7 +278,7 @@ func (p *Linker) linkVariableDeclarations(decls []variable.UnresolvedDescriptor,
 	return ndecls, errors
 }
 
-func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.SyntaxError) {
+func (p *Linker) linkStatement(s stmt.Unresolved, native bool) (stmt.Resolved, []source.SyntaxError) {
 	var (
 		ninsn  stmt.Resolved
 		errors []source.SyntaxError
@@ -294,9 +287,9 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 	switch s := s.(type) {
 	case *stmt.Assign[symbol.Unresolved]:
 		// Link the left-hand side
-		lhs, errs1 := p.linkLVals(s.Targets)
+		lhs, errs1 := p.linkLVals(s.Targets, native)
 		// Link the right-hand side
-		rhs, errs2 := p.linkExpr(s.Source)
+		rhs, errs2 := p.linkExpr(s.Source, native)
 		//
 		ninsn = &stmt.Assign[symbol.Resolved]{Targets: lhs, Source: rhs}
 		//
@@ -310,36 +303,36 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 	case *stmt.Fail[symbol.Unresolved]:
 		var args []expr.Expr[symbol.Resolved]
 		//
-		args, errors = p.linkExprs(s.Arguments...)
+		args, errors = p.linkExprs(s.Arguments, native)
 		//
 		ninsn = &stmt.Fail[symbol.Resolved]{Chunks: s.Chunks, Arguments: args}
 	case *stmt.NeverCall[symbol.Unresolved]:
 		var args []expr.Expr[symbol.Resolved]
 		// attempt to resolve this non-local access
-		sym, errs := p.resolve(s.Name, s)
+		sym, errs := p.resolve(s.Name, s, native)
 		//
-		args, errors = p.linkExprs(s.Args...)
+		args, errors = p.linkExprs(s.Args, native)
 		// combine errors
 		errors = append(errors, errs...)
 		//
 		ninsn = &stmt.NeverCall[symbol.Resolved]{Name: sym, Args: args}
 	case *stmt.For[symbol.Unresolved]:
-		init, errs1 := p.linkStatement(s.Init)
-		cond, errs2 := p.linkExpr(s.Cond)
-		post, errs3 := p.linkStatement(s.Post)
-		body, errs4 := p.linkStatements(s.Body)
+		init, errs1 := p.linkStatement(s.Init, native)
+		cond, errs2 := p.linkExpr(s.Cond, native)
+		post, errs3 := p.linkStatement(s.Post, native)
+		body, errs4 := p.linkStatements(s.Body, native)
 		ninsn = &stmt.For[symbol.Resolved]{Init: init, Cond: cond, Post: post, Body: body}
 		//
 		errors = append(append(append(errs1, errs2...), errs3...), errs4...)
 	case *stmt.IfElse[symbol.Unresolved]:
-		cond, errs1 := p.linkExpr(s.Cond)
-		trueBranch, errs2 := p.linkStatements(s.TrueBranch)
-		falseBranch, errs3 := p.linkStatements(s.FalseBranch)
+		cond, errs1 := p.linkExpr(s.Cond, native)
+		trueBranch, errs2 := p.linkStatements(s.TrueBranch, native)
+		falseBranch, errs3 := p.linkStatements(s.FalseBranch, native)
 		ninsn = &stmt.IfElse[symbol.Resolved]{Cond: cond, TrueBranch: trueBranch, FalseBranch: falseBranch}
 		//
 		errors = append(append(errs1, errs2...), errs3...)
 	case *stmt.Switch[symbol.Unresolved]:
-		discriminant, errsDisc := p.linkExpr(s.Discriminant)
+		discriminant, errsDisc := p.linkExpr(s.Discriminant, native)
 
 		var (
 			branches  []stmt.SwitchBranch[symbol.Resolved]
@@ -354,13 +347,13 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 			)
 
 			for _, caseConstant := range branch.Labels {
-				exprCase, errCase := p.linkExpr(caseConstant)
+				exprCase, errCase := p.linkExpr(caseConstant, native)
 				errsCases = append(errsCases, errCase...)
 				labels = append(labels, exprCase)
 			}
 
 			for _, statement := range branch.Body {
-				exprBody, errBody := p.linkStatement(statement)
+				exprBody, errBody := p.linkStatement(statement, native)
 				errsBody = append(errsBody, errBody...)
 				body = append(body, exprBody)
 			}
@@ -382,7 +375,7 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 	case *stmt.Printf[symbol.Unresolved]:
 		var args []expr.Expr[symbol.Resolved]
 		//
-		args, errors = p.linkExprs(s.Arguments...)
+		args, errors = p.linkExprs(s.Arguments, native)
 		//
 		ninsn = &stmt.Printf[symbol.Resolved]{Chunks: s.Chunks, Arguments: args}
 	case *stmt.Return[symbol.Unresolved]:
@@ -394,7 +387,7 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 				Init:      util.None[expr.Resolved](),
 			}
 		} else {
-			rhs, errs := p.linkExpr(s.Init.Unwrap())
+			rhs, errs := p.linkExpr(s.Init.Unwrap(), native)
 			ninsn = &stmt.VarDecl[symbol.Resolved]{
 				Variables: s.Variables,
 				Init:      util.Some[expr.Resolved](rhs),
@@ -402,8 +395,8 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 			errors = errs
 		}
 	case *stmt.While[symbol.Unresolved]:
-		cond, errs1 := p.linkExpr(s.Cond)
-		body, errs2 := p.linkStatements(s.Body)
+		cond, errs1 := p.linkExpr(s.Cond, native)
+		body, errs2 := p.linkStatements(s.Body, native)
 		ninsn = &stmt.While[symbol.Resolved]{Cond: cond, Body: body}
 		//
 		errors = append(errs1, errs2...)
@@ -418,7 +411,7 @@ func (p *Linker) linkStatement(s stmt.Unresolved) (stmt.Resolved, []source.Synta
 	return ninsn, errors
 }
 
-func (p *Linker) linkStatements(stmts []stmt.Unresolved) ([]stmt.Resolved, []source.SyntaxError) {
+func (p *Linker) linkStatements(stmts []stmt.Unresolved, native bool) ([]stmt.Resolved, []source.SyntaxError) {
 	var (
 		result = make([]stmt.Resolved, len(stmts))
 		errors []source.SyntaxError
@@ -427,14 +420,14 @@ func (p *Linker) linkStatements(stmts []stmt.Unresolved) ([]stmt.Resolved, []sou
 	for i, insn := range stmts {
 		var errs []source.SyntaxError
 
-		result[i], errs = p.linkStatement(insn)
+		result[i], errs = p.linkStatement(insn, native)
 		errors = append(errors, errs...)
 	}
 
 	return result, errors
 }
 
-func (p *Linker) linkLVals(lvals []lval.Unresolved) ([]lval.Resolved, []source.SyntaxError) {
+func (p *Linker) linkLVals(lvals []lval.Unresolved, native bool) ([]lval.Resolved, []source.SyntaxError) {
 	var (
 		llvals = make([]lval.Resolved, len(lvals))
 		errors []source.SyntaxError
@@ -443,7 +436,7 @@ func (p *Linker) linkLVals(lvals []lval.Unresolved) ([]lval.Resolved, []source.S
 	for i, lval := range lvals {
 		var errs []source.SyntaxError
 		//
-		llvals[i], errs = p.linkLVal(lval)
+		llvals[i], errs = p.linkLVal(lval, native)
 		//
 		errors = append(errors, errs...)
 	}
@@ -451,7 +444,7 @@ func (p *Linker) linkLVals(lvals []lval.Unresolved) ([]lval.Resolved, []source.S
 	return llvals, errors
 }
 
-func (p *Linker) linkLVal(lv lval.Unresolved) (lval.Resolved, []source.SyntaxError) {
+func (p *Linker) linkLVal(lv lval.Unresolved, native bool) (lval.Resolved, []source.SyntaxError) {
 	var (
 		nlval lval.Resolved
 		errs  []source.SyntaxError
@@ -463,15 +456,15 @@ func (p *Linker) linkLVal(lv lval.Unresolved) (lval.Resolved, []source.SyntaxErr
 	case *lval.Discard[symbol.Unresolved]:
 		nlval = lval.NewDiscard[symbol.Resolved]()
 	case *lval.Array[symbol.Unresolved]:
-		index, errs1 := p.linkExpr(lv.Arg)
+		index, errs1 := p.linkExpr(lv.Arg, native)
 		nlval = lval.NewArray[symbol.Resolved](lv.Id, index)
 		//
 		errs = append(errs, errs1...)
 	case *lval.MemAccess[symbol.Unresolved]:
 		// resolve symbols in memory name
-		name, errs1 := p.resolve(lv.Name, lv)
+		name, errs1 := p.resolve(lv.Name, lv, native)
 		// resolve symbols in index expression
-		index, errs2 := p.linkExprs(lv.Args...)
+		index, errs2 := p.linkExprs(lv.Args, native)
 		//
 		nlval = lval.NewMemAccess(name, index)
 		//
@@ -487,7 +480,7 @@ func (p *Linker) linkLVal(lv lval.Unresolved) (lval.Resolved, []source.SyntaxErr
 	return nlval, errs
 }
 
-func (p *Linker) linkExpr(e expr.Unresolved) (expr.Resolved, []source.SyntaxError) {
+func (p *Linker) linkExpr(e expr.Unresolved, native bool) (expr.Resolved, []source.SyntaxError) {
 	var (
 		arg    expr.Resolved
 		args   []expr.Resolved
@@ -497,35 +490,35 @@ func (p *Linker) linkExpr(e expr.Unresolved) (expr.Resolved, []source.SyntaxErro
 	//
 	switch e := e.(type) {
 	case *expr.Cmp[symbol.Unresolved]:
-		lhs, lerrs := p.linkExpr(e.Left)
-		rhs, rerrs := p.linkExpr(e.Right)
+		lhs, lerrs := p.linkExpr(e.Left, native)
+		rhs, rerrs := p.linkExpr(e.Right, native)
 		nexpr = expr.NewCmp(e.Operator, lhs, rhs)
 
 		errors = append(lerrs, rerrs...)
 	case *expr.Add[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewAdd[symbol.Resolved](args...)
 	case *expr.BitwiseAnd[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewBitwiseAnd[symbol.Resolved](args...)
 	case *expr.Const[symbol.Unresolved]:
 		nexpr = expr.NewUntypedConstant[symbol.Resolved](*e.Constant(), e.Base())
 	case *expr.ExternAccess[symbol.Unresolved]:
 		// resolve arguments
-		args, errors = p.linkExprs(e.Args...)
+		args, errors = p.linkExprs(e.Args, native)
 		// attempt to resolve this non-local access
-		sym, errs := p.resolve(e.Name, e)
+		sym, errs := p.resolve(e.Name, e, native)
 		// combine errors
 		errors = append(errors, errs...)
 		//
 		nexpr = expr.NewExternAccess(sym, args...)
 	case *expr.Mul[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewMul[symbol.Resolved](args...)
 	case *expr.Cast[symbol.Unresolved]:
 		var castType data.ResolvedType
 		//
-		arg, errors = p.linkExpr(e.Expr)
+		arg, errors = p.linkExpr(e.Expr, native)
 		//
 		if len(errors) == 0 {
 			castType, errors = p.linkType(e.CastType)
@@ -533,64 +526,64 @@ func (p *Linker) linkExpr(e expr.Unresolved) (expr.Resolved, []source.SyntaxErro
 		//
 		nexpr = expr.NewCast[symbol.Resolved](arg, castType)
 	case *expr.Concat[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewConcat[symbol.Resolved](args...)
 	case *expr.BitwiseNot[symbol.Unresolved]:
-		arg, errors = p.linkExpr(e.Expr)
+		arg, errors = p.linkExpr(e.Expr, native)
 		nexpr = expr.NewBitwiseNot[symbol.Resolved](arg)
 	case *expr.BitwiseOr[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewBitwiseOr[symbol.Resolved](args...)
 	case *expr.Shl[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewShl[symbol.Resolved](args...)
 	case *expr.Shr[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewShr[symbol.Resolved](args...)
 	case *expr.LocalAccess[symbol.Unresolved]:
 		nexpr = expr.NewLocalAccess[symbol.Resolved](e.Variable)
 	case *expr.LogicalAnd[symbol.Unresolved]:
-		args, errs := p.linkExprs(e.Exprs...)
+		args, errs := p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewLogicalAnd[symbol.Resolved](args...)
 		errors = errs
 	case *expr.LogicalOr[symbol.Unresolved]:
-		args, errs := p.linkExprs(e.Exprs...)
+		args, errs := p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewLogicalOr[symbol.Resolved](args...)
 		errors = errs
 	case *expr.LogicalNot[symbol.Unresolved]:
-		inner, errs := p.linkExpr(e.Expr)
+		inner, errs := p.linkExpr(e.Expr, native)
 		nexpr = expr.NewLogicalNot[symbol.Resolved](inner)
 		errors = errs
 	case *expr.ArrayAccess[symbol.Unresolved]:
 		// resolve arguments
-		arg, errors = p.linkExpr(e.Arg)
+		arg, errors = p.linkExpr(e.Arg, native)
 		nexpr = expr.NewArrayAccess[symbol.Resolved](e.Id, arg)
 	case *expr.Div[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewDiv[symbol.Resolved](args...)
 	case *expr.DivMod[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewDivMod[symbol.Resolved](args[0], args[1])
 	case *expr.Rem[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewRem[symbol.Resolved](args...)
 	case *expr.Sub[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewSub[symbol.Resolved](args...)
 	case *expr.Xor[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewXor[symbol.Resolved](args...)
 
 	case *expr.Ternary[symbol.Unresolved]:
-		cond, cerrs := p.linkExpr(e.Cond)
-		ifTrue, terrs := p.linkExpr(e.IfTrue)
-		ifFalse, ferrs := p.linkExpr(e.IfFalse)
+		cond, cerrs := p.linkExpr(e.Cond, native)
+		ifTrue, terrs := p.linkExpr(e.IfTrue, native)
+		ifFalse, ferrs := p.linkExpr(e.IfFalse, native)
 		nexpr = expr.NewTernary[symbol.Resolved](cond, ifTrue, ifFalse)
 
 		errors = append(append(append(errors, cerrs...), terrs...), ferrs...)
 
 	case *expr.TupleInitialiser[symbol.Unresolved]:
-		args, errors = p.linkExprs(e.Exprs...)
+		args, errors = p.linkExprs(e.Exprs, native)
 		nexpr = expr.NewTupleInitialiser[symbol.Resolved](args...)
 	default:
 		return nil, p.srcmaps.SyntaxErrors(e, "invalid expression")
@@ -603,14 +596,14 @@ func (p *Linker) linkExpr(e expr.Unresolved) (expr.Resolved, []source.SyntaxErro
 	return nexpr, errors
 }
 
-func (p *Linker) linkExprs(exprs ...expr.Unresolved) ([]expr.Resolved, []source.SyntaxError) {
+func (p *Linker) linkExprs(exprs []expr.Unresolved, native bool) ([]expr.Resolved, []source.SyntaxError) {
 	var (
 		nexprs = make([]expr.Resolved, len(exprs))
 		errors []source.SyntaxError
 	)
 	//
 	for i, e := range exprs {
-		ne, errs := p.linkExpr(e)
+		ne, errs := p.linkExpr(e, native)
 		nexprs[i] = ne
 		//
 		errors = append(errors, errs...)
@@ -634,7 +627,7 @@ func (p *Linker) linkType(datatype data.UnresolvedType) (data.ResolvedType, []so
 		if t.Size.HasFirst() {
 			size = util.Union1[uint, symbol.Resolved](t.Size.First())
 		} else {
-			var sym, errs = p.resolve(t.Size.Second(), t)
+			var sym, errs = p.resolve(t.Size.Second(), t, false)
 			//
 			if len(errs) > 0 {
 				// include all errors
@@ -647,7 +640,7 @@ func (p *Linker) linkType(datatype data.UnresolvedType) (data.ResolvedType, []so
 		return data.NewFixedArray(datatype, size), errors
 	case *data.Alias[symbol.Unresolved]:
 		// resolve symbol
-		name, err := p.resolve(t.Name, t)
+		name, err := p.resolve(t.Name, t, false)
 		//
 		if err != nil {
 			return nil, p.srcmaps.SyntaxErrors(datatype, "unknown type alias")
@@ -663,7 +656,7 @@ func (p *Linker) linkType(datatype data.UnresolvedType) (data.ResolvedType, []so
 
 // Resolve the symbol referred to by an external access into a resolved symbol,
 // or return an error if there is some issue matching the symbol.
-func (p *Linker) resolve(name symbol.Unresolved, node any) (symbol.Resolved, []source.SyntaxError) {
+func (p *Linker) resolve(name symbol.Unresolved, node any, native bool) (symbol.Resolved, []source.SyntaxError) {
 	var sym symbol.Resolved
 	//
 	for i, c := range p.declarations {
@@ -674,11 +667,7 @@ func (p *Linker) resolve(name symbol.Unresolved, node any) (symbol.Resolved, []s
 				return sym, p.srcmaps.SyntaxErrors(node, msg)
 			}
 			// check for a call made from within a native function
-			if _, isFn := c.(*decl.UnresolvedFunction); isFn && p.native != "" {
-				if c.Name() == p.native {
-					return sym, p.srcmaps.SyntaxErrors(node, "native function cannot be recursive")
-				}
-				//
+			if _, isFn := c.(*decl.UnresolvedFunction); isFn && native {
 				return sym, p.srcmaps.SyntaxErrors(node, "native function cannot call a function")
 			}
 			// hit

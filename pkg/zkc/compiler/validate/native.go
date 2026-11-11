@@ -30,7 +30,7 @@ import (
 func NativeFunctions(program ast.Program, srcmaps source.Maps[any]) []source.SyntaxError {
 	var errors []source.SyntaxError
 	//
-	for i, d := range program.Components() {
+	for _, d := range program.Components() {
 		fn, ok := d.(*decl.ResolvedFunction)
 		//
 		if !ok || !slices.Contains(fn.Annotations(), "native") {
@@ -39,12 +39,7 @@ func NativeFunctions(program ast.Program, srcmaps source.Maps[any]) []source.Syn
 		//
 		for _, s := range fn.Code {
 			for _, use := range externUsesOfStmt(s) {
-				switch {
-				case use.IsUnknown() || !use.IsFunction():
-					continue
-				case use.Index == uint(i):
-					errors = append(errors, srcmaps.SyntaxErrors(s, "native function cannot be recursive")...)
-				default:
+				if !use.IsUnknown() && use.IsFunction() {
 					errors = append(errors, srcmaps.SyntaxErrors(s, "native function cannot call a function")...)
 				}
 			}
