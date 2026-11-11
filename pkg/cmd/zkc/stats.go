@@ -457,12 +457,19 @@ func preSplitRegisters[W vm.Word[W]](ir vm.Program[W]) map[string]preSplitInfo {
 		// The maximum program-counter value is the number of bytecode lines (line
 		// indices plus the one-past-the-end halt value).  Only non-native
 		// functions carry a program counter.
-		if fn, ok := m.(*vm.Function[W]); ok && !fn.IsNative() {
+		fn, isFn := m.(*vm.Function[W])
+		native := isFn && fn.IsNative()
+		//
+		if isFn && !native {
 			entry.pcMax = uint(len(fn.Vectors()))
 		}
 		//
 		for _, r := range m.Registers() {
-			if bw := r.Bitwidth(); bw.HasValue() {
+			// A native function is backed by a native circuit, so only its
+			// interface (input / output registers) is visible.
+			if native && !r.IsInputOutput() {
+				continue
+			} else if bw := r.Bitwidth(); bw.HasValue() {
 				entry.widths[bw.Unwrap()]++
 			} else {
 				entry.native++
@@ -526,8 +533,14 @@ func summariseAirModule[F field.Element[F]](mod schema.Module[F],
 		stats.typ = "static"
 		stats.cells = uint(len(mod.StaticContents())) * mod.Width()
 	case mod.IsNative():
-		// Native circuit: report only the number of registers.
+		// Native circuit: report only its interface (input / output registers),
+		// both before and after splitting.  Its internal registers and
+		// constraints belong to the native circuit, so are not counted (nor are
+		// they present in the AIR module).
+		info := preSplit[mod.Name()]
 		stats.typ = "native"
+		stats.preSplit = info.widths
+		stats.preNative = info.native
 		stats.postRegs = mod.Width()
 	default:
 		// Regular module (function or memory): report the full breakdown.
@@ -620,11 +633,11 @@ func printAirModuleStats(stats []moduleStats, packedLookups uint) {
 	// Registers (pre-splitting), bucketed by width, then native registers.
 	for _, b := range regBuckets {
 		b := b
-		cols = append(cols, regularColumn(stats, "Registers (pre splitting)", b.label,
+		cols = append(cols, registerColumn(stats, "Registers (pre splitting)", b.label,
 			func(m moduleStats) uint { return bucketCount(m.preSplit, b) }))
 	}
 	//
-	cols = append(cols, regularColumn(stats, "Registers (pre splitting)", "native",
+	cols = append(cols, registerColumn(stats, "Registers (pre splitting)", "native",
 		func(m moduleStats) uint { return m.preNative }))
 	// Total registers post-splitting, i.e. the number of limbs (regular and
 	// native modules).
@@ -705,6 +718,18 @@ func printAirModuleStats(stats []moduleStats, packedLookups uint) {
 func regularColumn(stats []moduleStats, group, sub string, get func(moduleStats) uint) *statsColumn {
 	return dataColumn(stats, group, "", sub, false, func(m moduleStats) string {
 		if !m.isRegular() {
+			return ""
+		}
+		//
+		return count(get(m))
+	})
+}
+
+// registerColumn builds a register-count column, which is blank for static
+// tables only: native modules report the registers of their interface.
+func registerColumn(stats []moduleStats, group, sub string, get func(moduleStats) uint) *statsColumn {
+	return dataColumn(stats, group, "", sub, false, func(m moduleStats) string {
+		if m.isStatic() {
 			return ""
 		}
 		//

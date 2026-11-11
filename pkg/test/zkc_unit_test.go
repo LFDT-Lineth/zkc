@@ -50,6 +50,7 @@ func Test_ZkcUnit_Basic_05(t *testing.T) {
 func Test_ZkcUnit_Basic_06(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_06", DEFAULT_UNIT_CONFIG)
 }
+
 func Test_ZkcUnit_Basic_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_07", DEFAULT_UNIT_CONFIG)
 }
@@ -942,6 +943,42 @@ func Test_ZkcUnit_Shift_13(t *testing.T) {
 // a mix of shr and shl with small & big shifted and shifting value
 func Test_ZkcUnit_Shift_14(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/shift_14", DEFAULT_UNIT_CONFIG)
+}
+
+// ===================================================================
+// [#Native] Tests
+// ===================================================================
+
+// TODO: https://github.com/LFDT-Lineth/zkc/issues/2326 reenbale gogen for all native tests
+//
+//	once this is fixed
+func Test_ZkcUnit_Native_01(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_01", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+// native that is supposed to be a MLI
+func Test_ZkcUnit_Native_02(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_02", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+// native that splits the input
+func Test_ZkcUnit_Native_03(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_03", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+// native with 2 inputs and outputs
+func Test_ZkcUnit_Native_04(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_04", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+// native with several return
+func Test_ZkcUnit_Native_05(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_05", DEFAULT_UNIT_CONFIG.GoGen(false))
+}
+
+// partial call to a native
+func Test_ZkcUnit_Native_06(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/native_06", DEFAULT_UNIT_CONFIG.GoGen(false))
 }
 
 // ===================================================================

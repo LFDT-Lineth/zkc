@@ -1,0 +1,30 @@
+// Test for a partial call to a native function with several inputs / outputs
+
+pub input data(address:u2) -> (word:u8)
+
+#[native]
+fn copy(x:u8, y:u8) -> (a:u8, b:u8, add:u8, mul:u8) {
+    a = x
+    b = y
+    var tmp:u1
+    tmp::add = (x as u9) + (y as u9)
+    var tmp2:u8
+    tmp2::mul = (x as u16) * (y as u16)
+}
+
+fn main() {
+    var x:u8 = data[0]
+    var y:u8 = data[1]
+
+    var add_mod:u8
+    var mul_mod:u8
+
+    _, _, add_mod, mul_mod = copy(x, y)
+
+    var add_exp:u8 = data[2]
+    var mul_exp:u8 = data[3]
+
+    if (add_mod != add_exp) || (mul_mod != mul_exp) {
+        fail
+    }
+}

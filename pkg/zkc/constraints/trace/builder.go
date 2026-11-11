@@ -126,7 +126,9 @@ func (p Builder[W, F]) Init(program vm.Program[W]) Builder[W, F] {
 	for i, m := range program.Modules() {
 		switch m := m.(type) {
 		case *vm.Function[W]:
-			if m.IsOneLine() {
+			if m.IsNative() {
+				modules[i] = initNativeFunction[W, F](*m)
+			} else if m.IsOneLine() {
 				modules[i] = initOneLineFunction[W, F](*m)
 			} else {
 				modules[i] = initMultiLineFunction[W, F](*m)
@@ -157,7 +159,9 @@ func (p Builder[W, F]) TraceFunctionLine(state vm.State[W]) {
 		f   = p.descriptors[state.Fid()].(*vm.Function[W])
 	)
 	//
-	if f.IsOneLine() {
+	if f.IsNative() {
+		traceNativeFunction(mod, state, p.scratch)
+	} else if f.IsOneLine() {
 		traceOneLineFunction(*f, mod, state, p.scratch)
 	} else {
 		traceMultiLineFunction(mod, state, p.scratch)
