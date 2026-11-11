@@ -217,6 +217,27 @@ func TestZZHaltCount(t *testing.T) {
 	// 4. The cases. H = halt rows, M = active main rows; the bus tally is
 	//    M - H. Row lists are padded with honest padding rows (index 0) to a
 	//    power-of-two height.
+
+	/*
+
+			main:
+		  one active row ($ret = 1)
+		       |
+		       | sends call step(0)
+		       v
+		step:        #0    #1    #2    #3
+		  pc          0     0     1     2
+		  n           0     1     2   255
+		  $ret        0     1     1     1
+		              ^     ^     ^     ^
+		              |     |     |     |
+		           padding  |     |     |
+		                  step(0) |     |
+		                        step(1) |
+		                              step(2), halt
+
+	*/
+
 	// A: the honest trace. One main call, one halt -> accepted.
 	check("A honest:                 main, step rows [pad,0,1,2]          (H=1,M=1)", build(true, []int{0, 1, 2, 3}))
 
