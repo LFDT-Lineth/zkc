@@ -59,7 +59,7 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 		c.linef("start := %s", start)
 		//
 		switch mi.role {
-		case ramScratch, fixedScratch, pagedScratch:
+		case ramScratch, pagedScratch:
 			c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
 		}
 		//
@@ -83,18 +83,12 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 
 			switch mi.role {
 			case sromStatic:
-				// Baked contents: the read is a direct index (OOB panics, like
-				// StaticArray.Read) and the bound is the largest baked value.  A
-				// narrowed element type widens back to the uint64 cell type.
 				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
 				if mi.elemType != "uint64" {
 					expr = "uint64(" + expr + ")"
 				}
-
+				//
 				bound = maxContents(mi.contents)
-			case fixedScratch:
-				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
-				bound = widthMax(widthOf(dataRegs[i]))
 			case romInput:
 				expr = fmt.Sprintf("romRead(%s, start + %d)", mi.varName, i)
 				bound = widthMax(64)
@@ -126,7 +120,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	}
 
 	switch mi.role {
-	case womOutput, fixedScratch, ramScratch, pagedScratch:
+	case womOutput, ramScratch, pagedScratch:
 	default:
 		return fmt.Errorf("gogen: MEMORY_WRITE to read-only memory %q", mi.name)
 	}
@@ -147,7 +141,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 		c.linef("start := %s", start)
 		//
 		switch mi.role {
-		case ramScratch, fixedScratch, pagedScratch:
+		case ramScratch, pagedScratch:
 			c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
 		}
 		//
@@ -163,8 +157,6 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 			}
 
 			switch mi.role {
-			case fixedScratch:
-				c.linef("%s[start+%d] = %s", mi.varName, i, src.expr)
 			case womOutput:
 				c.linef("%s = womWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
 			case ramScratch:

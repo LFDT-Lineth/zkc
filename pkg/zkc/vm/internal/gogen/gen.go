@@ -77,7 +77,6 @@ const (
 	romInput     memRole = iota // non-static read-only: loaded from the program inputs
 	womOutput                   // write-once: forms the program outputs (grow-on-write)
 	sromStatic                  // static read-only: fixed contents baked into the program
-	fixedScratch                // small read-write scratch: fixed, zero-initialised array
 	ramScratch                  // read-write scratch: zero-initialised, grows on write
 	pagedScratch                // paged read-write scratch (demand-allocated pages)
 )
@@ -99,14 +98,7 @@ type memInfo struct {
 	// elemType is the Go array element type of a static (SROM) memory (the
 	// narrowest that holds its contents); empty for all other roles.
 	elemType string
-	// cells is the total number of data cells for a fixed scratch memory.
-	cells uint64
 }
-
-// Fixed arrays remove grow-on-write and bounds-helper overhead from small
-// scratch memories. Keep the cap deliberately small: every Run clears the
-// array, and larger or unbounded address spaces retain the sparse VM semantics.
-const maxFixedScratchCells = 1024
 
 // pagedPageSize is the number of cells per page of a paged scratch memory in
 // the generated program (mirroring interpreter.PAGE_SIZE).
@@ -156,8 +148,6 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 				g.outputs = append(g.outputs, info)
 			case sromStatic:
 				g.sroms = append(g.sroms, info)
-			case fixedScratch:
-				g.fixeds = append(g.fixeds, info)
 			case ramScratch:
 				g.rams = append(g.rams, info)
 			case pagedScratch:
@@ -238,7 +228,6 @@ type generator struct {
 	inputs   []memInfo
 	outputs  []memInfo
 	sroms    []memInfo // static read-only memories (baked contents)
-	fixeds   []memInfo // small read-write scratch memories
 	rams     []memInfo // read-write scratch memories
 	pageds   []memInfo // paged read-write scratch memories
 	program  descriptor.Program[word.Uint]
@@ -408,12 +397,6 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) error
 	for _, m := range g.outputs {
 		c.linef("// Output WOM %q.", m.name)
 		c.linef("var %s []uint64", m.varName)
-	}
-
-	for _, m := range g.fixeds {
-		c.linef("// Fixed scratch RAM %q.", m.name)
-		c.linef("var %s [%d]uint64", m.varName, m.cells)
-		c.linef("var %s_stamp uint64", m.varName)
 	}
 
 	for _, m := range g.rams {
@@ -911,8 +894,7 @@ func (g *generator) emitOutputWriter(c *code) {
 // interpreter.Pack (see emitCheckpointArgs).  As with interpreter.Checkpoint,
 // every non-static memory is included in module order (Restore relies on
 // this), with page contents packed likewise (a fixed number of bytes per cell)
-// and the memory clock as tracked by the generated program.  Page timestamps
-// are not yet tracked and are written as zero.
+// and the memory clock as tracked by the generated program.
 func (g *generator) emitCheckpointWriter(c *code) error {
 	c.line("")
 	c.line("func writeCheckpoint(fid uint16, args []byte) {")
@@ -1016,8 +998,6 @@ func (g *generator) emitCheckpointWriterMemories(c *code) {
 		c.commentf("memory %q", m.name)
 		//
 		switch m.role {
-		case fixedScratch:
-			c.linef("buf = encodeMemory(buf, %d, %s[:], 0, %s)", m.id, m.varName, widths)
 		case pagedScratch:
 			rows := pagedPageSize / uint64(len(m.geom.DataRegisters()))
 			c.linef("buf = encodePaged(buf, %d, %s, %s_stamp, %d, %s)", m.id, m.varName, m.varName, rows, widths)
@@ -1675,42 +1655,12 @@ func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, er
 	case m.IsWriteOnly():
 		info.role = womOutput
 	case m.IsReadWrite():
-		if cells, ok := fixedScratchSize(m); ok {
-			info.role = fixedScratch
-			info.cells = cells
-		} else {
-			info.role = ramScratch
-		}
+		info.role = ramScratch
 	default:
 		return info, fmt.Errorf("gogen: unsupported memory %q (%T)", m.Name(), m)
 	}
 
 	return info, nil
-}
-
-// fixedScratchSize returns the complete flattened cell count when the memory
-// geometry proves it is small. A fixed array is semantics-preserving only
-// when it covers every address accepted by the descriptor.
-func fixedScratchSize(m *descriptor.Memory[word.Uint]) (uint64, bool) {
-	cells := uint64(m.NumOutputs())
-	if cells == 0 || cells > maxFixedScratchCells {
-		return 0, false
-	}
-
-	for _, r := range m.AddressRegisters() {
-		if r.IsNative() {
-			return 0, false
-		}
-
-		w := r.Bitwidth().Unwrap()
-		if w >= 64 || cells > maxFixedScratchCells>>w {
-			return 0, false
-		}
-
-		cells <<= w
-	}
-
-	return cells, true
 }
 
 // toU64s converts SROM contents into plain uint64s for baking.
