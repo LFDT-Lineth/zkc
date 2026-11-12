@@ -1,7 +1,6 @@
 pub input inp(addr:u8) -> (w:u8)
 pub output out(addr:u8) -> (w:u16)
 
-
 // Constant subtraction into a wider register
 // Operation bitwidth is u8
 fn main() {
