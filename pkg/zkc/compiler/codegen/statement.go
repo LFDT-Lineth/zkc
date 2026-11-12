@@ -960,6 +960,7 @@ func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint,
 	if c0, ok := p.asConstant(args[0]); ok {
 		// check the sign of c0 - trailingConstant
 		folded, underflow := c0.Sub(trailingConstant)
+		// Note: at this stage, folded should fit bitwidth as checked by type checker
 		if !underflow && folded.FitsWithin(bitwidth) {
 			// if the result is positive, CSUB case with the folded constant
 			// folded - x0 - x1 - x2 - ... - xn
