@@ -18,7 +18,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -424,8 +423,7 @@ func buildEntryVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
 	var ncodes = slices.Clone(codes)
 	//
 	for _, c := range copies {
-		bw := util.Cast[uint16](alloc.Register(c.target).Bitwidth().Unwrap())
-		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source, bw))
+		ncodes = append(ncodes, bytecode.Copy[W](c.target, c.source, alloc.Register(c.target).Bitwidth()))
 	}
 	// Fall through into the callee body, which immediately follows.  Observe
 	// that appending here cannot disturb any skip within codes, since skip
@@ -448,8 +446,7 @@ func buildExitVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
 	var ncodes []Bytecode[W]
 	//
 	for _, c := range copies {
-		bw := util.Cast[uint16](alloc.Register(c.target).Bitwidth().Unwrap())
-		ncodes = append(ncodes, bytecode.Assign[W](c.target, c.source, bw))
+		ncodes = append(ncodes, bytecode.Copy[W](c.target, c.source, alloc.Register(c.target).Bitwidth()))
 	}
 	//
 	ncodes = append(ncodes, codes...)

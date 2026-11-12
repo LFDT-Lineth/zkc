@@ -1,0 +1,19 @@
+pub input data(address:u16) -> (word:u16)
+
+// x = inc(x) cannot alias the field return onto the argument, so inlining
+// copies the result back into x. That register is native and has no bitwidth.
+fn main() {
+    var x:𝔽 = data[0] as 𝔽
+    var expected:𝔽 = data[1] as 𝔽
+    //
+    x = inc(x)
+    //
+    if x != expected {
+        fail
+    }
+}
+
+#[inline]
+fn inc(x:𝔽) -> (y:𝔽) {
+    y = x + (1 as 𝔽)
+}
