@@ -14,6 +14,7 @@ package zkc
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"slices"
 	"strconv"
@@ -263,7 +264,7 @@ func handleErrors(errors []error) {
 //nolint:errcheck
 func init() {
 	traceCmd.Flags().StringP("output", "o", "", "specify output file for writing trace")
-	traceCmd.Flags().String("sharding", "", "specify sharding strategy")
+	traceCmd.Flags().String("sharding", "", "specify sharding strategy as <function>:<n>[K|M|G] (e.g. fn:100, fn:1M)")
 	traceCmd.Flags().BoolP("check", "c", false, "check generated trace against constraints")
 	traceCmd.Flags().Bool("stats", false, "show overall stats for the generated trace")
 	traceCmd.Flags().BoolP("raw", "r", false, "show raw stats (rather than human-readable stats like 1K 234M 2G, etc)")
@@ -284,19 +285,49 @@ func parseShardingConfig(spec string) vm.ShardingStrategy {
 	)
 	//
 	if colon < 0 {
-		fmt.Printf("invalid sharding spec \"%s\" (expected \"<function>:<n>\")\n", spec)
+		fmt.Printf("invalid sharding spec \"%s\" (expected \"<function>:<n>[K|M|G]\")\n", spec)
 		os.Exit(1)
 	}
 	//
 	fn, istr := spec[:colon], spec[colon+1:]
-	n, err := strconv.ParseUint(istr, 10, 64)
+	n, err := parseShardCount(istr)
 	//
 	if err != nil {
-		fmt.Println(err.Error())
+		fmt.Printf("invalid sharding spec \"%s\": %s\n", spec, err.Error())
 		os.Exit(1)
 	}
 	//
 	return vm.NewShardingStrategy(fn, n)
+}
+
+// parseShardCount parses a shard count, optionally suffixed by one of K
+// (1024), M (1024^2) or G (1024^3).  Suffixes are case-insensitive.
+func parseShardCount(text string) (uint64, error) {
+	var multiplier uint64 = 1
+	//
+	if len(text) > 0 {
+		switch text[len(text)-1] {
+		case 'K', 'k':
+			multiplier = 1 << 10
+		case 'M', 'm':
+			multiplier = 1 << 20
+		case 'G', 'g':
+			multiplier = 1 << 30
+		}
+		//
+		if multiplier != 1 {
+			text = text[:len(text)-1]
+		}
+	}
+	//
+	n, err := strconv.ParseUint(text, 10, 64)
+	if err != nil {
+		return 0, err
+	} else if n > math.MaxUint64/multiplier {
+		return 0, fmt.Errorf("value out of range: %s", text)
+	}
+	//
+	return n * multiplier, nil
 }
 
 // publicModule reports whether a module is publicly visible in the inspector.
