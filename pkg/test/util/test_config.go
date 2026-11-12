@@ -195,6 +195,10 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 				}
 			}
 		}
+		// Apply GoGen (if requested)
+		if cfg.gogen {
+			tests = applyGoGen(t, test, pU, tests)
+		}
 	}
 	//
 	return tests

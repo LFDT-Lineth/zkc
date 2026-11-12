@@ -51,6 +51,7 @@ type Tracer[W Word[W], F Element[F], T any] interface {
 type TraceBuilder[W Word[W], F field.Element[F], T Tracer[W, F, T], E Word[E]] struct {
 	config      TraceConfig
 	builder     ir.TraceBuilder[F]
+	original    Program[Uint]
 	execution   Program[E]
 	tracing     Program[W]
 	constraints air.Schema[F]
@@ -59,7 +60,7 @@ type TraceBuilder[W Word[W], F field.Element[F], T Tracer[W, F, T], E Word[E]] s
 // NewTraceBuilder constructs a default tracer builder which, most likely,
 // should be further configured before use.
 func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](config TraceConfig,
-	execution Program[E], tracing Program[W], constraints air.Schema[F]) TraceBuilder[W, F, T, E] {
+	original Program[Uint], execution Program[E], tracing Program[W], constraints air.Schema[F]) TraceBuilder[W, F, T, E] {
 	//
 	builder := ir.NewTraceBuilder[F]().
 		// NOTE: never use validation, as it hides constraint failures.
@@ -68,7 +69,7 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](conf
 		WithExpansion(true).
 		WithPadding(config.PaddingStrategy())
 		//
-	return TraceBuilder[W, F, T, E]{config, builder, execution, tracing, constraints}
+	return TraceBuilder[W, F, T, E]{config, builder, original, execution, tracing, constraints}
 }
 
 // BootAndTrace generates a suitable trace from the given inputs for the contraints
@@ -112,20 +113,24 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string]bit.Ar
 // Sharded BootAndTrace performs sharding according to the given sharding
 // strategy.
 func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string]bit.Array,
-) (map[string]bit.Array, util.Option[trace.LazyTrace[F]], []error) {
+) (outputs map[string]bit.Array, tr util.Option[trace.LazyTrace[F]], errors []error) {
 	var (
 		checkpoints []CheckPoint
 		//
 		strategy = NewCheckPointer(p.config.shardingStrategy.Unwrap(), func(cp CheckPoint) {
 			checkpoints = append(checkpoints, cp)
 		})
-		// fast mode execution to generate checkpoints
-		outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
 		//
-		futures []trace.Future[F]
-		//
-
+		futures   []trace.Future[F]
+		traceable bool
 	)
+	// fast mode execution to generate checkpoints
+	if p.config.gogen {
+		// TODO: drop original program and use execution program instead.  See #2332
+		outputs, traceable, errors = BootAndCheckpointWithGogen(p.original, inputs, strategy)
+	} else {
+		outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
+	}
 	// Sanity check
 	if !traceable {
 		return outputs, util.None[trace.LazyTrace[F]](), errors

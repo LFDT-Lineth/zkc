@@ -151,7 +151,7 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 			case ramScratch:
 				g.rams = append(g.rams, info)
 			case pagedScratch:
-				g.pageds = append(g.pageds, info)
+				g.prams = append(g.prams, info)
 			}
 		case *descFunction:
 			g.funcByID[uint(id)] = mm
@@ -185,7 +185,7 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 			return "", fmt.Errorf("gogen: unknown shard function %q", fn)
 		}
 		//
-		for _, info := range g.pageds {
+		for _, info := range g.prams {
 			if lanes := uint64(len(info.geom.DataRegisters())); pagedPageSize%lanes != 0 {
 				return "", fmt.Errorf("gogen: paged memory %q has %d data lanes, which do not divide the page size %d",
 					info.name, lanes, pagedPageSize)
@@ -229,7 +229,7 @@ type generator struct {
 	outputs  []memInfo
 	sroms    []memInfo // static read-only memories (baked contents)
 	rams     []memInfo // read-write scratch memories
-	pageds   []memInfo // paged read-write scratch memories
+	prams    []memInfo // paged read-write scratch memories
 	program  descriptor.Program[word.Uint]
 	funcByID map[uint]*descFunction
 	modulus  *big.Int        // the machine's prime modulus (for mod-P ops)
@@ -401,13 +401,13 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) error
 
 	for _, m := range g.rams {
 		c.linef("// Scratch RAM %q.", m.name)
-		c.linef("var %s []uint64", m.varName)
+		c.linef("var %s RamPage", m.varName)
 		c.linef("var %s_stamp uint64", m.varName)
 	}
 
-	for _, m := range g.pageds {
+	for _, m := range g.prams {
 		c.linef("// Paged RAM %q.", m.name)
-		c.linef("var %s [][]uint64", m.varName)
+		c.linef("var %s []RamPage", m.varName)
 		c.linef("var %s_stamp uint64", m.varName)
 	}
 
@@ -458,7 +458,7 @@ func (g *generator) emitImports(c *code) {
 		deps = append(deps, `"math/bits"`)
 	}
 	// memWrite (WOM/dynamic RAM) and paged.set both use slices.Grow.
-	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
+	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0 {
 		deps = append(deps, `"slices"`)
 	}
 	// Optional generated helpers add their own imports. Package main already
@@ -505,12 +505,19 @@ func (g *generator) emitImports(c *code) {
 // emitMemHelpers writes the grow-on-write / zero-on-miss helpers backing the
 // writable memories, each only when some memory of that kind exists.
 func (g *generator) emitMemHelpers(c *code) {
-	var usesMemory = len(g.inputs) > 0 || len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0
+	var usesMemory = len(g.inputs) > 0 || len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0
 
 	if usesMemory {
 		c.commentf("===============================================================================")
 		c.commentf("Memory Helpers")
 		c.commentf("===============================================================================")
+
+		if len(g.rams) > 0 || len(g.prams) > 0 || g.config.CheckPointing.HasValue() {
+			c.line("")
+			c.commentf("RamPage encapsulates a page of read/write memory")
+			c.line("type RamPage struct { data []uint64; stamps []uint64 }")
+		}
+		//
 		// roms
 		if len(g.inputs) > 0 {
 			c.line("")
@@ -531,54 +538,66 @@ func (g *generator) emitMemHelpers(c *code) {
 			c.line("if addr < uint64(len(data)) && data[addr] != v {")
 			c.line("fail(\"address already written for write-once memory\")")
 			c.line("} else if n := addr + 1; uint64(len(data)) < n {")
-			c.line("data = slices.Grow(data, int(n)-len(data))[:n]")
+			c.line("data = expand(data, n)")
 			c.line("}")
 			c.line("data[addr] = v")
 			c.line("return data")
 			c.line("}")
 		}
-		// rams
-		if len(g.rams) > 0 {
+		// rams (ramStamp also backs paged rams, page by page)
+		if len(g.rams) > 0 || len(g.prams) > 0 {
 			c.line("")
-			c.line("func ramRead(data []uint64, addr uint64) uint64 {")
-			c.line("if addr < uint64(len(data)) {")
-			c.line("return data[addr]")
+			// The page is mutated through a pointer (rather than passed and
+			// returned by value) since this sits on the hottest path of most
+			// programs: a by-value page costs two 48-byte copies plus a
+			// write-barriered store of the result into the package-level
+			// variable on every access.  The caller supplies the row and the
+			// (exclusive) end cell so that the helper stays within the
+			// inlining budget; growth is a cold path kept out of line.
+			c.commentf("ramStamp stamps the row holding cells [row*width, end), growing the page as needed.")
+			c.line("func ramStamp(stamp uint64, page *RamPage, row, end uint64) {")
+			c.line("if uint64(len(page.data)) < end {")
+			c.line("ramGrow(page, row+1, end)")
 			c.line("}")
-			c.line("return 0")
+			c.line("page.stamps[row] = stamp")
 			c.line("}")
 			c.line("")
-			//
-			c.line("func ramWrite(data []uint64, addr uint64, v uint64) []uint64 {")
-			c.line("if n := addr + 1; uint64(len(data)) < n {")
-			c.line("data = slices.Grow(data, int(n)-len(data))[:n]")
-			c.line("}")
-			c.line("data[addr] = v")
-			c.line("return data")
+			c.commentf("ramGrow ensures a page holds at least the given number of rows and cells.")
+			c.line("//go:noinline")
+			c.line("func ramGrow(page *RamPage, rows, cells uint64) {")
+			c.line("page.data = expand(page.data, cells)")
+			c.line("page.stamps = expand(page.stamps, rows)")
 			c.line("}")
 		}
 		// paged rams
-		if len(g.pageds) > 0 {
+		if len(g.prams) > 0 {
 			c.line("")
 			c.linef("const pageSize = %d", pagedPageSize)
 			c.line("")
-			c.line("func pagedRamRead(pages [][]uint64, addr uint64) uint64 {")
-			c.line("page, off := addr/pageSize, addr%pageSize")
-			c.line("if page < uint64(len(pages)) && pages[page] != nil {")
-			c.line("return pages[page][off]")
+			c.commentf("pagedRamStamp stamps the row holding cells [addr, addr+width), allocating its page as")
+			c.commentf("needed, and returns that page along with the offset of addr within it.")
+			c.line("func pagedRamStamp(stamp uint64, pages *[]RamPage, addr, width uint64) (*RamPage, uint64) {")
+			c.line("index, offset := addr/pageSize, addr%pageSize")
+			c.line("if n := index + 1; uint64(len(*pages)) < n {")
+			c.line("*pages = expandPages(*pages, n)")
 			c.line("}")
-			c.line("return 0")
+			c.line("page := &(*pages)[index]")
+			c.line("ramStamp(stamp, page, offset/width, offset+width)")
+			c.line("return page, offset")
 			c.line("}")
-			c.line("")
-			c.line("func pagedRamWrite(pages [][]uint64, addr uint64, v uint64) [][]uint64 {")
-			c.line("page, off := addr/pageSize, addr%pageSize")
-			c.line("if n := page + 1; uint64(len(pages)) < n {")
-			c.line("pages = slices.Grow(pages, int(n)-len(pages))[:n]")
+		}
+		// helpers
+		if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0 {
+			c.commentf("ensure a given slice has at least n elements")
+			c.line("func expand(data []uint64, n uint64) []uint64 {")
+			c.line("return slices.Grow(data, int(n)-len(data))[:n]")
 			c.line("}")
-			c.line("if pages[page] == nil {")
-			c.line("pages[page] = make([]uint64, pageSize)")
-			c.line("}")
-			c.line("pages[page][off] = v")
-			c.line("return pages")
+		}
+		//
+		if len(g.prams) > 0 {
+			c.commentf("ensure a given slice has at least n elements")
+			c.line("func expandPages(data []RamPage, n uint64) []RamPage {")
+			c.line("return slices.Grow(data, int(n)-len(data))[:n]")
 			c.line("}")
 		}
 	}
@@ -1004,7 +1023,7 @@ func (g *generator) emitCheckpointWriterMemories(c *code) {
 		case ramScratch:
 			c.linef("buf = encodeMemory(buf, %d, %s, %s_stamp, %s)", m.id, m.varName, m.varName, widths)
 		default:
-			c.linef("buf = encodeMemory(buf, %d, %s, 0, %s)", m.id, m.varName, widths)
+			c.linef("buf = encodeMemory(buf, %d, RamPage{%s, nil}, 0, %s)", m.id, m.varName, widths)
 		}
 	}
 }
@@ -1023,41 +1042,47 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 	c.line("}")
 	c.line("")
 	// encodePage appends one checkpoint page: u64 address, u32 len(data), data
-	// (cells packed big endian using widths[i % len(widths)] bytes for cell i)
-	// and u32 len(stamps) == 0.
-	c.line("func encodePage(buf []byte, address uint64, cells []uint64, widths []uint) []byte {")
+	// (cells packed big endian using widths[i % len(widths)] bytes for cell i),
+	// u32 len(stamps) and the row stamps (one u64 per row; none for memories
+	// which do not track timestamps, i.e. ROMs and WOMs).
+	c.line("func encodePage(buf []byte, address uint64, page RamPage, widths []uint) []byte {")
 	c.line("var n uint")
-	c.line("for i := range cells {")
+	c.line("for i := range page.data {")
 	c.line("n += widths[i%len(widths)]")
 	c.line("}")
 	c.line("buf = binary.BigEndian.AppendUint64(buf, address)")
 	c.line("buf = binary.BigEndian.AppendUint32(buf, uint32(n))")
-	c.line("for i, v := range cells {")
+	c.line("for i, v := range page.data {")
 	c.line("buf = encodeCell(buf, v, widths[i%len(widths)])")
 	c.line("}")
-	c.line("return binary.BigEndian.AppendUint32(buf, 0)")
+	c.line("buf = binary.BigEndian.AppendUint32(buf, uint32(len(page.stamps)))")
+	c.line("for _, v := range page.stamps {")
+	c.line("buf = binary.BigEndian.AppendUint64(buf, v)")
+	c.line("}")
+	c.line("return buf")
 	c.line("}")
 	c.line("")
-	// encodeMemory appends one memory header (u16 module, u64 clock == 0) followed
-	// by a single page at address zero holding all cells.
-	c.line("func encodeMemory(buf []byte, mid uint16, cells []uint64, stamp uint64, widths []uint) []byte {")
+	// encodeMemory appends one memory header (u16 module, u64 clock) followed by
+	// a single page at address zero holding all cells (and row stamps, if any).
+	c.line("func encodeMemory(buf []byte, mid uint16, page RamPage, stamp uint64, widths []uint) []byte {")
 	c.commentf("module identifier")
 	c.line("buf = binary.BigEndian.AppendUint16(buf, mid)")
 	c.commentf("timestamp")
 	c.line("buf = binary.BigEndian.AppendUint64(buf, stamp)")
 	c.commentf("page count")
 	c.line("buf = binary.BigEndian.AppendUint32(buf, 1)")
-	c.line("return encodePage(buf, 0, cells, widths)")
+	c.line("return encodePage(buf, 0, page, widths)")
 	c.line("}")
 	c.line("")
 	//
-	if len(g.pageds) > 0 {
+	if len(g.prams) > 0 {
 		// encodePaged is as encodeMemory, but with one page per allocated page of a
 		// paged memory, addressed by its first row (rows is rows per page).
-		c.line("func encodePaged(buf []byte, mid uint16, pages [][]uint64, stamp, rows uint64, widths []uint) []byte {")
+		c.line("func encodePaged(buf []byte, mid uint16, pages []RamPage, stamp," +
+			"rowsPerPage uint64, widths []uint) []byte {")
 		c.line("var n uint32")
 		c.line("for _, p := range pages {")
-		c.line("if p != nil {")
+		c.line("if p.data != nil {")
 		c.line("n++")
 		c.line("}")
 		c.line("}")
@@ -1068,8 +1093,8 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 		c.commentf("page count")
 		c.line("buf = binary.BigEndian.AppendUint32(buf, n)")
 		c.line("for i, p := range pages {")
-		c.line("if p != nil {")
-		c.line("buf = encodePage(buf, uint64(i)*rows, p, widths)")
+		c.line("if p.data != nil {")
+		c.line("buf = encodePage(buf, uint64(i)*rowsPerPage, p, widths)")
 		c.line("}")
 		c.line("}")
 		c.line("return buf")

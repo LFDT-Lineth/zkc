@@ -2,16 +2,15 @@
 package golden
 
 import (
-	"fmt"
 	"math/bits"
 	"slices"
 )
 
 // Input ROM "args".
-var zkc_args = ReadOnlyMemory{"args", nil}
+var zkc_args []uint64
 
 // Output WOM "result".
-var zkc_result = WriteOnceMemory{"result", nil}
+var zkc_result []uint64
 
 // zkc_main corresponds to ZkC function "main".
 func zkc_main() {
@@ -32,7 +31,7 @@ func zkc_main() {
 	// [0.1] read a = args[$4]
 	{
 		start := r4
-		r0 = zkc_args.read(start + 0)
+		r0 = romRead(zkc_args, start+0)
 		if r0 >= 1<<16 {
 			fail("bit overflow (value exceeds u16)")
 		}
@@ -42,7 +41,7 @@ func zkc_main() {
 	// [0.3] read b = args[$5]
 	{
 		start := r5
-		r1 = zkc_args.read(start + 0)
+		r1 = romRead(zkc_args, start+0)
 		if r1 >= 1<<16 {
 			fail("bit overflow (value exceeds u16)")
 		}
@@ -52,7 +51,7 @@ func zkc_main() {
 	// [0.5] read c = args[$6]
 	{
 		start := r6
-		r2 = zkc_args.read(start + 0)
+		r2 = romRead(zkc_args, start+0)
 		if r2 >= 1<<16 {
 			fail("bit overflow (value exceeds u16)")
 		}
@@ -67,7 +66,7 @@ func zkc_main() {
 	// [0.8] write result[$7] = sum
 	{
 		start := r7
-		zkc_result.write(start+0, r3)
+		zkc_result = womWrite(zkc_result, start+0, r3)
 	}
 	// [0.9] ldc $8 = 0x1
 	r8 = 1
@@ -79,7 +78,7 @@ func zkc_main() {
 	// [0.11] write result[$8] = $9
 	{
 		start := r8
-		zkc_result.write(start+0, r9)
+		zkc_result = womWrite(zkc_result, start+0, r9)
 	}
 	// [0.12] ldc $10 = 0x2
 	r10 = 2
@@ -97,7 +96,7 @@ func zkc_main() {
 	// [0.14] write result[$10] = $11
 	{
 		start := r10
-		zkc_result.write(start+0, r11)
+		zkc_result = womWrite(zkc_result, start+0, r11)
 	}
 	// [0.15] ret
 	return
@@ -117,30 +116,25 @@ func fail(msg string) { panic(failure(msg)) }
 // ===============================================================================
 // Memory Helpers
 // ===============================================================================
-// ReadOnlyMemory represents a ZkC read-only (input) memory
-type ReadOnlyMemory struct {
-	name string
-	data []uint64
-}
 
-func (m *ReadOnlyMemory) read(addr uint64) uint64 {
-	if addr < uint64(len(m.data)) {
-		return m.data[addr]
+func romRead(data []uint64, addr uint64) uint64 {
+	if addr >= uint64(len(data)) {
+		fail("out-of-bounds read of read-only memory")
 	}
-	return 0
+	return data[addr]
 }
 
-// WriteOnceMemory represents a ZkC write-once memory
-type WriteOnceMemory struct {
-	name string
-	data []uint64
-}
-
-func (m *WriteOnceMemory) write(addr uint64, v uint64) {
-	if addr < uint64(len(m.data)) && m.data[addr] != v {
-		fail(fmt.Sprintf("address already written for write-once memory %s", m.name))
-	} else if n := addr + 1; uint64(len(m.data)) < n {
-		m.data = slices.Grow(m.data, int(n)-len(m.data))[:n]
+func womWrite(data []uint64, addr uint64, v uint64) []uint64 {
+	if addr < uint64(len(data)) && data[addr] != v {
+		fail("address already written for write-once memory")
+	} else if n := addr + 1; uint64(len(data)) < n {
+		data = expand(data, n)
 	}
-	m.data[addr] = v
+	data[addr] = v
+	return data
+}
+
+// ensure a given slice has at least n elements
+func expand(data []uint64, n uint64) []uint64 {
+	return slices.Grow(data, int(n)-len(data))[:n]
 }

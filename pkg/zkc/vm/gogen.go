@@ -81,6 +81,8 @@ func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) 
 	if output, err = binary.Run(input, os.Stderr); err != nil {
 		return output, []error{err}
 	}
+	// Log stats
+	stats.Log("Machine execution")
 	// success
 	return output, nil
 }
@@ -91,18 +93,19 @@ func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) 
 // according to the given strategy, and these are then passed on to the
 // checkpointing function.
 func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Array, cp CheckPointer,
-) (map[string]bit.Array, []error) {
+) (map[string]bit.Array, bool, []error) {
 	var (
-		stats  = util.NewPerfStats()
-		output map[string]bit.Array
-		binary gogen.Binary
-		err    error
+		stats        = util.NewPerfStats()
+		output       map[string]bit.Array
+		binary       gogen.Binary
+		err          error
+		nCheckPoints uint
 	)
 	// Compile program into gogen executable.
 	binary, err = gogen.Compile(program, gogen.DEFAULT_CONFIG.WithCheckPointing(cp.ShardingStrategy))
 	// Check for errors
 	if err != nil {
-		return nil, []error{err}
+		return nil, false, []error{err}
 	}
 	// Log result
 	stats.Log(fmt.Sprintf("compiling binary %s", binary.Path()))
@@ -115,9 +118,11 @@ func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Arra
 	// Run the compiled program, passing only the machine's declared inputs (the
 	// generated harness rejects unknown keys).  Forward its debug/printf and
 	// fail output to our stderr so those statements are surfaced to the user.
-	if output, err = binary.CheckPoint(input, cp.checkpoint, os.Stderr); err != nil {
-		return output, []error{err}
+	if output, nCheckPoints, err = binary.CheckPoint(input, cp.checkpoint, os.Stderr); err != nil {
+		return output, err == gogen.ErrMachineFailure, []error{err}
 	}
+	// Log stats
+	stats.Log(fmt.Sprintf("Machine execution (%d checkpoints)", nCheckPoints))
 	// success
-	return output, nil
+	return output, true, nil
 }

@@ -142,10 +142,13 @@ func (p *Binary) Path() string {
 // Run executes the compiled gogen binary on the given input, returning the
 // output, and any errors arising.  Finally, any output from the program (e.g.
 // from debug/print statements) is written to the given stderr writer.
-func (p *Binary) Run(in map[string]bit.Array, stderr io.Writer) (map[string]bit.Array, error) {
-	return p.CheckPoint(in, func(checkpoint.CheckPoint) {
+func (p *Binary) Run(in map[string]bit.Array, stderr io.Writer) (output map[string]bit.Array, err error) {
+	//
+	output, _, err = p.CheckPoint(in, func(checkpoint.CheckPoint) {
 		panic("checkpoint received")
 	}, stderr)
+	//
+	return output, err
 }
 
 // CheckPoint executes the compiled gogen binary on the given input, returning
@@ -154,10 +157,10 @@ func (p *Binary) Run(in map[string]bit.Array, stderr io.Writer) (map[string]bit.
 // from the program (e.g. from debug/print statements) is written to the given
 // stderr writer.
 func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.CheckPoint), stderr io.Writer,
-) (map[string]bit.Array, error) {
+) (output map[string]bit.Array, nCheckpoints uint, err error) {
 	//
 	var (
-		output map[string]bit.Array
+		input []byte
 		// byteconsumer is responsible for converting a byte array into a
 		// checkpoint, and passing it onto the checkpoint consumer.
 		byteConsumer = func(line []byte) error {
@@ -165,6 +168,8 @@ func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.Ch
 			if combo, err := unmarshalCombo(line); err != nil {
 				return fmt.Errorf("decoding generated output %q: %v", string(line), err)
 			} else if combo.HasSecond() {
+				nCheckpoints++
+				//
 				consumer(combo.Second())
 			} else {
 				output = combo.First()
@@ -174,13 +179,13 @@ func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.Ch
 		}
 	)
 	// Marshal input data into bytes
-	if input, err := marshalInputs(in); err != nil {
-		return nil, err
+	if input, err = marshalInputs(in); err != nil {
+		return nil, nCheckpoints, err
 	} else if err = runRaw(p.path, input, byteConsumer, stderr); err != nil {
-		return nil, err
+		return nil, nCheckpoints, err
 	}
 	// Decode final output
-	return output, nil
+	return output, nCheckpoints, nil
 }
 
 // MarshalInputs renders input memories as the JSON the generated harness reads:

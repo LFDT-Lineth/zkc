@@ -56,12 +56,7 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 	var inner error
 
 	c.block(func() {
-		c.linef("start := %s", start)
-		//
-		switch mi.role {
-		case ramScratch, pagedScratch:
-			c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
-		}
+		g.emitAccessPrologue(c, mi, start, len(x.Data))
 		//
 		for i, d := range x.Data {
 			// A discarded data line binds no register: skip the load (the
@@ -93,10 +88,10 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 				expr = fmt.Sprintf("romRead(%s, start + %d)", mi.varName, i)
 				bound = widthMax(64)
 			case ramScratch:
-				expr = fmt.Sprintf("ramRead(%s, start + %d)", mi.varName, i)
+				expr = fmt.Sprintf("%s.data[start+%d]", mi.varName, i)
 				bound = widthMax(widthOf(dataRegs[i]))
 			default:
-				expr = fmt.Sprintf("pagedRamRead(%s, start + %d)", mi.varName, i)
+				expr = fmt.Sprintf("page.data[offset+%d]", i)
 				bound = widthMax(widthOf(dataRegs[i]))
 			}
 
@@ -138,12 +133,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	var inner error
 
 	c.block(func() {
-		c.linef("start := %s", start)
-		//
-		switch mi.role {
-		case ramScratch, pagedScratch:
-			c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
-		}
+		g.emitAccessPrologue(c, mi, start, len(x.Data))
 		//
 		for i, s := range x.Data {
 			src, e := g.registerOperand(fn, s)
@@ -160,14 +150,44 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 			case womOutput:
 				c.linef("%s = womWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
 			case ramScratch:
-				c.linef("%s = ramWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+				c.linef("%s.data[start+%d] = %s", mi.varName, i, src.expr)
 			default:
-				c.linef("%s = pagedRamWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+				c.linef("page.data[offset+%d] = %s", i, src.expr)
 			}
 		}
 	})
 
 	return inner
+}
+
+// emitAccessPrologue emits the preamble shared by every read and write of a
+// memory: for scratch memories, the access clock tick and the stamping of the
+// accessed row (which also grows / allocates the storage as needed).  A
+// non-paged access leaves the first cell's address in "start"; a paged access
+// instead leaves the accessed page in "page" and the first cell's offset within
+// it in "offset".
+func (g *generator) emitAccessPrologue(c *code, mi memInfo, start string, width int) {
+	switch mi.role {
+	case ramScratch:
+		c.linef("start := %s", start)
+		c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
+		c.linef("ramStamp(%s_stamp, &%s, %s, start+%d)", mi.varName, mi.varName, rowExpr(width), width)
+	case pagedScratch:
+		c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
+		c.linef("page, offset := pagedRamStamp(%s_stamp, &%s, %s, %d)", mi.varName, mi.varName, start, width)
+	default:
+		c.linef("start := %s", start)
+	}
+}
+
+// rowExpr returns the row holding cell "start" of a memory with the given
+// number of data lanes.
+func rowExpr(width int) string {
+	if width == 1 {
+		return "start"
+	}
+	//
+	return fmt.Sprintf("start/%d", width)
 }
 
 // addrExpr mirrors the interpreter's decodeAddress: fold the address registers

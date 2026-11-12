@@ -113,8 +113,13 @@ func checkValidInternal(t *testing.T, test TestCase) {
 		if test.sharding.HasValue() {
 			traceConfig = traceConfig.WithSharding(test.sharding.Unwrap())
 		}
-		// Run the test
+		// Run the test (without gogen)
 		runConstraintTest(t, p, test.vector, field, traceConfig)
+		//
+		if test.gogen.HasValue() {
+			// Rerun test (with gogen)
+			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true))
+		}
 	}
 }
 

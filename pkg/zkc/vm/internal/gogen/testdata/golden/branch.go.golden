@@ -2,16 +2,15 @@
 package golden
 
 import (
-	"fmt"
 	"math/bits"
 	"slices"
 )
 
 // Input ROM "data".
-var zkc_data = ReadOnlyMemory{"data", nil}
+var zkc_data []uint64
 
 // Output WOM "result".
-var zkc_result = WriteOnceMemory{"result", nil}
+var zkc_result []uint64
 
 // zkc_main corresponds to ZkC function "main".
 func zkc_main() {
@@ -24,7 +23,7 @@ func zkc_main() {
 	// [0.1] read x = data[$2]
 	{
 		start := r2
-		r0 = zkc_data.read(start + 0)
+		r0 = romRead(zkc_data, start+0)
 		if r0 >= 1<<8 {
 			fail("bit overflow (value exceeds u8)")
 		}
@@ -58,7 +57,7 @@ L_0_6:
 	// [0.7] write result[$3] = y
 	{
 		start := r3
-		zkc_result.write(start+0, r1)
+		zkc_result = womWrite(zkc_result, start+0, r1)
 	}
 	// [0.8] ret
 	return
@@ -78,30 +77,25 @@ func fail(msg string) { panic(failure(msg)) }
 // ===============================================================================
 // Memory Helpers
 // ===============================================================================
-// ReadOnlyMemory represents a ZkC read-only (input) memory
-type ReadOnlyMemory struct {
-	name string
-	data []uint64
-}
 
-func (m *ReadOnlyMemory) read(addr uint64) uint64 {
-	if addr < uint64(len(m.data)) {
-		return m.data[addr]
+func romRead(data []uint64, addr uint64) uint64 {
+	if addr >= uint64(len(data)) {
+		fail("out-of-bounds read of read-only memory")
 	}
-	return 0
+	return data[addr]
 }
 
-// WriteOnceMemory represents a ZkC write-once memory
-type WriteOnceMemory struct {
-	name string
-	data []uint64
-}
-
-func (m *WriteOnceMemory) write(addr uint64, v uint64) {
-	if addr < uint64(len(m.data)) && m.data[addr] != v {
-		fail(fmt.Sprintf("address already written for write-once memory %s", m.name))
-	} else if n := addr + 1; uint64(len(m.data)) < n {
-		m.data = slices.Grow(m.data, int(n)-len(m.data))[:n]
+func womWrite(data []uint64, addr uint64, v uint64) []uint64 {
+	if addr < uint64(len(data)) && data[addr] != v {
+		fail("address already written for write-once memory")
+	} else if n := addr + 1; uint64(len(data)) < n {
+		data = expand(data, n)
 	}
-	m.data[addr] = v
+	data[addr] = v
+	return data
+}
+
+// ensure a given slice has at least n elements
+func expand(data []uint64, n uint64) []uint64 {
+	return slices.Grow(data, int(n)-len(data))[:n]
 }

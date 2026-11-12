@@ -108,8 +108,9 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
 		WithBatchSize(GetUint(cmd, "batch")).
-		WithParallelism(!GetFlag(cmd, "sequential"))
-		//
+		WithParallelism(!GetFlag(cmd, "sequential")).
+		WithGoGen(build.gogen)
+	//
 	if sharding != "" {
 		traceConfig = traceConfig.WithSharding(parseShardingConfig(sharding))
 	}

@@ -99,6 +99,8 @@ type TraceConfig struct {
 	parallel bool
 	// Specify the maximum size of any dispatched batch.
 	batchSize uint
+	// Specified whether or not to use gogen
+	gogen bool
 	// Determines how much front padding is added to the generated trace (see
 	// ir.TraceBuilder.WithPadding).
 	paddingStrategy ir.PaddingStrategy
@@ -108,7 +110,7 @@ type TraceConfig struct {
 
 // DEFAULT_TRACE_CONFIG defines a default configuration for tracing.
 var DEFAULT_TRACE_CONFIG = TraceConfig{
-	parallel: true, batchSize: 1024, paddingStrategy: ir.NextPowerOfTwoPadding}
+	parallel: true, batchSize: 1024, gogen: false, paddingStrategy: ir.NextPowerOfTwoPadding}
 
 // WithParallelism updates a given builder configuration to allow trace expansion to be
 // performed concurrently (or not).
@@ -122,6 +124,20 @@ func (tb TraceConfig) WithParallelism(flag bool) TraceConfig {
 // expansion.
 func (tb TraceConfig) WithBatchSize(batchSize uint) TraceConfig {
 	tb.batchSize = batchSize
+	//
+	return tb
+}
+
+// GoGen determines whether (or not) gogen should be used for fast-mode
+// execution.
+func (tb TraceConfig) GoGen() bool {
+	return tb.gogen
+}
+
+// WithGoGen updates the configuration given to enable (or disable) gogen for
+// fast-mode execution.
+func (tb TraceConfig) WithGoGen(flag bool) TraceConfig {
+	tb.gogen = flag
 	//
 	return tb
 }

@@ -298,10 +298,13 @@ func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.Executi
 ) (output map[string]bit.Array, errs []error) {
 	var checkpointing = config.Checkpointing()
 	// TODO: currently, for gogen execution it compiles (and deletes) the gogen
-	// binary every time, which is not optimal.
+	// binary every time, which is not optimal.  See #2331
 	if config.GoGen() && checkpointing.HasValue() {
+		// TODO: avoid using the RawProgram() here as this may not align exactly
+		// with the execution program.  See #2332.
+		//
 		// Fast-mode execution via gogen
-		output, errs = vm.BootAndCheckpointWithGogen(p.RawProgram(), input, checkpointing.Unwrap())
+		output, _, errs = vm.BootAndCheckpointWithGogen(p.RawProgram(), input, checkpointing.Unwrap())
 	} else if config.GoGen() {
 		// Fast-mode execution via gogen
 		output, errs = vm.BootAndExecuteWithGogen(p.RawProgram(), input)
@@ -343,7 +346,7 @@ func (p *BinaryFile[F, W]) Trace(input map[string]bit.Array, cfg vm.TraceConfig,
 	var (
 		// Initialise trace builder from configuration
 		builder = vm.NewTraceBuilder[W, F, Tracer[F, W]](cfg,
-			p.ExecutionProgram(), p.TracingProgram(), p.AirConstraints())
+			p.RawProgram(), p.ExecutionProgram(), p.TracingProgram(), p.AirConstraints())
 	)
 	// Execute machine
 	return builder.BootAndTrace(input)
