@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -188,18 +187,8 @@ func snapshotUses[W Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 		if snapshot[i] {
 			bw := registers.Register(use).Bitwidth()
 			tmp := registers.Allocate("fla", bw)
-
-			// If the register has no width, it is a field register.
-			// the temporary stays native and the snapshot is a field
-			// copy.
-			if bw.IsEmpty() {
-				var zero W
-				//
-				insns = append(insns, bytecode.NewFieldArith(bytecode.OP_ADDMOD_P, tmp,
-					[]bytecode.RegisterId{use}, zero))
-			} else {
-				insns = append(insns, bytecode.Assign[W](tmp, use, util.Cast[uint16](bw.Unwrap())))
-			}
+			// A native register has no width, so the snapshot is a field copy.
+			insns = append(insns, bytecode.Copy[W](tmp, use, bw))
 
 			ids[i] = tmp
 		}

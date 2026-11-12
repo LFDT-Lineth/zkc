@@ -345,6 +345,18 @@ func AddVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 	return NewArith(OP_ADD, targets, sources, constant, bitwidth)
 }
 
+// Copy copies source into target. A native field register is a field addition
+// of zero. An integer register is an assignment operation at that width.
+func Copy[W word.Word[W]](target RegisterId, source RegisterId, bitwidth util.Option[uint]) Bytecode[W] {
+	if bitwidth.IsEmpty() {
+		var zero W
+		//
+		return NewFieldArith(OP_ADDMOD_P, target, []RegisterId{source}, zero)
+	}
+	//
+	return Assign[W](target, source, util.Cast[uint16](bitwidth.Unwrap()))
+}
+
 // Assign constructs a move instruction which copies the source register into the
 // target register.
 func Assign[W word.Word[W]](target RegisterId, source RegisterId, bitwidth uint16) *Arith[W] {
