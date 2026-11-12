@@ -102,9 +102,9 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// selectors), requires knowledge of target modules, etc.
 			continue
 		case *vm.BytecodeCheckCast[W]:
-			// Width checks are enforced by the range-proof constraints emitted for
-			// each register, so a cast check needs no constraint of its own.  This
-			// mirrors the bytecode→word decompiler, which drops casts entirely.
+			// Translation of casts is done at the function level (see
+			// addLookups), as they are lowered into conditional range lookups
+			// requiring source selectors and knowledge of the range tables.
 			continue
 		case *vm.BytecodeFail[W]:
 			assignments = joinAssignments(assignments, localWrites)

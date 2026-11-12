@@ -105,39 +105,14 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			// added are range-checked. Note that len(mod.Registers()) >= len(regs)
 			continue
 		}
-		// Zero-width registers can only hold zero, enforced with r == 0.
-		if reg.Width() == 0 {
+		// Registers of width <= 2 are not range-checked with a lookup to a
+		// static table, but with a vanishing constraint (see smallRangeCheck).
+		if reg.Width() <= 2 {
 			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u0_%d", regId.Unwrap())
+			handle := fmt.Sprintf("range_u%d_%d", reg.Width(), regId.Unwrap())
 			r := mirc.Variable[F](regId, reg.Width(), 0)
 			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
-				r.Equals(mirc.Number[F](0)).AsLogical()))
-
-			continue
-		}
-		// u1 registers are not range-checked with a lookup to a static table,
-		// but with a constraint r * r == r (equivalently r * (1 - r) == 0).
-		if reg.Width() == 1 {
-			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u1_%d", regId.Unwrap())
-			r := mirc.Variable[F](regId, reg.Width(), 0)
-			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
-				mirc.Product(r, r).Equals(r).AsLogical()))
-
-			continue
-		}
-		// u2 registers are not range-checked with a lookup to a static table,
-		// but with a constraint r * (r - 1) * (r - 2) * (r - 3) == 0.
-		if reg.Width() == 2 {
-			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u2_%d", regId.Unwrap())
-			r := mirc.Variable[F](regId, reg.Width(), 0)
-			poly := mirc.Product(r,
-				r.Subtract(mirc.Number[F](1)),
-				r.Subtract(mirc.Number[F](2)),
-				r.Subtract(mirc.Number[F](3)))
-			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
-				poly.Equals(mirc.Number[F](0)).AsLogical()))
+				smallRangeCheck(r, reg.Width()).AsLogical()))
 
 			continue
 		}
@@ -164,4 +139,73 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 		mod.AddConstraints(lookup.NewConstraint[F](handle,
 			[]mir.LookupVector{target}, []mir.LookupVector{source}))
 	}
+}
+
+// emitCastCheck lowers a cast "check r:uN" into a range check of r against N
+// bits, which applies only on the rows where the cast executes (i.e. those
+// where the given source selector is on).  Observe that N is strictly below the
+// declared width of r, so the (unconditional) range proof of r does not imply
+// this.  Three cases arise:
+//
+//   - N <= 2: the vanishing constraint "sel != 0 ==> poly_N(r) == 0" (see
+//     smallRangeCheck).
+//   - N <= maxStaticWidth: a lookup of r (filtered by sel) into the static
+//     $range_uN table.
+//   - N > maxStaticWidth: nothing to do here, as AddRangeChecks has already
+//     inserted a call "$range_uN(r)" after the cast (on the same path), which is
+//     lowered into a call lookup gated likewise.
+//
+// The target is read on the current row; FlattenLookupAccess ensures its column
+// there holds the value actually checked.
+func (p *constraintTranslator[W, F]) emitCastCheck(mod *schema.Table[F], ctx schema.ModuleId, pc, cc uint,
+	cast *vm.BytecodeCheckCast[W], srcSelector register.Id) {
+	var (
+		width  = uint(cast.Bitwidth)
+		regId  = register.NewId(uint(cast.Target))
+		handle = fmt.Sprintf("cast_u%d_%d_%d_%d", width, ctx, pc, cc)
+	)
+	//
+	switch {
+	case width > p.maxStaticWidth:
+		// Range-checked via the call to $range_uN following the cast.
+		return
+	case width <= 2:
+		var (
+			sel = mirc.Variable[F](srcSelector, 1, 0)
+			r   = mirc.Variable[F](regId, mod.Registers()[regId.Unwrap()].Width(), 0)
+		)
+		//
+		mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
+			mirc.If(sel.NotEquals(mirc.Number[F](0)), smallRangeCheck(r, width)).AsLogical()))
+	default:
+		table, ok := p.rangeTables[width]
+		// Sanity check a static table was generated for this width.
+		util.Assert(ok, "missing static range table for cast to u%d", width)
+		//
+		var (
+			// Source: the cast's target on the rows executing the cast.
+			source = lookup.FilteredVector(ctx, srcSelector, regId)
+			// Target: the enumerated value column of the matching $range_un table.
+			target = lookup.UnfilteredVector(table.module, table.value)
+		)
+		//
+		mod.AddConstraints(lookup.NewConstraint[F](handle,
+			[]mir.LookupVector{target}, []mir.LookupVector{source}))
+	}
+}
+
+// smallRangeCheck constructs the vanishing constraint "r * (r - 1) * ... * (r -
+// (2^width - 1)) == 0" asserting r fits within width bits, for a width of at most
+// 2 (wider registers being range-checked by lookups instead).  For width 0 this
+// is simply r == 0.
+func smallRangeCheck[F field.Element[F]](r Expr[F], width uint) Expr[F] {
+	util.Assert(width <= 2, "invalid width for small range check")
+	//
+	var factors = []Expr[F]{r}
+	//
+	for i := uint(1); i < 1<<width; i++ {
+		factors = append(factors, r.Subtract(mirc.Number[F](i)))
+	}
+	//
+	return mirc.Product(factors...).Equals(mirc.Number[F](0))
 }

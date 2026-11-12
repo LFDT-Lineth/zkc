@@ -24,6 +24,8 @@ import (
 
 // FlattenLookupAccess snapshots, into a fresh temporary, each call (or memory access) argument whose
 // register may be written at or after the call on some path through it within the same vector.
+// The target of a cast ("check r:uN") is treated likewise, since a cast is lowered
+// into a (conditional) range lookup reading that target's column.
 //
 // The lookup gluing a call to its callee reads the argument and return columns
 // at the call's row.  If an argument register is also written elsewhere in the
@@ -171,6 +173,10 @@ func flattenLookupAccess[W Word[W]](code Bytecode[W], snapshot []bool,
 		// A read's data registers are outputs (absent from uses) and stay
 		// untouched.
 		return append(insns, bytecode.NewMemRead[W](c.Id, address, c.Data, rest))
+	case *bytecode.CheckCast[W]:
+		// A cast is lowered into a (conditional) range lookup reading its
+		// target's column, so it is snapshotted just like a call argument.
+		return append(insns, bytecode.NewCheckCast[W](uses[0], c.Bitwidth))
 	default:
 		panic(fmt.Sprintf("unexpected bytecode (%T)", code))
 	}
@@ -199,6 +205,8 @@ func lookupUses[W Word[W]](code Bytecode[W]) []bytecode.RegisterId {
 	case *bytecode.Call[W]:
 		return c.Arguments
 	case *bytecode.ReadWrite[W]:
+		return c.Uses()
+	case *bytecode.CheckCast[W]:
 		return c.Uses()
 	default:
 		return nil
