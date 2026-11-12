@@ -487,21 +487,28 @@ func Test_ZkcUnit_Basic_115(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_116(t *testing.T) {
-	// #2007: support implicit sign bit
-	checkZkcUnit(t, "zkc/unit/basic_116", DEFAULT_UNIT_CONFIG.
-		GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_116", DEFAULT_UNIT_CONFIG)
 }
 
+// 1 - z - 2 folds to a negative constant, so it is a SUB from register 0 that
+// underflows for every z (rejects only).
 func Test_ZkcUnit_Basic_117(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_117", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_118(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_118", DEFAULT_UNIT_CONFIG)
+	// #2007: support implicit sign bit
+	checkZkcUnit(t, "zkc/unit/basic_118", DEFAULT_UNIT_CONFIG.
+		GoGen(false).Constraints(false))
 }
 
-// 1 - z - 2 folds to a negative constant, so it is a SUB from register 0 that
-// underflows for every z (rejects only).
+// (3 - a) as u16. The u8 subtraction underflows into the u16, so the sliced
+// result is stored. Constraints panic on the missing sign bit (#2007).
+func Test_ZkcUnit_Basic_119(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_119", DEFAULT_UNIT_CONFIG.
+		GoGen(false).Constraints(false))
+}
+
 func Test_ZkcUnit_Basic_120(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_120", DEFAULT_UNIT_CONFIG)
 }

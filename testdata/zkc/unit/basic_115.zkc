@@ -1,7 +1,8 @@
 pub input data(address:u16) -> (word:u8)
 
-// Subtraction from a constant (CSUB).  Inputs are a and b, followed by the
-// expected value of each case.
+// Subtraction from a constant (CSUB)
+// No register-splitting
+// Inputs are a and b, followed by the expected value of each case
 fn main() {
     var a:u8 = data[0]
     var b:u8 = data[1]
