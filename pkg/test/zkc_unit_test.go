@@ -500,6 +500,12 @@ func Test_ZkcUnit_Basic_118(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_118", DEFAULT_UNIT_CONFIG)
 }
 
+// 1 - z - 2 folds to a negative constant, so it is a SUB from register 0 that
+// underflows for every z (rejects only).
+func Test_ZkcUnit_Basic_120(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_120", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // If Tests
 // ===================================================================
