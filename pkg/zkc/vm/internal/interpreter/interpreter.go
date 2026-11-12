@@ -658,6 +658,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			p.pc, err = p.executeSub_2n1(p.pc, bytecodes, frame)
 		case encoding.SUBC:
 			p.pc, err = p.executeSub_1n1c(p.pc, bytecodes, pool, frame)
+		case encoding.CSUB:
+			p.pc, err = p.executeCSub_1c1n(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_2n1:
 			p.pc, err = p.executeMul_2n1(p.pc, bytecodes, frame)
 		case encoding.MULC:
@@ -668,6 +670,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			p.pc, err = p.executeSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.MUL_nm:
 			p.pc, err = p.executeMul_nm(p.pc, bytecodes, pool, frame)
+		case encoding.CSUB_nm:
+			p.pc, err = p.executeCSub_nm(p.pc, bytecodes, pool, frame)
 		case encoding.DIVMOD:
 			p.pc, err = p.executeDivMod(p.pc, bytecodes, frame)
 		case encoding.DIVMODC:
@@ -813,6 +817,10 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		pc, err = p.executeSub_nm(pc, codes, pool, stack)
 	case encoding.WIDE_MUL_nm:
 		pc, err = p.executeMul_nm(pc, codes, pool, stack)
+	case encoding.WIDE_CSUB:
+		pc, err = p.executeCSub_1c1n(pc, codes, pool, stack)
+	case encoding.WIDE_CSUB_nm:
+		pc, err = p.executeCSub_nm(pc, codes, pool, stack)
 	case encoding.WIDE_DIVMOD:
 		pc, err = p.executeDivMod(pc, codes, stack)
 	case encoding.WIDE_DIVMODC:
@@ -1396,9 +1404,9 @@ func (p *Interpreter[W]) executeAdd_2n1(pc uint32, codes []uint32, stack []W) (u
 // executeAdd_1n1c implements ADDC: stack[rd] = stack[rs] + constant.
 func (p *Interpreter[W]) executeAdd_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                 = stack[rs]
-		res, overflow       = val.Add(constant)
+		rs, rd, constant, _, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                    = stack[rs]
+		res, overflow          = val.Add(constant)
 	)
 	//
 	if overflow {
@@ -2167,9 +2175,9 @@ func (p *Interpreter[W]) executeMul_2n1(pc uint32, codes []uint32, stack []W) (u
 // executeMul_1n1c implements MULC: stack[rd] = stack[rs] * constant.
 func (p *Interpreter[W]) executeMul_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                 = stack[rs]
-		hi, lo              = val.Mul(constant)
+		rs, rd, constant, _, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                    = stack[rs]
+		hi, lo                 = val.Mul(constant)
 	)
 	//
 	if hi.Cmp64(0) != 0 {
@@ -2264,9 +2272,9 @@ func executeShr[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 // executeSub_1n1c implements SUBC: stack[rd] = stack[rs] - constant.
 func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
 	var (
-		rs, rd, constant, n = encoding.DecodeArith_1n1c(pc, codes, pool)
-		val                 = stack[rs]
-		res, underflow      = val.Sub(constant)
+		rs, rd, constant, _, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                    = stack[rs]
+		res, underflow         = val.Sub(constant)
 	)
 	//
 	if underflow {
@@ -2282,6 +2290,37 @@ func (p *Interpreter[W]) executeSub_1n1c(pc uint32, codes []uint32, pool []W, st
 			rs_width = module.Register(rs).Bitwidth().Unwrap()
 			bitwidth = max(rd_width, 1+max(rs_width, cm1.BitLen()))
 		)
+		// slice enough values
+		res = res.Slice(bitwidth)
+	}
+	//
+	stack[rd] = res
+	//
+	return pc + n, nil
+}
+
+// executeCSub_1c1n implements CSUB: stack[rd] = constant - stack[rs].
+func (p *Interpreter[W]) executeCSub_1c1n(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
+	var (
+		rs, rd, constant, bw, n = encoding.DecodeArith_1n1c(pc, codes, pool)
+		val                     = stack[rs]
+		res, underflow          = constant.Sub(val)
+	)
+	//
+	if underflow {
+		// Mirror descriptor.CalculateCSubBitwidth: one is subtracted from the
+		// source maximum because negative values do not need to encode zero.
+		// A zero-width source holds 0, so it cannot reach this underflow.
+		var (
+			module   = p.program.Module(p.fid)
+			zero     W
+			rd_width = module.Register(rd).Bitwidth().Unwrap()
+			rs_width = module.Register(rs).Bitwidth().Unwrap()
+		)
+		//
+		sm1, _ := zero.Not(rs_width).Sub64(1)
+		//
+		bitwidth := max(rd_width, 1+max(uint(bw), sm1.BitLen()))
 		// slice enough values
 		res = res.Slice(bitwidth)
 	}
@@ -2346,6 +2385,36 @@ func (p *Interpreter[W]) executeSub_nm(pc uint32, codes []uint32, pool []W, stac
 	if acc, underflow = acc.Add(constant); underflow {
 		return pc, p.failure("arithmetic underflow")
 	} else if val, underflow = val.Sub(acc); underflow {
+		val = val.Slice(bitwidth)
+	}
+	//
+	return pc + n, p.storeAcross(pc, p.program.Module(p.fid).Registers(), targets, val, stack)
+}
+
+// executeCSub_nm implements CSUB_nm: it seeds the value from the constant,
+// subtracts every source, and stores the result across a vector target using
+// the same low-limb-first rule as the word machine. Summing the sources
+// reports an error when that sum overflows the word; a subtraction that
+// underflows is wrapped to the instruction bitwidth.
+func (p *Interpreter[W]) executeCSub_nm(pc uint32, codes []uint32, pool []W, stack []W) (uint32, error) {
+	var (
+		targets, sources, constant, bitwidth, n = encoding.DecodeArith_nm(pc, codes, pool)
+		val                                     W
+		acc                                     W
+		underflow                               bool
+	)
+	// Seed initial value
+	val = constant
+	// Subtract sources from it
+	for sources.HasNext() {
+		var src = sources.Next()
+		//
+		if acc, underflow = acc.Add(stack[src]); underflow {
+			return pc, p.failure("arithmetic underflow")
+		}
+	}
+	//
+	if val, underflow = val.Sub(acc); underflow {
 		val = val.Slice(bitwidth)
 	}
 	//

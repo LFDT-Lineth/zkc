@@ -1,0 +1,11 @@
+pub input data(address:u8) -> (word:u8)
+pub output out(address:u8) -> (word:u8)
+
+// 1 - z - 2 folds to -1 - z, which is negative, so the subtraction is compiled
+// as a SUB from register 0: 0 - z - 1.  That underflows for every z, so this
+// file only has rejects.
+fn main() {
+    var z:u8 = data[0]
+    var neg:u8 = 1 - z - 2
+    out[0] = neg
+}

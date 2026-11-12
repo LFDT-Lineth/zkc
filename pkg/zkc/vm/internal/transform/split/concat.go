@@ -28,6 +28,9 @@ type partCat struct {
 	// borrows indicates the most significant source of this chunk is a borrow
 	// line written by the next chunk, which must therefore be executed first.
 	borrows bool
+	// bitwidth is the width of this chunk's targets before a carry or borrow
+	// line is spliced in.
+	bitwidth uint16
 }
 
 // Concat splits a concatenation instruction into one (or more) instructions,
@@ -154,7 +157,7 @@ func initialiseConcatChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator
 		util.Assert(mapping.BandWidth() >= rhsBitwidth, "rhs overflow")
 		util.Assert(mapping.BandWidth() >= lhsBitwidth, "lhs overflow")
 		// allocate selected targets
-		chunks = append(chunks, partCat{targets: lhs, sources: rhs})
+		chunks = append(chunks, partCat{targets: lhs, sources: rhs, bitwidth: catChunkBitwidth(alloc, lhs)})
 		// update overhang
 		if rhsBitwidth > lhsBitwidth {
 			overhang = rhsBitwidth - lhsBitwidth
@@ -169,7 +172,9 @@ func initialiseConcatChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator
 	// wide target register.  In this case, we simple assign each target in this
 	// "overhang" to zero.
 	for targetStack.Size() > 0 {
-		chunks = append(chunks, partCat{targets: []RegisterId{targetStack.Pop()}})
+		var limb = []RegisterId{targetStack.Pop()}
+		//
+		chunks = append(chunks, partCat{targets: limb, bitwidth: catChunkBitwidth(alloc, limb)})
 	}
 	// Handle cases where we have more sources than necessary (which can also
 	// arise under normal circumstances).  In this case, we assign each source
@@ -178,7 +183,7 @@ func initialiseConcatChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator
 		// Select upto bandwidth registers
 		var chunk = sourceStack.SelectUpto(mapping.BandWidth() - overhang)
 		// Combine into a single assignment to zero
-		chunks = append(chunks, partCat{sources: chunk})
+		chunks = append(chunks, partCat{sources: chunk, bitwidth: 0})
 		// Reset overhang
 		overhang = 0
 	}
@@ -281,10 +286,16 @@ func concatAssignment[W word.Word[W]](chunk partCat, alloc Allocator[W]) (codes 
 	if noSources && noTargets {
 		return codes
 	} else if noSources {
-		return append(codes, bytecode.LoadConstVec(chunk.targets, zero))
+		return append(codes, bytecode.LoadConstVec(chunk.targets, zero, chunk.bitwidth))
 	} else if noTargets {
 		targets = []RegisterId{alloc.ZeroRegister()}
 	}
 	// Done
-	return append(codes, bytecode.AssignV[W](targets, chunk.sources...))
+	return append(codes, bytecode.AssignV[W](targets, chunk.bitwidth, chunk.sources...))
+}
+
+// catChunkBitwidth is the width of a chunk's targets before any carry or borrow
+// line is spliced in.
+func catChunkBitwidth[W word.Word[W]](alloc Allocator[W], targets []RegisterId) uint16 {
+	return util.Cast[uint16](descriptor.BitwidthOf(alloc, targets...).Unwrap())
 }

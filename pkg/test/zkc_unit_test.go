@@ -481,6 +481,41 @@ func Test_ZkcUnit_Basic_114(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_114", DEFAULT_UNIT_CONFIG)
 }
 
+// Test CSUB cases
+func Test_ZkcUnit_Basic_115(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_115", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_116(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_116", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_117(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_117", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_118(t *testing.T) {
+	// #2007: support implicit sign bit
+	checkZkcUnit(t, "zkc/unit/basic_118", DEFAULT_UNIT_CONFIG.
+		GoGen(false).Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_119(t *testing.T) {
+	// #2007: support implicit sign bit
+	checkZkcUnit(t, "zkc/unit/basic_119", DEFAULT_UNIT_CONFIG.
+		GoGen(false).Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_120(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_120", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_121(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_121", DEFAULT_UNIT_CONFIG)
+}
+
+// End of CSUB cases
+
 // ===================================================================
 // If Tests
 // ===================================================================
@@ -1452,6 +1487,11 @@ func Test_ZkcUnit_Inline_34(t *testing.T) {
 
 func Test_ZkcUnit_Inline_35(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/inline_35", DEFAULT_UNIT_CONFIG)
+}
+
+// Inlining x = inc(x) copies a field register, which has no bitwidth.
+func Test_ZkcUnit_Inline_36(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/inline_36", DEFAULT_UNIT_CONFIG)
 }
 
 // ===================================================================

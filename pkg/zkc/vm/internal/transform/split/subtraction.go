@@ -28,6 +28,9 @@ type partSub[W word.Word[W]] struct {
 	targets  []RegisterId
 	sources  []RegisterId
 	constant W
+	// bitwidth is the width of this chunk's targets before a borrow line is
+	// appended.
+	bitwidth uint16
 }
 
 // Subtraction splits a subtraction instruction into one (or more) subtraction
@@ -91,7 +94,7 @@ func remapSubtraction[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith[
 	)
 	//
 	return []Bytecode[W]{
-		bytecode.NewArith(bytecode.OP_SUB, targets, sources, insn.Constant),
+		bytecode.NewArith(insn.Op, targets, sources, insn.Constant, insn.Bitwidth),
 	}
 }
 
@@ -107,18 +110,40 @@ func remapSubtraction[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith[
 func breakupSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) ([]Bytecode[W], *bytecode.Arith[W], LimbsMap[W]) {
 	var (
-		zero W
+		zero     W
+		bitwidth uint
+		sub      *bytecode.Arith[W]
+		tmpReg   RegisterId
+		nmapping LimbsMap[W]
+		pre      []Bytecode[W]
+		fakeAdd  *bytecode.Arith[W]
+	)
+	if insn.Op == bytecode.OP_CSUB {
+		// Determine bitwidth of temporary register
+		bitwidth = descriptor.CalculateAddBitwidth(insn.Source, zero, mapping).Unwrap()
+		// Create "fake" register to use for addition
+		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
+		// Sum the sources only
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source, zero,
+			util.Cast[uint16](bitwidth))
+		// Split the addition
+		pre = Addition(nmapping, alloc, fakeAdd)
+		// create new subtraction
+		sub = bytecode.NewArith(bytecode.OP_CSUB, insn.Target, []bytecode.RegisterId{tmpReg}, insn.Constant, insn.Bitwidth)
+	} else {
 		// Determine bitwidth of temporary register
 		bitwidth = descriptor.CalculateAddBitwidth(insn.Source[1:], insn.Constant, mapping).Unwrap()
 		// Create "fake" register to use for addition
 		tmpReg, nmapping = allocateTemporary(bitwidth, mapping, alloc)
 		// Create addition for splitting
-		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:], insn.Constant)
+		fakeAdd = bytecode.NewArith(bytecode.OP_ADD, []bytecode.RegisterId{tmpReg}, insn.Source[1:],
+			insn.Constant, util.Cast[uint16](bitwidth))
 		// Split the addition
 		pre = Addition(nmapping, alloc, fakeAdd)
 		// create new subtraction
-		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg}, zero)
-	)
+		sub = bytecode.NewArith(bytecode.OP_SUB, insn.Target, []bytecode.RegisterId{insn.Source[0], tmpReg},
+			zero, insn.Bitwidth)
+	}
 	//
 	return pre, sub, nmapping
 }
@@ -141,6 +166,10 @@ func splitSubtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], i
 	if !isZeroDifference(mapping, insn) {
 		// Next, add borrow lines as needed
 		chunks = insertSubBorrowLines(alloc, chunks)
+	}
+	// Handle CSUB case
+	if insn.Op == bytecode.OP_CSUB {
+		return append(array.Map(chunks, csubAssignment[W]), context...)
 	}
 	// Convert chunks into assignments
 	return append(array.Map(chunks, subAssignment[W]), context...)
@@ -194,12 +223,14 @@ func initialiseSubChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W]
 			c   = lazy.IfDefault(i < nConstants, lazy.Read(i, constants))
 		)
 		//
-		codes = append(codes, partSub[W]{lhs, mapSubRhs(rhs, alloc), c})
+		codes = append(codes, partSub[W]{lhs, mapSubRhs(rhs, alloc), c, subChunkBitwidth(alloc, lhs)})
 	}
 	// Handle overhangs.  This arises e.g. when assigning a small constant to a
 	// wide target register.
 	for stack.Size() > 0 {
-		codes = append(codes, partSub[W]{[]RegisterId{stack.Pop()}, nil, zero})
+		var limb = []RegisterId{stack.Pop()}
+		//
+		codes = append(codes, partSub[W]{limb, nil, zero, subChunkBitwidth(alloc, limb)})
 	}
 	//
 	return codes, stack.post
@@ -244,14 +275,32 @@ func insertSubBorrowLines[W word.Word[W]](alloc Allocator[W], chunks []partSub[W
 	return chunks
 }
 
-// subAssignment lowers a chunk back into a concrete unsigned-subtract
+// subAssignment lowers a chunk back into a concrete unsigned vectorMinusConstant
 // instruction.
 func subAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 	var zero W
 	// Check for non-subtraction case
 	if len(chunk.sources) == 0 {
-		return bytecode.LoadConstVec(chunk.targets, zero)
+		return bytecode.LoadConstVec(chunk.targets, zero, chunk.bitwidth)
 	}
 	// Done
-	return bytecode.SubVecConst(chunk.targets, chunk.sources, chunk.constant)
+	return bytecode.SubVecConst(chunk.targets, chunk.sources, chunk.constant, chunk.bitwidth)
+}
+
+// csubAssignment lowers a chunk back into a concrete unsigned constantMinusVector
+// instruction.
+func csubAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
+	var zero W
+	// Check for non-subtraction case
+	if len(chunk.sources) == 0 {
+		return bytecode.LoadConstVec(chunk.targets, zero, chunk.bitwidth)
+	}
+	// Done
+	return bytecode.ConstSubVec(chunk.targets, chunk.sources, chunk.constant, chunk.bitwidth)
+}
+
+// subChunkBitwidth is the width of a chunk's targets before any borrow line is
+// appended.
+func subChunkBitwidth[W word.Word[W]](alloc Allocator[W], targets []RegisterId) uint16 {
+	return util.Cast[uint16](descriptor.BitwidthOf(alloc, targets...).Unwrap())
 }

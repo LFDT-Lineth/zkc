@@ -151,7 +151,7 @@ func lowerBitwiseShlShr[W Word[W]](
 	if truncate {
 		high := registers.Allocate("shl_res_high", util.Some(maxWidth-width))
 		code = append(code, bytecode.AddVec[W](
-			[]bytecode.RegisterId{b.Target, high}, []bytecode.RegisterId{result}))
+			[]bytecode.RegisterId{b.Target, high}, []bytecode.RegisterId{result}, util.Cast[uint16](maxWidth)))
 	}
 
 	return code
@@ -166,11 +166,9 @@ func inlineBitwiseNot[W Word[W]](b *bytecode.Bitwise[W], registers split.Allocat
 		mask  = zero.Not(width)
 	)
 
-	maskReg := registers.Allocate("lbw", util.Some(width))
-	// TODO: CSUB, see: https://github.com/LFDT-Lineth/zkc/issues/2062
 	return []Bytecode[W]{
-		bytecode.LoadConst(maskReg, mask),
-		bytecode.SubConst(b.Target, []bytecode.RegisterId{maskReg, b.Left}, zero),
+		// CSUB with constant = mask
+		bytecode.ConstSubVec([]bytecode.RegisterId{b.Target}, []bytecode.RegisterId{b.Left}, mask, b.Bitwidth),
 	}
 }
 

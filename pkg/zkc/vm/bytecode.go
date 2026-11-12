@@ -230,8 +230,13 @@ func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[ui
 func IsSubtractWithBorrow[W word.Word[W]](code BytecodeArith[W], env descriptor.RegisterMap[W]) bool {
 	var (
 		lhsBitwidth = descriptor.BitwidthOf(env, code.Target...).Unwrap()
-		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+		rhsBitwidth uint
 	)
+	if code.Op == OP_CSUB {
+		rhsBitwidth = descriptor.CalculateCSubBitwidth(code.Source, code.Constant, code.Bitwidth, env).Unwrap()
+	} else {
+		rhsBitwidth = descriptor.CalculateSubBitwidth(code.Source, code.Constant, env).Unwrap()
+	}
 	//
 	return lhsBitwidth >= rhsBitwidth
 }
@@ -296,40 +301,40 @@ func NewFormattedChunk(text string, format zkc_util.Format) FormattedChunk {
 
 // LoadConst constructs an instruction assigning a constant into a single
 // target register.
-func LoadConst[W Word[W]](target RegisterId, constant W) Bytecode[W] {
-	return bytecode.LoadConst(target, constant)
+func LoadConst[W Word[W]](target RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.LoadConst(target, constant, bitwidth)
 }
 
 // Add constructs an addition instruction computing
 // "target = sum(sources) + constant" into a single target register.
-func Add[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
-	return bytecode.AddConst(target, sources, constant)
+func Add[W Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.AddConst(target, sources, constant, bitwidth)
 }
 
 // AddVec constructs a vectored addition instruction computing
 // "targets = sum(sources)" (i.e. with no constant addend), where targets is a
 // multi-limb register vector.
-func AddVec[W Word[W]](targets []RegisterId, sources []RegisterId) Bytecode[W] {
-	return bytecode.AddVec[W](targets, sources)
+func AddVec[W Word[W]](targets []RegisterId, sources []RegisterId, bitwidth uint16) Bytecode[W] {
+	return bytecode.AddVec[W](targets, sources, bitwidth)
 }
 
 // AddVecConst constructs a vectored addition instruction computing
 // "targets = sum(sources) + constant", where targets is a multi-limb register
 // vector.
-func AddVecConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
-	return bytecode.AddVecConst(targets, sources, constant)
+func AddVecConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.AddVecConst(targets, sources, constant, bitwidth)
 }
 
 // Assign constructs a assignment which copies the source register into the
 // target register.
-func Assign[W Word[W]](target RegisterId, source RegisterId) Bytecode[W] {
-	return bytecode.Assign[W](target, source)
+func Assign[W Word[W]](target RegisterId, source RegisterId, bitwidth uint16) Bytecode[W] {
+	return bytecode.Assign[W](target, source, bitwidth)
 }
 
 // AssignV constructs a concatenation instruction which concatenates the source
 // registers and assigns to a given target register vector.
-func AssignV[W Word[W]](targets []RegisterId, sources ...RegisterId) Bytecode[W] {
-	return bytecode.AssignV[W](targets, sources...)
+func AssignV[W Word[W]](targets []RegisterId, bitwidth uint16, sources ...RegisterId) Bytecode[W] {
+	return bytecode.AssignV[W](targets, bitwidth, sources...)
 }
 
 // Call constructs a function-call bytecode with the given flags.
@@ -406,15 +411,15 @@ func Switch[W Word[W]](source RegisterId, cases []SwitchCase[W]) Bytecode[W] {
 
 // Mul constructs a multiplication instruction computing
 // "target = product(sources) * constant" into a single target register.
-func Mul[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
-	return bytecode.MulConst(target, sources, constant)
+func Mul[W Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.MulConst(target, sources, constant, bitwidth)
 }
 
 // MulVec constructs a vectored multiplication instruction computing
 // "targets = product(sources) * constant", where targets is a multi-limb
 // register vector.
-func MulVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
-	return bytecode.MulVecConst(targets, sources, constant)
+func MulVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.MulVecConst(targets, sources, constant, bitwidth)
 }
 
 // MemRead constructs a memory-read instruction.  The data registers receive
@@ -427,15 +432,22 @@ func MemRead[W Word[W]](id uint16, address []RegisterId, data []RegisterId) Byte
 
 // Sub constructs a subtraction instruction computing
 // "target = sources[0] - ... - constant" into a single target register.
-func Sub[W Word[W]](target RegisterId, sources []RegisterId, constant W) Bytecode[W] {
-	return bytecode.SubConst(target, sources, constant)
+func Sub[W Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.SubConst(target, sources, constant, bitwidth)
 }
 
 // SubVec constructs a vectored subtraction instruction computing
 // "targets = sources[0] - ... - constant", where targets is a multi-limb
 // register vector.
-func SubVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W) Bytecode[W] {
-	return bytecode.SubVecConst(targets, sources, constant)
+func SubVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.SubVecConst(targets, sources, constant, bitwidth)
+}
+
+// ConstSub constructs a vectored subtraction instruction computing
+// "targets = constant - sources[0] - ... - sources[n]", where targets is a multi-limb
+// register vector.
+func ConstSub[W Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.ConstSubVec(targets, sources, constant, bitwidth)
 }
 
 // MemWrite constructs a memory-write instruction.  The data registers are
@@ -589,6 +601,8 @@ const (
 	OP_ADD = bytecode.OP_ADD
 	// OP_SUB integer subtraction.
 	OP_SUB = bytecode.OP_SUB
+	// OP_CSUB integer subtraction from constant.
+	OP_CSUB = bytecode.OP_CSUB
 	// OP_MUL integer multiplication.
 	OP_MUL = bytecode.OP_MUL
 	// OP_AND bitwise conjunction.

@@ -455,7 +455,7 @@ func (p *StmtCompiler) compileExpr(e Expr, bitwidth util.Option[uint], mapping [
 	case *expr.Cast[symbol.Resolved]:
 		return p.compileCast(e, bitwidth, mapping, targets)
 	case *expr.Concat[symbol.Resolved]:
-		return p.compileConcat(e.Exprs, mapping, targets)
+		return p.compileConcat(e.Exprs, mapping, targets, bitwidth)
 	case *expr.BitwiseAnd[symbol.Resolved]:
 		return destructUnit(p, e.Exprs, bitwidth.Unwrap(), mapping, targets, p.compileBitwiseAnd)
 	case *expr.Const[symbol.Resolved]:
@@ -464,12 +464,12 @@ func (p *StmtCompiler) compileExpr(e Expr, bitwidth util.Option[uint], mapping [
 		if p.isFieldOperation(targets) {
 			return p.compileFieldConst(c.SetBigInt(e.Constant()), mapping, targets[0])
 		} else {
-			return p.compileIntConst(c.SetBigInt(e.Constant()), mapping, targets)
+			return p.compileIntConst(c.SetBigInt(e.Constant()), mapping, targets, bitwidth.Unwrap())
 		}
 	case *expr.ExternAccess[symbol.Resolved]:
 		//
 		if _, ok := p.components[e.Name.Index].(*decl.ResolvedConstant); ok {
-			return p.compileIntConst(p.evalConstant(e), mapping, targets)
+			return p.compileIntConst(p.evalConstant(e), mapping, targets, bitwidth.Unwrap())
 		}
 		// memory access or function call
 		return p.compileRootExprs(e, mapping, targets)
@@ -477,7 +477,7 @@ func (p *StmtCompiler) compileExpr(e Expr, bitwidth util.Option[uint], mapping [
 		if p.isFieldOperation(targets) {
 			return p.compileFieldAccess(e, mapping, targets[0])
 		} else {
-			return p.compileLocalAccess(e, mapping, targets)
+			return p.compileLocalAccess(e, mapping, targets, bitwidth)
 		}
 	case *expr.ArrayAccess[symbol.Resolved]:
 		return p.compileArrayAccess(e, mapping, targets)
@@ -535,13 +535,18 @@ func destructUnit[T any](p *StmtCompiler, args T, bitwidth uint, mapping []uint,
 	tmp := p.allocate(util.Some(bitwidth))
 	// Translate expression
 	insns := fn(args, bitwidth, mapping, tmp)
+	// Cast bitwidth to uint16
+	bw16 := util.Cast[uint16](bitwidth)
 	// Generate destruct
-	return append(insns, vm.AddVec[vm.Uint](targets, []RegisterId{tmp}))
+	return append(insns, vm.AddVec[vm.Uint](targets, []RegisterId{tmp}, bw16))
 }
 
 func destructMultiway[T Expr](p *StmtCompiler, rhs T, mapping []uint, targets []RegisterPacket, fn MultiTranslator[T],
 ) []Bytecode {
-	var tmps = make([]RegisterId, len(targets))
+	var (
+		tmps = make([]RegisterId, len(targets))
+		bws  = make([]util.Option[uint], len(targets))
+	)
 	//
 	for i, v := range targets {
 		// NOTE: a singleton target may be the DISCARD pseudo register, which
@@ -550,7 +555,8 @@ func destructMultiway[T Expr](p *StmtCompiler, rhs T, mapping []uint, targets []
 			tmps[i] = v[0]
 		} else {
 			// Allocate temporary
-			tmps[i] = p.allocate(p.bitwidthOf(v...))
+			bws[i] = p.bitwidthOf(v...)
+			tmps[i] = p.allocate(bws[i])
 		}
 	}
 	// Translate expression
@@ -558,7 +564,7 @@ func destructMultiway[T Expr](p *StmtCompiler, rhs T, mapping []uint, targets []
 	//  Generate destruct(s)
 	for i, v := range targets {
 		if len(v) != 1 {
-			insns = append(insns, vm.AddVec[vm.Uint](v, []RegisterId{tmps[i]}))
+			insns = append(insns, vm.AddVec[vm.Uint](v, []RegisterId{tmps[i]}, util.Cast[uint16](bws[i].Unwrap())))
 		}
 	}
 	//
@@ -640,10 +646,10 @@ func (p *StmtCompiler) compileCast(e *expr.Cast[symbol.Resolved], bitwidth util.
 	}
 }
 
-func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, targets []vm.RegisterId,
+func (p *StmtCompiler) compileIntConst(c vm.Uint, _ []uint, targets []vm.RegisterId, bitwidth uint,
 ) []Bytecode {
 	//
-	return []Bytecode{vm.AddVecConst(targets, nil, c)}
+	return []Bytecode{vm.AddVecConst(targets, nil, c, util.Cast[uint16](bitwidth))}
 }
 
 func (p *StmtCompiler) compileFieldConst(c vm.Uint, _ []uint, target RegisterId,
@@ -652,7 +658,8 @@ func (p *StmtCompiler) compileFieldConst(c vm.Uint, _ []uint, target RegisterId,
 	return []Bytecode{vm.AddModP(target, nil, c)}
 }
 
-func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, targets []vm.RegisterId) []Bytecode {
+func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, targets []vm.RegisterId,
+	bitwidth util.Option[uint]) []Bytecode {
 	var nargs []Expr
 	//
 	nargs = append(nargs, args...)
@@ -661,7 +668,7 @@ func (p *StmtCompiler) compileConcat(args []Expr, mapping []uint, targets []vm.R
 	// Reverse sources (as concatenation requires them in little endian order)
 	sources = array.Reverse(sources)
 	// Done
-	return append(insns, vm.AssignV[vm.Uint](targets, sources...))
+	return append(insns, vm.AssignV[vm.Uint](targets, util.Cast[uint16](bitwidth.Unwrap()), sources...))
 }
 
 func (p *StmtCompiler) compileIntAdd(args []Expr, bitwidth uint, mapping []uint, targets []vm.RegisterId) []Bytecode {
@@ -669,6 +676,7 @@ func (p *StmtCompiler) compileIntAdd(args []Expr, bitwidth uint, mapping []uint,
 	var (
 		constant vm.Uint
 		nargs    []Expr
+		bw16     = util.Cast[uint16](bitwidth)
 	)
 	//
 	for _, e := range args {
@@ -688,7 +696,7 @@ func (p *StmtCompiler) compileIntAdd(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
 	// Done
-	return append(insns, vm.AddVecConst(targets, sources, constant))
+	return append(insns, vm.AddVecConst(targets, sources, constant, bw16))
 }
 
 func (p *StmtCompiler) compileFieldAdd(args []Expr, mapping []uint, target RegisterId) []Bytecode {
@@ -727,8 +735,9 @@ func (p *StmtCompiler) compileFunctionCall(e *expr.ExternAccess[symbol.Resolved]
 }
 
 func (p *StmtCompiler) compileLocalAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterPacket,
+	bitwidth util.Option[uint],
 ) []Bytecode {
-	return []Bytecode{vm.AssignV[vm.Uint](target, util.Cast[RegisterId](e.Variable))}
+	return []Bytecode{vm.AssignV[vm.Uint](target, util.Cast[uint16](bitwidth.Unwrap()), util.Cast[RegisterId](e.Variable))}
 }
 
 func (p *StmtCompiler) compileFieldAccess(e *expr.LocalAccess[symbol.Resolved], _ []uint, target RegisterId,
@@ -784,7 +793,7 @@ func (p *StmtCompiler) compileIntMul(args []Expr, bitwidth uint, mapping []uint,
 	// Compile arguments
 	sources, insns := p.compileUniformArgs(util.Some(bitwidth), mapping, nargs...)
 	//
-	return append(insns, vm.MulVec(target, sources, constant))
+	return append(insns, vm.MulVec(target, sources, constant, util.Cast[uint16](bitwidth)))
 }
 
 func (p *StmtCompiler) compileFieldMul(args []Expr, mapping []uint, target RegisterId,
@@ -934,33 +943,99 @@ func (p *StmtCompiler) compileBitwiseShift(
 	return insns
 }
 
+// compileIntSub handles 2 forms
+// x0 - constant1 - constant2 ... - constantN
+// eg: x - 255 - 3
+// constant1 - x0 - constant2 ... - constantN
+// eg: 255 - x - 3
 func (p *StmtCompiler) compileIntSub(args []Expr, bitwidth uint, mapping []uint, target RegisterPacket,
 ) []Bytecode {
 	//
+	var bw = util.Some(bitwidth)
+	// Fold all but first constants together
+	trailingConstant, nargs := p.compileTrailingConstant(args, bitwidth)
+
+	// Check "subtract from constant" case, eg: 255 - x - 3
+	// first arg is a constant c0
+	if c0, ok := p.asConstant(args[0]); ok {
+		// check the sign of c0 - trailingConstant
+		folded, underflow := c0.Sub(trailingConstant)
+		// Note: at this stage, folded should fit bitwidth as checked by type checker
+		if !underflow && folded.FitsWithin(bitwidth) {
+			// if the result is positive, CSUB case with the folded constant
+			// folded - x0 - x1 - x2 - ... - xn
+			return p.compileCSub(folded, nargs, bw, mapping, target)
+		} else {
+			// if the result is negative, SUB case with register 0 and the folded constant
+			// 0 - x0 - x1 - x2 - ... - xn - folded
+			return p.compileSubWithRegZero(folded, nargs, bw, mapping, target)
+		}
+	}
+	// first arg is a register
+	// eg: x - 255 - 3
+	// Compile arguments
+	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
+	// Done (subtraction never needs a cast check; cf. compileSub).
+	return append(insns, vm.SubVec(target, sources, trailingConstant, util.Cast[uint16](bw.Unwrap())))
+}
+
+// compileTrailingConstant folds every constant after the first argument into a
+// single constant. The first argument and every non-constant stay in nargs.
+func (p *StmtCompiler) compileTrailingConstant(args []Expr, bitwidth uint) (vm.Uint, []Expr) {
 	var (
-		bw       = util.Some(bitwidth)
-		constant vm.Uint
-		nargs    []Expr
+		trailingConstant vm.Uint
+		nargs            []Expr
 	)
 	//
 	for i, e := range args {
 		var overflow bool
 
 		if c, ok := p.asConstant(e); ok && i > 0 {
-			constant, overflow = constant.Add(c)
+			trailingConstant, overflow = trailingConstant.Add(c)
 		} else {
 			nargs = append(nargs, e)
 		}
 		// NOTE: this error should be caught and reported earlier in the
 		// pipeline.
-		if overflow || !constant.FitsWithin(bitwidth) {
+		if overflow || !trailingConstant.FitsWithin(bitwidth) {
 			panic("arithmetic underflow")
 		}
 	}
-	// Compile arguments
-	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
-	// Done (subtraction never needs a cast check; cf. compileSub).
-	return append(insns, vm.SubVec(target, sources, constant))
+	//
+	return trailingConstant, nargs
+}
+
+// compileCSub compiles a positive constant subtraction: folded - x0 - x1 - ...
+// When nothing remains to subtract, the folded constant is loaded directly.
+func (p *StmtCompiler) compileCSub(folded vm.Uint, nargs []Expr, bw util.Option[uint], mapping []uint,
+	target RegisterPacket,
+) []Bytecode {
+	var bw_uw = bw.Unwrap()
+	// folded - x0 - x1 - x2 - ... - xn
+	if len(nargs) == 1 {
+		// 255 - 3, with nothing left to subtract: just load 252.
+		return p.compileIntConst(folded, mapping, target, bw_uw)
+	}
+
+	sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
+
+	return append(insns, vm.ConstSub(target, sources, folded, util.Cast[uint16](bw_uw)))
+}
+
+// compileSubWithRegZero compiles a negative constant subtraction as
+// 0 - x0 - x1 - ... - xn - folded, with register 0 as the leading source.
+func (p *StmtCompiler) compileSubWithRegZero(folded vm.Uint, nargs []Expr, bw util.Option[uint], mapping []uint,
+	target RegisterPacket,
+) []Bytecode {
+	sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
+	regZero := p.allocate(util.Some[uint](0))
+	sources = append([]vm.RegisterId{regZero}, sources...)
+
+	var zero vm.Uint
+
+	positiveFolded, _ := zero.Sub(folded)
+
+	return append(insns, vm.SubVec(target, sources, positiveFolded, util.Cast[uint16](bw.Unwrap())))
 }
 
 func (p *StmtCompiler) compileFieldSub(args []Expr, mapping []uint, target RegisterId) []Bytecode {
@@ -1025,7 +1100,7 @@ func (p *StmtCompiler) compileBitwiseChain(
 	sources, insns := p.compileUniformArgs(bw, mapping, nargs...)
 	// Degenerate case: every argument is constant.
 	if len(sources) == 0 {
-		return append(insns, vm.LoadConst(target, constant))
+		return append(insns, vm.LoadConst(target, constant, bw16))
 	}
 	// Chain left-to-right; the final step lands in the target unless a
 	// constant remains to be absorbed.
@@ -1142,6 +1217,16 @@ func (p *StmtCompiler) evalConstant(e Expr) vm.Uint {
 }
 
 func (p *StmtCompiler) allocate(bitwidth util.Option[uint]) RegisterId {
+	// A zero-width register is the shared zero register. Reuse it so a module
+	// does not end up with more than one.
+	if bitwidth.HasValue() && bitwidth.Unwrap() == 0 {
+		for i, r := range p.registers {
+			if r.IsZeroWidth() {
+				return util.Cast[RegisterId](uint(i))
+			}
+		}
+	}
+
 	var (
 		n       = len(p.registers)
 		name    = fmt.Sprintf("$%d", n)

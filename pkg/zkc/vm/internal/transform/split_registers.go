@@ -218,7 +218,7 @@ func splitBytecode[W Word[W]](limbsMap split.LimbsMap[W], mods []descriptor.Modu
 			switch c.Op {
 			case bytecode.OP_ADD:
 				return split.Addition(limbsMap, alloc, c)
-			case bytecode.OP_SUB:
+			case bytecode.OP_SUB, bytecode.OP_CSUB:
 				return split.Subtraction(limbsMap, alloc, c)
 			case bytecode.OP_MUL:
 				return split.Multiplication(limbsMap, alloc, c)
@@ -465,7 +465,7 @@ func retAlignment[W Word[W]](local []RegisterId, remote []Register[W], alloc spl
 		// More locals than remotes.  In this case, surplus locals are assigned
 		// zero.
 		for _, s := range local[n:] {
-			post = append(post, bytecode.LoadConst(s, zero))
+			post = append(post, bytecode.LoadConst(s, zero, util.Cast[uint16](alloc.Register(s).Bitwidth().Unwrap())))
 		}
 		// discard surplus
 		local = local[:n]

@@ -124,10 +124,10 @@ const (
 	// skip.
 	caseSize = 4
 	// trailerSize is the number of bytecodes emitted after the
-	// diamonds: the one-register load, the subtraction deriving the default
+	// diamonds: the subtraction deriving the default
 	// bit, and the final dispatch (which is always the last
 	// code of the packet).
-	trailerSize = 3
+	trailerSize = 2
 )
 
 // switchPacketSize returns the number of bytecodes in the replacement packet
@@ -177,6 +177,8 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 		bits  = make([]descriptor.RegisterId, n)
 		zero  = word.Const64[W](0)
 		one   = word.Const64[W](1)
+		u1    = util.Some[uint](1)
+		u1_16 = util.Cast[uint16](u1.Unwrap())
 	)
 	//
 	if n == 0 {
@@ -184,7 +186,7 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 	}
 	// Materialise every case's match into a fresh bit register, unconditionally.
 	for j, cse := range sw.Cases {
-		bits[j] = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_%d", switchIndex, j+1), util.Some[uint](1))
+		bits[j] = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_%d", switchIndex, j+1), u1)
 		//
 		codes = append(codes,
 			// skip_if r == v_j 2  => match, jump to "b_j = 1"
@@ -192,27 +194,23 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 				bytecode.NewRegisterVector(sw.Source),
 				bytecode.NewConstantOperand(cse.Value)),
 			// b_j = 0  (no match)
-			bytecode.LoadConst(bits[j], zero),
+			bytecode.LoadConst(bits[j], zero, u1_16),
 			// skip 1  => jump over "b_j = 1"
 			bytecode.NewSkip[W](1),
 			// b_j = 1  (match)
-			bytecode.LoadConst(bits[j], one))
+			bytecode.LoadConst(bits[j], one, u1_16))
 	}
 	// Derive the default bit: b_default = 1 - b_0 - ... - b_{n-1}, which is 1
 	// exactly when no case matched.  Enforcing b_default to be a u1 enforces
 	// that at most one b_j is 1 (each being a bit itself).
 	//
 	var (
-		onereg = registers.Allocate("lsw", util.Some[uint](1))
-		bdef   = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), util.Some[uint](1))
+		bdef = registers.AllocateNamed(fmt.Sprintf("$b_switch_%d_case_default", switchIndex), u1)
 	)
-	// TODO: https://github.com/LFDT-Lineth/zkc/issues/2062
-	// use CSUB to save 1 register to load one
+
 	codes = append(codes,
-		// one = 1
-		bytecode.LoadConst(onereg, one),
 		// b_default = one - b_0 - ... - b_{n-1}
-		bytecode.SubConst(bdef, append([]descriptor.RegisterId{onereg}, bits...), zero))
+		bytecode.ConstSub(bdef, bits, one, u1_16))
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.

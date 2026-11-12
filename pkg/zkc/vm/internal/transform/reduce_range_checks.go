@@ -177,7 +177,7 @@ func reviseArithChecks[W Word[W]](checkedRegs bit.Set, env Environment[W], b *by
 		bits = descriptor.CalculateAddBitwidth(sources, b.Constant, env)
 	case bytecode.OP_MUL:
 		bits = descriptor.CalculateMulBitwidth(sources, b.Constant, env)
-	case bytecode.OP_SUB:
+	case bytecode.OP_SUB, bytecode.OP_CSUB:
 		// Subtraction can always underflow.
 		bits = util.Some[uint](math.MaxUint)
 	default:
