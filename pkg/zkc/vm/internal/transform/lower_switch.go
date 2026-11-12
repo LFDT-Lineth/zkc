@@ -210,7 +210,7 @@ func lowerSwitchCode[W Word[W]](pc uint, sw *bytecode.Switch[W], mapping []uint,
 
 	codes = append(codes,
 		// b_default = one - b_0 - ... - b_{n-1}
-		bytecode.CSubConst(bdef, bits, one, u1_16))
+		bytecode.ConstSub(bdef, bits, one, u1_16))
 	// Dispatch on the bits, in case order.
 	var (
 		// New position of the dispatch bytecode itself.

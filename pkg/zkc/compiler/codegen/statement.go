@@ -1019,7 +1019,7 @@ func (p *StmtCompiler) compileCSub(folded vm.Uint, nargs []Expr, bw util.Option[
 
 	sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
 
-	return append(insns, vm.SubConst(target, sources, folded, util.Cast[uint16](bw_uw)))
+	return append(insns, vm.ConstSub(target, sources, folded, util.Cast[uint16](bw_uw)))
 }
 
 // compileSubWithRegZero compiles a negative constant subtraction as

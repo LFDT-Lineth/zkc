@@ -296,7 +296,7 @@ func csubAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 		return bytecode.LoadConstVec(chunk.targets, zero, chunk.bitwidth)
 	}
 	// Done
-	return bytecode.SubConstVec(chunk.targets, chunk.sources, chunk.constant, chunk.bitwidth)
+	return bytecode.ConstSubVec(chunk.targets, chunk.sources, chunk.constant, chunk.bitwidth)
 }
 
 // subChunkBitwidth is the width of a chunk's targets before any borrow line is

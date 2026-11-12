@@ -463,16 +463,16 @@ func SubVecConst[W word.Word[W]](targets []RegisterId, sources []RegisterId, con
 	return NewArith(OP_SUB, targets, sources, constant, bitwidth)
 }
 
-// CSubConst constructs subtraction instruction computing from a constant
+// ConstSub constructs subtraction instruction computing from a constant
 // "target = constant - source[0] ... - source[n]" into a single target register.
-func CSubConst[W word.Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
+func ConstSub[W word.Word[W]](target RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
 	return NewArith(OP_CSUB, []RegisterId{target}, sources, constant, bitwidth)
 }
 
-// SubConstVec constructs a vectored subtraction instruction computing from a constant
+// ConstSubVec constructs a vectored subtraction instruction computing from a constant
 // "targets = constant - source[0] ... - source[n]", where targets is a multi-limb
 // register vector.
-func SubConstVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
+func ConstSubVec[W word.Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) *Arith[W] {
 	util.Assert(len(targets) > 0, "atleast one target required")
 	//
 	arith := NewArith(OP_CSUB, targets, sources, constant, bitwidth)
