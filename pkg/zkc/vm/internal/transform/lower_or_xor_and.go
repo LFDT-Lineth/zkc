@@ -199,7 +199,7 @@ func lowerBitwiseAndOrXor[W Word[W]](
 
 		if resultIsNot(b.Op, c, mask) {
 			return []Bytecode[W]{
-				bytecode.CSubConst(b.Target, []bytecode.RegisterId{b.Left}, mask, b.Bitwidth),
+				bytecode.ConstSub(b.Target, []bytecode.RegisterId{b.Left}, mask, b.Bitwidth),
 			}
 		}
 	}

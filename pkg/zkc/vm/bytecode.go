@@ -443,11 +443,11 @@ func SubVec[W Word[W]](targets []RegisterId, sources []RegisterId, constant W, b
 	return bytecode.SubVecConst(targets, sources, constant, bitwidth)
 }
 
-// SubConst constructs a vectored subtraction instruction computing
+// ConstSub constructs a vectored subtraction instruction computing
 // "targets = constant - sources[0] - ... - sources[n]", where targets is a multi-limb
 // register vector.
-func SubConst[W Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
-	return bytecode.SubConstVec(targets, sources, constant, bitwidth)
+func ConstSub[W Word[W]](targets []RegisterId, sources []RegisterId, constant W, bitwidth uint16) Bytecode[W] {
+	return bytecode.ConstSubVec(targets, sources, constant, bitwidth)
 }
 
 // MemWrite constructs a memory-write instruction.  The data registers are
