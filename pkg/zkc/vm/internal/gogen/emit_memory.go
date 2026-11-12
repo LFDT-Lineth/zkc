@@ -78,7 +78,7 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 
 			switch mi.role {
 			case sromStatic:
-				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
+				expr = fmt.Sprintf("sromRead(%s[:], start + %d)", mi.varName, i)
 				if mi.elemType != "uint64" {
 					expr = "uint64(" + expr + ")"
 				}

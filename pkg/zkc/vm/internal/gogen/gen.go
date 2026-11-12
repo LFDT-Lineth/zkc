@@ -505,7 +505,7 @@ func (g *generator) emitImports(c *code) {
 // emitMemHelpers writes the grow-on-write / zero-on-miss helpers backing the
 // writable memories, each only when some memory of that kind exists.
 func (g *generator) emitMemHelpers(c *code) {
-	var usesMemory = len(g.inputs) > 0 || len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0
+	var usesMemory = len(g.sroms) > 0 || len(g.inputs) > 0 || len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0
 
 	if usesMemory {
 		c.commentf("===============================================================================")
@@ -517,13 +517,19 @@ func (g *generator) emitMemHelpers(c *code) {
 			c.commentf("RamPage encapsulates a page of read/write memory")
 			c.line("type RamPage struct { data []uint64; stamps []uint64 }")
 		}
-		//
+		// sroms
+		if len(g.sroms) > 0 {
+			c.line("")
+			c.line("func sromRead[T uint8|uint16|uint32|uint64](data []T, addr uint64) T {")
+			c.line("if addr >= uint64(len(data)) {")
+			c.line(`fail("out-of-bounds read of static read-only memory")`)
+			c.line("}")
+			c.line("return data[addr]")
+			c.line("}")
+		}
 		// roms
 		if len(g.inputs) > 0 {
 			c.line("")
-			// An out-of-bounds read is a bug in the program (or its inputs)
-			// rather than a rejected trace, hence (as for the interpreter's
-			// StaticArray) it panics rather than fails.
 			c.line("func romRead(data []uint64, addr uint64) uint64 {")
 			c.line("if addr >= uint64(len(data)) {")
 			c.line(`fail("out-of-bounds read of read-only memory")`)

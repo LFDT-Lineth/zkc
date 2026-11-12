@@ -15,6 +15,7 @@ package interpreter
 import (
 	"bytes"
 	"encoding/gob"
+	"fmt"
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -52,6 +53,12 @@ func (p *StaticArray[W, C]) Initialise(contents []C) {
 
 // Read implementation for Memory interface.
 func (p *StaticArray[W, C]) Read(address uint64) (C, error) {
+	var dummy C
+	//
+	if address >= uint64(len(p.data)) {
+		return dummy, fmt.Errorf("address %x out-of-bounds for memory %s", address, p.descriptor.Name())
+	}
+	//
 	return p.data[address], nil
 }
 

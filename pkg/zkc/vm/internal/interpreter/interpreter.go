@@ -636,9 +636,9 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			p.pc = executeSkipIf_rcv[W, util.GreaterThanOrEqual[W]](p.pc, bytecodes, pool, frame)
 			// Input / Output Operations
 		case encoding.RD_ROM_nm:
-			p.pc = executeReadRom_sn(p.pc, bytecodes, frame, p.roms)
+			p.pc, err = p.executeReadRom_sn(p.pc, bytecodes, frame, p.roms)
 		case encoding.RD_SROM_nm:
-			p.pc = executeReadSrom_sn(p.pc, bytecodes, frame, p.sroms)
+			p.pc, err = p.executeReadSrom_sn(p.pc, bytecodes, frame, p.sroms)
 		case encoding.WR_WOM_nm:
 			p.pc, err = p.executeWriteWom_sn(p.pc, bytecodes, frame, p.woms)
 		case encoding.RD_RAM_nm:
@@ -782,9 +782,9 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 	case encoding.WIDE_SGE_rcv:
 		pc = executeSkipIf_rcv[W, util.GreaterThanOrEqual[W]](pc, codes, pool, stack)
 	case encoding.WIDE_RD_ROM_nm:
-		pc = executeReadRom_sn(pc, codes, stack, p.roms)
+		pc, err = p.executeReadRom_sn(pc, codes, stack, p.roms)
 	case encoding.WIDE_RD_SROM_nm:
-		pc = executeReadSrom_sn(pc, codes, stack, p.sroms)
+		pc, err = p.executeReadSrom_sn(pc, codes, stack, p.sroms)
 	case encoding.WIDE_WR_WOM_nm:
 		pc, err = p.executeWriteWom_sn(pc, codes, stack, p.woms)
 	case encoding.WIDE_RD_RAM_nm:
@@ -2196,8 +2196,8 @@ func executeNot[W word.Word[W]](pc uint32, codes []uint32, stack []W) (uint32, e
 // executeReadSrom_sn implements RD_SROM_nm: it reads ndata consecutive words
 // from the static read-only memory identified by id, starting at the address
 // decoded from the operand registers, into successive destination registers.
-func executeReadSrom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	sroms []StaticReadOnly[W]) uint32 {
+func (p *Interpreter[W]) executeReadSrom_sn(pc uint32, codes []uint32, stack []W,
+	sroms []StaticReadOnly[W]) (uint32, error) {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -2208,20 +2208,28 @@ func executeReadSrom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	address = decodeAddress(addr, srom.Descriptor(), stack)
 	//
 	for data.HasNext() {
-		//nolint
-		stack[data.Next()], _ = srom.Read(address)
+		var (
+			val W
+			err error
+		)
+		// read value
+		if val, err = srom.Read(address); err != nil {
+			return pc, p.failure("%v", err)
+		}
+		// write value back
+		stack[data.Next()] = val
 		//
 		address++
 	}
 	//
-	return pc + n
+	return pc + n, nil
 }
 
 // executeReadRom_sn implements RD_ROM_nm: it reads ndata consecutive words from
 // the read-only memory identified by id, starting at the address decoded from
 // the operand registers, into successive destination registers.
-func executeReadRom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
-	roms []ReadOnly[W]) uint32 {
+func (p *Interpreter[W]) executeReadRom_sn(pc uint32, codes []uint32, stack []W,
+	roms []ReadOnly[W]) (uint32, error) {
 	//
 	var (
 		id, addr, data, n = encoding.DecodeReadWrite_sn(pc, codes)
@@ -2232,13 +2240,21 @@ func executeReadRom_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	address = decodeAddress(addr, rom.Descriptor(), stack)
 	//
 	for data.HasNext() {
-		//nolint
-		stack[data.Next()], _ = rom.Read(address)
+		var (
+			val W
+			err error
+		)
+		// read value
+		if val, err = rom.Read(address); err != nil {
+			return pc, p.failure("%v", err)
+		}
+		// write value back
+		stack[data.Next()] = val
 		//
 		address++
 	}
 	//
-	return pc + n
+	return pc + n, nil
 }
 
 // executeShl implements SHL: it shifts a value left by the amount held in a
