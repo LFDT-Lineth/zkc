@@ -914,10 +914,17 @@ func (g *generator) emitOutputWriter(c *code) {
 // every non-static memory is included in module order (Restore relies on
 // this), with page contents packed likewise (a fixed number of bytes per cell)
 // and the memory clock as tracked by the generated program.
+//
+// A checkpoint of a large memory runs to tens of megabytes, so the binary and
+// hex buffers are package-level and reused: after the first checkpoint, no
+// allocation is made and the hex rendering is the only copy of the payload.
 func (g *generator) emitCheckpointWriter(c *code) error {
 	c.line("")
+	c.commentf("buffers reused across checkpoints (binary encoding, and its JSON line)")
+	c.line("var checkpointBuf, checkpointLine []byte")
+	c.line("")
 	c.line("func writeCheckpoint(fid uint16, args []byte) {")
-	c.line("var buf []byte")
+	c.line("buf := checkpointBuf[:0]")
 	c.commentf("function")
 	c.line("buf = binary.BigEndian.AppendUint16(buf, fid)")
 	c.commentf("arguments")
@@ -926,8 +933,22 @@ func (g *generator) emitCheckpointWriter(c *code) error {
 	//
 	g.emitCheckpointWriterMemories(c)
 	//
-	c.commentf("write JSON to stdout")
-	c.line(`if _, err := fmt.Fprintf(os.Stdout, "{\"$\":\"0x%s\"}\n", hex.EncodeToString(buf)); err != nil {`)
+	c.line("checkpointBuf = buf")
+	c.commentf(`render as the JSON line {"$":"0x<hex>"} directly into the line buffer`)
+	c.line(`const prefix, suffix = "{\"$\":\"0x", "\"}\n"`)
+	c.line("n := len(prefix) + hex.EncodedLen(len(buf)) + len(suffix)")
+	c.line("line := checkpointLine")
+	c.line("if cap(line) < n {")
+	c.line("line = make([]byte, n)")
+	c.line("} else {")
+	c.line("line = line[:n]")
+	c.line("}")
+	c.line("copy(line, prefix)")
+	c.line("hex.Encode(line[len(prefix):], buf)")
+	c.line("copy(line[n-len(suffix):], suffix)")
+	c.line("checkpointLine = line")
+	c.commentf("write to stdout")
+	c.line("if _, err := os.Stdout.Write(line); err != nil {")
 	c.line(`fmt.Fprintln(os.Stderr, "checkpoint:", err)`)
 	c.line("os.Exit(2)")
 	c.line("}")
@@ -1032,24 +1053,41 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 	c.commentf("===============================================================================")
 	c.commentf("Checkpoint Encoders")
 	c.commentf("===============================================================================")
-	// encodeCell appends v big endian in exactly n bytes.
+	// encodeCell appends v big endian in exactly n bytes: the low n bytes of its
+	// 8-byte encoding, preceded by zero padding when n exceeds 8 (wide or native
+	// registers), in one append rather than one per byte.
 	c.line("")
 	c.line("func encodeCell(buf []byte, v uint64, n uint) []byte {")
-	c.line("for j := range n {")
-	c.line("buf = append(buf, byte(v>>(8*(n-1-j))))")
+	c.line("var tmp [8]byte")
+	c.line("binary.BigEndian.PutUint64(tmp[:], v)")
+	c.line("for ; n > 8; n-- {")
+	c.line("buf = append(buf, 0)")
 	c.line("}")
-	c.line("return buf")
+	c.line("return append(buf, tmp[8-n:]...)")
+	c.line("}")
+	c.line("")
+	// pageBytes returns the encoded size of the given number of cells packed round
+	// robin with the given widths (whole rows, plus a trailing partial row).
+	c.line("func pageBytes(cells int, widths []uint) uint {")
+	c.line("var row uint")
+	c.line("for _, w := range widths {")
+	c.line("row += w")
+	c.line("}")
+	c.line("n := uint(cells/len(widths)) * row")
+	c.line("for _, w := range widths[:cells%len(widths)] {")
+	c.line("n += w")
+	c.line("}")
+	c.line("return n")
 	c.line("}")
 	c.line("")
 	// encodePage appends one checkpoint page: u64 address, u32 len(data), data
 	// (cells packed big endian using widths[i % len(widths)] bytes for cell i),
 	// u32 len(stamps) and the row stamps (one u64 per row; none for memories
-	// which do not track timestamps, i.e. ROMs and WOMs).
+	// which do not track timestamps, i.e. ROMs and WOMs).  The buffer is grown
+	// once up front, so the per-cell appends never reallocate.
 	c.line("func encodePage(buf []byte, address uint64, page RamPage, widths []uint) []byte {")
-	c.line("var n uint")
-	c.line("for i := range page.data {")
-	c.line("n += widths[i%len(widths)]")
-	c.line("}")
+	c.line("n := pageBytes(len(page.data), widths)")
+	c.line("buf = reserve(buf, 8+4+int(n)+4+8*len(page.stamps))")
 	c.line("buf = binary.BigEndian.AppendUint64(buf, address)")
 	c.line("buf = binary.BigEndian.AppendUint32(buf, uint32(n))")
 	c.line("for i, v := range page.data {")
@@ -1058,6 +1096,17 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 	c.line("buf = binary.BigEndian.AppendUint32(buf, uint32(len(page.stamps)))")
 	c.line("for _, v := range page.stamps {")
 	c.line("buf = binary.BigEndian.AppendUint64(buf, v)")
+	c.line("}")
+	c.line("return buf")
+	c.line("}")
+	c.line("")
+	// reserve ensures buf has capacity for n more bytes (a single, exact growth,
+	// avoiding append's doubling and its intermediate copies).
+	c.line("func reserve(buf []byte, n int) []byte {")
+	c.line("if cap(buf)-len(buf) < n {")
+	c.line("grown := make([]byte, len(buf), len(buf)+n)")
+	c.line("copy(grown, buf)")
+	c.line("return grown")
 	c.line("}")
 	c.line("return buf")
 	c.line("}")
