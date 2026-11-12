@@ -1,0 +1,5 @@
+;;error:5:28-104:constant exceeds field modulus
+(module m1)
+(defcolumns (x :i16))
+
+(defconstraint c1 () (== x 8444461749428370424248824938781546531375899335154063827935233455917409239041))

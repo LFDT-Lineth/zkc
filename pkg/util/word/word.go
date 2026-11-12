@@ -48,23 +48,6 @@ type Word[T any] interface {
 	Uint64() uint64
 }
 
-// DynamicWord is a word which has a dynamically sized representation, rather
-// than a fixed-size representation.  In particular, the dynamic word
-// representing zero is always the empty byte array.
-type DynamicWord[T any] interface {
-	Word[T]
-	// Return minimal number of bytes required to store this word.  This can be
-	// defined as the length of bytes of this word, with all leading zero bytes
-	// removed.  For example, 0x1010 has a length of 2, 0x0010 has a length of 1
-	// whilst 0x0000 has a byte length of 0.  Observe that, if the word is
-	// encoded (e.g. in Montgomerry form), then this is the length of the
-	// encoded bytes.
-	ByteWidth() uint
-	// Write contents of this word into given byte array.  If the given byte
-	// array is not big enough, a new array is allocated and returned.
-	PutBytes([]byte) []byte
-}
-
 // Uint64 constructs a word from a given uint64 value.
 func Uint64[W Word[W]](value uint64) W {
 	var word W

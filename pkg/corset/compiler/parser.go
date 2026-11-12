@@ -186,7 +186,6 @@ func NewParser(srcfile source.File, srcmap *source.Map[sexp.SExp], config Config
 	p.AddListRule("if", ifParserRule(parser))
 	p.AddRecursiveListRule("shift", shiftParserRule)
 	p.AddDefaultListRule(unknownExpressionParserRule(parser))
-	p.AddDefaultRecursiveArrayRule(arrayAccessParserRule)
 	//
 	return parser
 }
@@ -337,14 +336,14 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 		// Initial binding with defaults
 		binding = ast.ColumnBinding{
 			ColumnContext: context,
-			Kind:          ast.NOT_COMPUTED,
+			Kind:          ast.UNSPECIFIED,
 			MustProve:     p.config.EnforceTypes,
-			Display:       "hex",
+			Padding:       util.None[big.Int](),
 		}
 	)
 	// Update computed status
 	if computed {
-		binding.Kind = ast.COMPUTED
+		binding.Kind = ast.COMPUTED_COLUMN
 	}
 	// Check whether extended declaration or not.
 	if l := e.AsList(); l != nil {
@@ -385,11 +384,7 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.ColumnBinding,
 	attrs []sexp.SExp) (ast.ColumnBinding, *SyntaxError) {
 	//
-	var (
-		array_min uint
-		array_max uint
-		err       *SyntaxError
-	)
+	var err *SyntaxError
 
 	for i := 0; i < len(attrs); i++ {
 		ith := attrs[i]
@@ -400,51 +395,48 @@ func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.Co
 		}
 		//
 		switch symbol.Value {
-		case ":display":
-			// skip these for now, as they are only relevant to the inspector.
-			if i+1 == len(attrs) {
-				return binding, p.translator.SyntaxError(ith, "incomplete display definition")
-			} else if attrs[i+1].AsSymbol() == nil {
-				return binding, p.translator.SyntaxError(ith, "malformed display definition")
+		case ":input":
+			{
+				if binding.Kind != ast.UNSPECIFIED {
+					return binding, p.translator.SyntaxError(ith, "invalid input column")
+				}
+
+				binding.Kind = ast.INPUT_COLUMN
 			}
-			//
-			binding.Display = attrs[i+1].AsSymbol().String(false)
-			// Check what display attribute we have
-			switch binding.Display {
-			case ":dec", ":hex", ":bytes", ":opcode":
-				binding.Display = binding.Display[1:]
-				// all good
-				i = i + 1
-			default:
-				// not good
-				return binding, p.translator.SyntaxError(ith, "unknown display definition")
+		case ":output":
+			{
+				if binding.Kind != ast.UNSPECIFIED {
+					return binding, p.translator.SyntaxError(ith, "invalid output column")
+				}
+
+				binding.Kind = ast.OUTPUT_COLUMN
 			}
-		case ":array":
+		case ":constant":
+			{
+				if binding.Kind != ast.UNSPECIFIED {
+					return binding, p.translator.SyntaxError(ith, "invalid constant column")
+				} else if i+1 == len(attrs) {
+					return binding, p.translator.SyntaxError(ith, "missing constant value")
+				} else if binding.Padding.HasValue() {
+					return binding, p.translator.SyntaxError(ith, "multiple constant/padding values")
+				} else if binding.Padding, err = p.parsePaddingValue(attrs[i+1]); err != nil {
+					return binding, err
+				}
+				//
+				binding.Kind = ast.CONSTANT_COLUMN
+				// skip constant
+				i++
+			}
+		case ":padding":
 			if i+1 == len(attrs) {
-				return binding, p.translator.SyntaxError(ith, "missing array dimension")
-			} else if array_min, array_max, err = p.parseArrayDimension(attrs[i+1]); err != nil {
+				return binding, p.translator.SyntaxError(ith, "missing padding value")
+			} else if binding.Padding.HasValue() {
+				return binding, p.translator.SyntaxError(ith, "multiple constant/padding values")
+			} else if binding.Padding, err = p.parsePaddingValue(attrs[i+1]); err != nil {
 				return binding, err
 			}
-			// skip dimension
+			// skip padding value
 			i++
-		case ":fwd":
-			switch binding.Kind {
-			case ast.NOT_COMPUTED:
-				return binding, p.translator.SyntaxError(ith, "input columns cannot be recursive")
-			case ast.COMPUTED_BWD:
-				return binding, p.translator.SyntaxError(ith, "conflicting direction of recursion")
-			default:
-				binding.Kind = ast.COMPUTED_FWD
-			}
-		case ":bwd":
-			switch binding.Kind {
-			case ast.NOT_COMPUTED:
-				return binding, p.translator.SyntaxError(ith, "input columns cannot be recursive")
-			case ast.COMPUTED_FWD:
-				return binding, p.translator.SyntaxError(ith, "conflicting direction of recursion")
-			default:
-				binding.Kind = ast.COMPUTED_BWD
-			}
 		default:
 			if binding.DataType, binding.MustProve, err = p.parseType(ith); err != nil {
 				return binding, err
@@ -454,34 +446,29 @@ func (p *Parser) parseColumnDeclarationAttributes(node sexp.SExp, binding ast.Co
 	// Done
 	if binding.DataType == nil {
 		return binding, p.translator.SyntaxError(node, "column is untyped")
-	} else if array_max != 0 {
-		binding.DataType = ast.NewArrayType(binding.DataType, array_min, array_max)
 	}
 	// Success!
 	return binding, nil
 }
 
-func (p *Parser) parseArrayDimension(s sexp.SExp) (uint, uint, *SyntaxError) {
-	dim := s.AsArray()
+func (p *Parser) parsePaddingValue(s sexp.SExp) (util.Option[big.Int], *SyntaxError) {
+	var (
+		err     error
+		ok      bool
+		padding big.Int
+	)
 	//
-	if dim == nil || dim.Get(0).AsSymbol() == nil || dim.Len() != 1 {
-		return 0, 0, p.translator.SyntaxError(s, "invalid array dimension")
-	} else {
-		// Check for interval dimensions
-		split := strings.Split(dim.Get(0).AsSymbol().Value, ":")
-		//
-		if len(split) == 0 || len(split) > 2 {
-			return 0, 0, p.translator.SyntaxError(s, "invalid array dimension")
-		} else if m, ok_m := strconv.Atoi(split[0]); len(split) == 1 && m >= 0 && ok_m == nil {
-			return uint(1), uint(m), nil
-		} else if ok_m != nil || m < 0 {
-			//unlikely scenarios
-		} else if n, ok_n := strconv.Atoi(split[1]); len(split) == 2 && n >= 0 && ok_n == nil {
-			return uint(m), uint(n), nil
-		}
+	if symbol := s.AsSymbol(); symbol == nil {
+		return util.None[big.Int](), p.translator.SyntaxError(s, "invalid padding value")
+	} else if padding, ok, err = parseConstant(symbol.Value); err != nil {
+		return util.None[big.Int](), p.translator.SyntaxError(s, err.Error())
+	} else if !ok {
+		return util.None[big.Int](), p.translator.SyntaxError(s, "invalid padding value")
+	} else if padding.Sign() < 0 {
+		return util.None[big.Int](), p.translator.SyntaxError(s, "negative padding value")
 	}
 	//
-	return 0, 0, p.translator.SyntaxError(s, "invalid array dimension")
+	return util.Some(padding), nil
 }
 
 // Parse a constant declaration
@@ -1016,21 +1003,17 @@ func (p *Parser) parseType(term sexp.SExp) (ast.Type, bool, *SyntaxError) {
 	var datatype ast.Type
 	// See what we've got.
 	switch parts[0] {
-	case ":bool":
-		datatype = ast.BOOL_TYPE
 	case ":binary":
 		datatype = ast.NewUintType(1)
 	case ":byte":
 		datatype = ast.NewUintType(8)
 	case ":int":
 		datatype = ast.UINT_TYPE
-	case ":any":
-		datatype = ast.ANY_TYPE
 	default:
 		// Handle generic types like i16, i128, etc.
 		str := parts[0]
 		if !strings.HasPrefix(str, ":i") && !strings.HasPrefix(str, ":u") {
-			return nil, false, p.translator.SyntaxError(symbol, "unknown type")
+			return nil, false, p.translator.SyntaxError(symbol, "unknown attribute")
 		}
 		// Parse bitwidth
 		n, err := strconv.Atoi(str[2:])
@@ -1080,20 +1063,6 @@ func varAccessParserRule(col string) (ast.Expr, bool, error) {
 	}
 	//
 	return ast.NewVariableAccess(path, nil), true, nil
-}
-
-func arrayAccessParserRule(name string, args []ast.Expr) (ast.Expr, error) {
-	if len(args) != 1 {
-		return nil, errors.New("malformed array access")
-	}
-	// Handle qualified accesses (where permitted)
-	// Attempt to split column name into module / column pair.
-	path, err := parseQualifiableName(name)
-	if err != nil {
-		return nil, err
-	}
-	//
-	return &ast.ArrayAccess{Name: path, Arg: args[0], ArrayBinding: nil}, nil
 }
 
 func addParserRule(_ string, args []ast.Expr) (ast.Expr, error) {

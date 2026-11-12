@@ -119,20 +119,6 @@ func (p Module[F]) Height() uint {
 	return p.height
 }
 
-// Pad returns a copy of this module with the given amount of front/back
-// padding added.  The receiver itself is left unmodified.
-func (p Module[F]) Pad(front uint) Module[F] {
-	var columns = make([]array.Array[F], len(p.columns))
-	//
-	for i, col := range p.columns {
-		if col != nil {
-			columns[i] = col.Pad(front)
-		}
-	}
-	//
-	return Module[F]{p.height + front, p.descriptor, columns}
-}
-
 // Width returns the number of columns in this module.
 func (p Module[F]) Width() uint {
 	return uint(len(p.descriptor.Columns))

@@ -23,12 +23,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
-	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -56,12 +54,11 @@ type SchemaStacker[F field.Element[F]] struct {
 	traceBuilder ir.TraceBuilder[F]
 	// Layers identifies which layers are included in the stack.
 	layers bit.Set
-	// Schema represents the top of this stack.  This is "abstract" in the sense
-	// that registers have not yet been split to fit the target field.
-	schema util.Option[mir.Schema[word.BigEndian]]
-	// Source map for the schema above, which maps registers and constraints
-	// back to their original source-level declarations.
-	sourceMap util.Option[corset.SourceMap]
+	// Schema represents the top of this stack, as compiled for the target
+	// field.
+	schema util.Option[mir.Schema[F]]
+	// Field config
+	field field.Config
 }
 
 // NewSchemaStack constructs a new, but empty stack of schemas.
@@ -72,6 +69,13 @@ func NewSchemaStack[F field.Element[F]]() *SchemaStacker[F] {
 // WithCorsetConfig determines the compilation configuration to use for Corset.
 func (p SchemaStacker[F]) WithCorsetConfig(config corset.CompilationConfig) SchemaStacker[F] {
 	p.corsetConfig = config
+	//
+	return p
+}
+
+// WithFieldConfig determines the field configuration to use for Corset.
+func (p SchemaStacker[F]) WithFieldConfig(config field.Config) SchemaStacker[F] {
+	p.field = config
 	//
 	return p
 }
@@ -108,28 +112,15 @@ func (p SchemaStacker[F]) HasSchema() bool {
 	return p.schema.HasValue()
 }
 
-// SourceMap returns the source map for the schema representing the top of this
-// stack, along with an indication of whether one is available.
-func (p SchemaStacker[F]) SourceMap() (*corset.SourceMap, bool) {
-	if !p.sourceMap.HasValue() {
-		return nil, false
-	}
-	//
-	srcmap := p.sourceMap.Unwrap()
-	//
-	return &srcmap, true
-}
-
 // Field returns the field configuration used within this schema stack.
 func (p SchemaStacker[F]) Field() field.Config {
-	return p.corsetConfig.Field
+	return p.field
 }
 
 // Read reads one or more constraints files into this stack.
 func (p SchemaStacker[F]) Read(filenames ...string) SchemaStacker[F] {
-	schema, srcmap := CompileSourceFiles(p.corsetConfig, filenames)
+	schema := CompileSourceFiles[F](p.corsetConfig, filenames)
 	p.schema = util.Some(schema)
-	p.sourceMap = util.Some(srcmap)
 	//
 	return p
 }
@@ -142,24 +133,15 @@ func (p SchemaStacker[F]) TraceBuilder() ir.TraceBuilder[F] {
 // Build a fresh SchemaStack from this stacker.
 func (p SchemaStacker[F]) Build() SchemaStack[F] {
 	var (
-		absSchema mir.Schema[word.BigEndian]
+		mirSchema mir.Schema[F]
 		airSchema air.Schema[F]
 		stack     SchemaStack[F]
 	)
 	//
 	if p.schema.HasValue() {
 		stats := util.NewPerfStats()
-		// Read out the (abstract) schema
-		absSchema = p.schema.Unwrap()
-		//
-		stats.Log("concretization")
-		// Concretize schema for the target field.
-		mirSchema := mir.Concretize[word.BigEndian, F](absSchema.RawModules())
-		// Construct a trivial (unsplit) register mapping, since registers are
-		// no longer subdivided into limbs.
-		stats.Log("translation")
-		// Record mapping
-		stack.mapping = module.IdentityMap[F](mirSchema.Modules().Collect()...)
+		// Read out the schema
+		mirSchema = p.schema.Unwrap()
 		// Copy over builder
 		stack.traceBuilder = p.traceBuilder
 		// Include Mid-level IR layer (if requested)
@@ -177,29 +159,26 @@ func (p SchemaStacker[F]) Build() SchemaStack[F] {
 			stack.concreteSchemas = append(stack.concreteSchemas, airSchema)
 			stack.names = append(stack.names, "AIR")
 		}
-		// Assign source map used to build the stack
-		stack.sourceMap = p.sourceMap
 	}
 	//
 	return stack
 }
 
 // CompileSourceFiles accepts a set of source (i.e. lisp) files and compiles
-// them into a single schema, along with its corresponding source map.  Any
-// directories given in the list of filenames are recursively expanded first.
-// This can result, for example, in a syntax error, etc.  NOTES: source files
-// can be compiled with (or without) the standard library.  Generally speaking,
-// you want to compile with the standard library.  However, some internal tests
-// are run without including the standard library to minimise the surface area.
-func CompileSourceFiles(config corset.CompilationConfig, filenames []string,
-) (mir.Schema[word.BigEndian], corset.SourceMap) {
+// them into a single schema.  Any directories given in the list of filenames
+// are recursively expanded first.  This can result, for example, in a syntax
+// error, etc.  NOTES: source files can be compiled with (or without) the
+// standard library.  Generally speaking, you want to compile with the standard
+// library.  However, some internal tests are run without including the
+// standard library to minimise the surface area.
+func CompileSourceFiles[F field.Element[F]](config corset.CompilationConfig, filenames []string,
+) mir.Schema[F] {
 	//
 	var (
 		err      error
 		errors   []source.SyntaxError
-		srcmap   corset.SourceMap
 		srcfiles []source.File
-		schema   mir.Schema[word.BigEndian]
+		schema   mir.Schema[F]
 	)
 	//
 	if len(filenames) == 0 {
@@ -227,10 +206,10 @@ func CompileSourceFiles(config corset.CompilationConfig, filenames []string,
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
 	}
 	// Parse and compile source files
-	schema, srcmap, errors = corset.CompileSourceFiles(config, srcfiles)
+	schema, errors = corset.CompileSourceFiles[F](config, srcfiles)
 	// Check for any errors
 	if len(errors) == 0 {
-		return schema, srcmap
+		return schema
 	}
 	// Report errors
 	for _, err := range errors {
@@ -239,7 +218,7 @@ func CompileSourceFiles(config corset.CompilationConfig, filenames []string,
 	// Fail
 	os.Exit(4)
 	// unreachable
-	return schema, srcmap
+	return schema
 }
 
 // Look through the list of filenames and identify any which are directories.

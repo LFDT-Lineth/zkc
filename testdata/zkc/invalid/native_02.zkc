@@ -1,0 +1,14 @@
+//error:9:9-13:native function cannot call a function
+// native functions must not call other functions.
+fn g(x:u8) -> (r:u8) {
+    r = x
+}
+
+#[native]
+fn f(x:u8) -> (r:u8) {
+    r = g(x)
+}
+
+fn main() {
+    var x:u8 = f(1)
+}

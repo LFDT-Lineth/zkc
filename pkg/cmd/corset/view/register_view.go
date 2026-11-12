@@ -17,61 +17,35 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	"github.com/LFDT-Lineth/zkc/pkg/util/math"
 )
 
 // RegisterView provides an abstract view of a given column.
 type RegisterView interface {
-	BitWidth() uint
-	Get(uint) big.Int
+	Get(uint) util.Option[big.Int]
 	Len() uint
 }
 
 type registerView[F field.Element[F]] struct {
-	trace   trace.Module[F]
-	limbs   []register.LimbId
-	mapping register.LimbsMap
+	trace trace.Module[F]
+	regId register.Id
 }
 
-func (p *registerView[F]) BitWidth() uint {
-	var bitwidth uint
-	//
-	for _, lid := range p.limbs {
-		bitwidth += p.mapping.Limb(lid).Width()
-	}
-	//
-	return bitwidth
-}
-
-func (p *registerView[F]) Get(row uint) big.Int {
+func (p *registerView[F]) Get(row uint) util.Option[big.Int] {
 	var (
-		bits  = uint(0)
-		value big.Int
+		data = p.trace.Column(p.regId.Unwrap())
+		val  big.Int
 	)
-	//
-	for _, lid := range p.limbs {
-		var (
-			data    = p.trace.Column(lid.Unwrap())
-			element = data.Get(row)
-			val     big.Int
-		)
+	// Sanity check something is there
+	if data != nil {
 		// Construct value from field element
-		val.SetBytes(element.Bytes())
-		// Shift and add
-		value.Add(&value, val.Mul(&val, math.Pow2(bits)))
-		// Shift value for multi-limb registers.  This specifically does nothing
-		// in the case of single limb registers, since they include computed
-		// registers which may not be present in the limbs map.
-		if len(p.limbs) > 1 {
-			// Extract limb information
-			limb := p.mapping.Limb(lid)
-			//
-			bits += limb.Width()
-		}
+		val.SetBytes(data.Get(row).Bytes())
+		//
+		return util.Some(val)
 	}
 	//
-	return value
+	return util.None[big.Int]()
 }
 
 func (p *registerView[F]) Len() uint {

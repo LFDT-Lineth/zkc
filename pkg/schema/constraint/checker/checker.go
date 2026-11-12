@@ -134,11 +134,13 @@ func (p Checker[F]) finaliseGlobalConstraints(result Result[F]) (failures []Fail
 func (p Checker[F]) processShard(id uint, shard Shard[F]) (res Result[F]) {
 	var (
 		stats = util.NewPerfStats()
+		// Fill constant columns
+		filledShard = schema.AssignConstantColumns(p.schema, shard)
 		// Build the shard context
-		context = p.buildShardContext(shard)
+		context = p.buildShardContext(filledShard)
 		// Construct constraint processor
 		processor = ConstraintProcessor[F]{
-			p, context, id, shard,
+			p, context, id, filledShard,
 		}
 	)
 	//

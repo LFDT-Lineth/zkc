@@ -1,0 +1,20 @@
+// Test for a native function that should be MLI but traced as OLI
+
+pub input data(address:u1) -> (word:u8)
+
+#[native]
+fn copy(x:u8) -> (y:u8) {
+    y = 0
+    for i:u8 = 0; i<x; i = i + 1 {
+        y = y + 1
+    }
+}
+
+fn main() {
+    var x:u8 = data[0]
+    var r:u8 = copy(x)
+
+    if (r != x) {
+        fail
+    }
+}

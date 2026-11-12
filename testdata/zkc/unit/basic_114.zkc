@@ -1,0 +1,21 @@
+pub input data(address:u8) -> (byte:u8)
+pub output check(address:u16) -> (byte:u1)
+
+fn main() {
+    var n:u8 = data[0] + 1
+    var res:u1 = 1
+    // Check each item
+    for i:u8 = 1; i<n; i = i + 1 {
+        if is_odd(data[i]) == 0 {
+            res = 0
+        }
+    }
+    //
+    check[0] = res
+}
+
+fn is_odd(val:u8) -> (r:u1) {
+    var hi:u7
+    // evens only
+    hi::r = val
+}

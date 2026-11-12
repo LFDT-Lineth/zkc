@@ -1193,6 +1193,30 @@ func Test_ZkcInvalid_Global_02(t *testing.T) {
 	checkZkcInvalid(t, "zkc/invalid/global_02")
 }
 
+func Test_ZkcInvalid_Global_03(t *testing.T) {
+	// global function which is never called
+	checkZkcInvalid(t, "zkc/invalid/global_03")
+}
+
+func Test_ZkcInvalid_Global_04(t *testing.T) {
+	// zero-arity global function which is only called recursively
+	checkZkcInvalid(t, "zkc/invalid/global_04")
+}
+
+// ===================================================================
+// Native Tests
+// ===================================================================
+
+func Test_ZkcInvalid_Native_01(t *testing.T) {
+	// recursive native function
+	checkZkcInvalid(t, "zkc/invalid/native_01")
+}
+
+func Test_ZkcInvalid_Native_02(t *testing.T) {
+	// native function calling another function
+	checkZkcInvalid(t, "zkc/invalid/native_02")
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================

@@ -73,12 +73,12 @@ func (p *Constant[F, T]) Bounds() util.Bounds {
 }
 
 // EvalAt implementation for Evaluable interface.
-func (p *Constant[F, T]) EvalAt(k uint, _ trace.Module[F], _ register.Map) (F, error) {
+func (p *Constant[F, T]) EvalAt(k uint, _ trace.Module[F], _ register.Map[F]) (F, error) {
 	return p.Value, nil
 }
 
 // Lisp implementation for Lispifiable interface.
-func (p *Constant[F, T]) Lisp(global bool, mapping register.Map) sexp.SExp {
+func (p *Constant[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	var val big.Int
 	//
 	val.SetBytes(p.Value.Bytes())

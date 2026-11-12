@@ -108,14 +108,7 @@ func (p *cellFormatter) Module(mod ModuleData) ModuleFormatting {
 
 // Cell implementation for ModuleFormatting interface
 func (p *cellFormatter) Cell(col SourceColumn, row uint, text string) termio.FormattedText {
-	// Check each limb in turn
-	if !p.data.IsActive(col, row) {
-		if p.ansiEscapes {
-			return termio.NewColouredText(text, termio.TERM_BLACK)
-		}
-		//
-		return termio.NewText("")
-	} else if containsCell(p.data.Id(), col, row, p.cells) {
+	if containsCell(p.data.Id(), col, row, p.cells) {
 		if p.ansiEscapes {
 			return termio.NewFormattedText(text, termio.NewAnsiEscape().FgColour(termio.TERM_RED))
 		}
@@ -127,17 +120,10 @@ func (p *cellFormatter) Cell(col SourceColumn, row uint, text string) termio.For
 }
 
 func containsCell(mid sc.ModuleId, col SourceColumn, row uint, cells CellRefSet) bool {
-	// Check each limb in turn
-	for _, lid := range col.Limbs {
-		// Consrtuct column reference
-		limbRef := tr.NewColumnRef(mid, lid)
-		// Construct cellRef reference
-		cellRef := tr.NewCellRef(limbRef, int(row))
-		// if any limb involved, entire column involved.
-		if cells.Contains(cellRef) {
-			return true
-		}
-	}
-	//
-	return false
+	// Construct column reference
+	colRef := tr.NewColumnRef(mid, col.Register)
+	// Construct cellRef reference
+	cellRef := tr.NewCellRef(colRef, int(row))
+	// check if cell involved.
+	return cells.Contains(cellRef)
 }

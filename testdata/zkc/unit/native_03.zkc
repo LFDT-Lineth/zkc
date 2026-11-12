@@ -1,0 +1,20 @@
+// Test for a native function that splits the input
+pub input data(address:u1) -> (word:u32)
+
+#[native]
+fn split(x:u32) -> (hi:u8, lo:u24) {
+    hi::lo = x
+}
+
+fn main() {
+    var x:u32 = data[0]
+    var hi:u8
+    var lo:u24
+
+    hi, lo = split(x)
+
+    var recompose:u32 = (hi as u32 << 24) + (lo as u32)
+    if (recompose != x) {
+        fail
+    }
+}

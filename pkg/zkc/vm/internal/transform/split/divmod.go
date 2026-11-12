@@ -15,7 +15,6 @@ package split
 
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -35,7 +34,7 @@ import (
 //
 // where each operand is the limb vector of the original register (ordered
 // most-significant limb first, matching ApplyLimbsMap).
-func DivMod[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivMod[W]) []Bytecode[W] {
+func DivMod[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.DivMod[W]) []Bytecode[W] {
 	var (
 		quotient            = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Quotient)...)
 		remainder           = bytecode.NewRegisterVector(ApplyLimbsMap(mapping, insn.Remainder)...)
@@ -63,7 +62,7 @@ func DivMod[W word.Word[W]](mapping descriptor.LimbsMap[W], insn *bytecode.DivMo
 // directly (the intrinsic executors reconstruct full values anyway), so it
 // need not fit the register width; only the multi-limb constant form is
 // forbidden (see Intrinsic.Validate).
-func Operand[W word.Word[W]](mapping descriptor.LimbsMap[W], operand bytecode.Operand[W],
+func Operand[W word.Word[W]](mapping LimbsMap[W], operand bytecode.Operand[W],
 ) (out bytecode.Operand[W], n uint16) {
 	//
 	if operand.IsConstant() {

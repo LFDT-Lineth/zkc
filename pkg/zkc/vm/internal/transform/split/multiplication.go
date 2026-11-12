@@ -76,7 +76,7 @@ import (
 // whose adds are satisfiable only by zero: exactly the overflow check the
 // unsplit multiply performs (a product that does not fit the target makes the
 // constraints unsatisfiable / aborts execution).
-func Multiplication[W word.Word[W]](mapping descriptor.LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
+func Multiplication[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *bytecode.Arith[W],
 ) []Bytecode[W] {
 	var (
 		insns       []Bytecode[W]

@@ -19,7 +19,7 @@ import (
 
 // FunctionKind captures the execution-relevant properties of a function.
 type FunctionKind struct {
-	native, unsafeArgs, inline, never, global bool
+	native, unsafeArgs, inline, never, global, cacheable bool
 }
 
 // IsNative reports whether this function is backed by a native circuit rather
@@ -48,6 +48,14 @@ func (p FunctionKind) NonReturning() bool {
 // on some paths reaching the call.
 func (p FunctionKind) AllowsUnsafeArgs() bool {
 	return p.unsafeArgs
+}
+
+// WithCacheable updates this kind as to whether it represents a function which
+// can be cached, or not.
+func (p FunctionKind) WithCacheable(flag bool) FunctionKind {
+	p.cacheable = flag
+	//
+	return p
 }
 
 // WithInline updates this kind as to whether it was marked as inlineable or
@@ -117,6 +125,10 @@ func (p *FunctionKind) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
+	if err := gobEncoder.Encode(p.cacheable); err != nil {
+		return nil, err
+	}
+	//
 	return buffer.Bytes(), nil
 }
 
@@ -149,10 +161,14 @@ func (p *FunctionKind) GobDecode(data []byte) error {
 		return err
 	}
 	//
+	if err := gobDecoder.Decode(&p.cacheable); err != nil {
+		return err
+	}
+	//
 	return nil
 }
 
 var (
 	// BYTECODE_FUNCTION represents a safe function implemented by bytecode.
-	BYTECODE_FUNCTION = FunctionKind{false, false, false, false, false}
+	BYTECODE_FUNCTION = FunctionKind{false, false, false, false, false, false}
 )

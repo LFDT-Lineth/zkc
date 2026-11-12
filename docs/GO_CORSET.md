@@ -93,19 +93,12 @@ from the actual constraints used by the prover.
 
 The `go-corset debug` command provides insights into a given set of
 constraints. For example, one can see the low level arithmetic
-intermediate representation (AIR) generated; or, one can see summary
-statistics (e.g. number of columns, number of constraints, etc).
+intermediate representation (AIR) generated using `--air`, or the
+mid-level representation using `--mir`.
 
 Useful options here include:
 
-- `--source-map` will show the source map for the given constraints
-  (columns, constants, etc).
-
-- `--stats` will show summary statistics for a given set of
-  constraints, such as the number of columns, constraints, lookups,
-  etc. **NOTE:** this requires one of `--air/--mir` to be
-  specified (i.e. lower level representations have more
-  columns/constraints which affects the stats, etc).
+- `--show-static` will include static tables when printing schemas.
 
 ### Inspect
 
@@ -116,34 +109,16 @@ queries over the trace (e.g. find a row where column `CT > 0`, etc).
 
 ### Trace
 
-The `go-corset trace` command allows ones to inspect and/or manipulate
-a given trace file in various ways. For example, one can obtain
-statistical information such as the total number of cells; or, the
-number of unique elements in a given column; or, print the values of
-certain columns on specific rows; or, convert the trace file into a
-different format (e.g. JSON); or, trim the trace file in some way
-(e.g. keeping only the first `n` rows, etc); or, view any metadata
-embedded within the trace file when it was generated.
+The `go-corset trace` command allows one to inspect and/or write out
+a given trace file. Trace files are JSON (`.json`); no other format is
+supported. Printing a trace requires a constraint file. With `--air`
+or `--mir` the trace is first expanded (and padded) against the
+constraints at that level; with `--raw` it is shown as is.
 
 Useful options here include:
 
-- `--columns` shows column-level statistics (e.g. number of lines,
-  unique elements, etc). Use `-f` to filter columns of interest.
-
-- `--metadata` shows any embedded metadata within the trace.
-
-- `--modules` shows module-level statistics (e.g. number of columns,
-  lines, or cells, etc)
-
-- `--out` allows one to write out the trace file in a given format
-  (currently either `lt` or `json`). This can be used to convert one
-  (or more) traces into a different format, and/or trim a given trace
-  to some range of rows, or set of columns, etc.
+- `--out` writes the (possibly expanded) trace to the given JSON file.
 
 - `--print` shows actual rows of the trace. Use `--start` and `--end`
   to determine the range of rows to show, along with `-f` to filter by
   module or column name, etc.
-
-In addition, the `go-corset trace diff` subcommand allows one to
-compare two traces, which is useful to identify any small differences
-between traces.

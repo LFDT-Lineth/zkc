@@ -16,7 +16,6 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/file"
 )
 
@@ -56,10 +55,6 @@ type BindingId = string
 // tree), or it can be relative (in which case it is resolved relative to a
 // given module).
 type ModuleScope struct {
-	// public determines whether or not this module is externally visible
-	public bool
-	// Selector determining when this module is active.
-	selector util.Option[string]
 	// Absolute path
 	path file.Path
 	// Map identifiers to indices within the bindings array.
@@ -75,10 +70,8 @@ type ModuleScope struct {
 }
 
 // NewModuleScope constructs an initially empty top-level scope.
-func NewModuleScope(public bool) *ModuleScope {
+func NewModuleScope() *ModuleScope {
 	return &ModuleScope{
-		public,
-		util.None[string](),
 		file.NewAbsolutePath(),
 		make(map[BindingId]uint),
 		nil,
@@ -100,16 +93,6 @@ func (p *ModuleScope) Name() string {
 	}
 	//
 	return ""
-}
-
-// IsPublic determines whether or not this is an externally visible module.
-func (p *ModuleScope) IsPublic() bool {
-	return p.public
-}
-
-// Virtual identifies whether or not this is a virtual module.
-func (p *ModuleScope) Virtual() bool {
-	return p.selector.HasValue()
 }
 
 // IsWithin checks whether a given path is local to the enclosing module, or not.
@@ -144,7 +127,7 @@ func (p *ModuleScope) isVisibleInner(path file.Path) (found, visible bool) {
 		return submod.isVisibleInner(*path.Dehead())
 	} else if index, ok := p.ids[id]; ok && path.Depth() == 1 {
 		box := p.bindings[index]
-		return true, !box.open || box.binding.IsRecursive()
+		return true, !box.open
 	}
 	// give up
 	return false, false
@@ -155,30 +138,15 @@ func (p *ModuleScope) IsRoot() bool {
 	return p.parent == nil
 }
 
-// Children returns the set of submodules defined within this module.
-func (p *ModuleScope) Children() []*ModuleScope {
-	return p.submodules
-}
-
-// Selector gets an MIR unit expression which evaluates to a non-zero value when
-// this module is active.  This can be nil if there is no selector (i.e. this is
-// a non-virtual module).
-func (p *ModuleScope) Selector() util.Option[string] {
-	return p.selector
-}
-
 // DestructuredColumns returns the set of (destructured) columns defined within
 // this module scope.  That is, source-level columns which are broken down into
 // their atomic components.
 func (p *ModuleScope) DestructuredColumns() []Register {
-	var (
-		sources []Register
-		owner   file.Path = p.Owner().path
-	)
+	var sources []Register
 	//
 	for _, b := range p.bindings {
 		if binding, ok := b.binding.(*ast.ColumnBinding); ok {
-			cols := p.destructureColumn(binding, owner, binding.Path, binding.DataType)
+			cols := p.destructureColumn(binding, p.path, binding.Path, binding.DataType)
 			sources = append(sources, cols...)
 		}
 	}
@@ -186,46 +154,15 @@ func (p *ModuleScope) DestructuredColumns() []Register {
 	return sources
 }
 
-// DestructuredConstants returns the set of (destructured) constant definitions
-// within this module scope.
-func (p *ModuleScope) DestructuredConstants() []ast.ConstantBinding {
-	var constants []ast.ConstantBinding
-
-	for _, b := range p.bindings {
-		if binding, ok := b.binding.(*ast.ConstantBinding); ok {
-			constants = append(constants, *binding)
-		}
-	}
-
-	return constants
-}
-
-// Owner returns the enclosing non-virtual module of this module.  Observe
-// that, if this is a non-virtual module, then it is returned.
-func (p *ModuleScope) Owner() *ModuleScope {
-	if p.selector.IsEmpty() {
-		return p
-	} else if p.parent != nil {
-		return p.parent.Owner()
-	}
-	// Should be unreachable
-	panic("invalid module tree")
-}
-
 // Declare a new submodule at the given (absolute) path within this tree scope.
-// Submodules can be declared as "virtual" which indicates the submodule is
-// simply a subset of rows of its enclosing module.  A virtual module is
-// indicated by a non-zero selector, which signals when the virtual module is
-// active.  This returns true if this succeeds, otherwise returns false (i.e. a
-// matching submodule already exists).
-func (p *ModuleScope) Declare(submodule string, selector util.Option[string], public bool) bool {
+// This returns true if this succeeds, otherwise returns false (i.e. a matching
+// submodule already exists).
+func (p *ModuleScope) Declare(submodule string) bool {
 	if _, ok := p.submodmap[submodule]; ok {
 		return false
 	}
 	// Construct suitable child scope
 	scope := &ModuleScope{
-		public,
-		selector,
 		*p.path.Extend(submodule),
 		make(map[BindingId]uint),
 		nil,
@@ -374,27 +311,9 @@ func (p *ModuleScope) destructureColumn(column *ast.ColumnBinding, ctx file.Path
 	// Check for base base
 	if int_t, ok := datatype.(*ast.IntType); ok {
 		return p.destructureAtomicColumn(column, ctx, path, int_t.BitWidth())
-	} else if arraytype, ok := datatype.(*ast.ArrayType); ok {
-		// For now, assume must be an array
-		return p.destructureArrayColumn(column, ctx, path, arraytype)
 	} else {
 		panic(fmt.Sprintf("unknown type encountered: %v", datatype))
 	}
-}
-
-// Allocate an array type
-func (p *ModuleScope) destructureArrayColumn(col *ast.ColumnBinding, ctx file.Path, path file.Path,
-	arrtype *ast.ArrayType) []Register {
-	//
-	var sources []Register
-	// Allocate n columns
-	for i := arrtype.MinIndex(); i <= arrtype.MaxIndex(); i++ {
-		ith_name := fmt.Sprintf("%s_%d", path.Tail(), i)
-		ith_path := path.Parent().Extend(ith_name)
-		sources = append(sources, p.destructureColumn(col, ctx, *ith_path, arrtype.Element())...)
-	}
-	//
-	return sources
 }
 
 // Destructure atomic column
@@ -406,8 +325,8 @@ func (p *ModuleScope) destructureAtomicColumn(column *ast.ColumnBinding, ctx fil
 		path,
 		bitwidth,
 		column.MustProve,
-		column.IsComputed(),
-		column.Display,
+		column.Kind,
+		column.Padding,
 		nil}
 	//
 	return []Register{source}

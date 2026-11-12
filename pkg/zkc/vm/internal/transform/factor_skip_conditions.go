@@ -95,10 +95,15 @@ func factorableSkips[W Word[W]](codes []Bytecode[W], registers split.Allocator[W
 			continue
 		}
 
-		// Nothing to factorize if the body of the skip is a bit equality like b = x == 0 ? 1 :0.
-		// Note that as we lowerSwitch later, this pattern can't arise from lowerSwitch, but only
-		// directly from .zkc program or other lowering steps (FactorLimbEqualities ...)
+		// Optimization to avoid factoring if the body is
+		// - a single bit equality (with arms constant or register copies)
+		// - a fail, or a return or empty skip with nothing after it
 		if bodyContainsOnlyBitEquality(codes, uint(i), registers) {
+			factor[uint(i)] = false
+			continue
+		}
+
+		if bodyIsBranchEnd(codes, uint(i)) {
 			factor[uint(i)] = false
 			continue
 		}
@@ -136,13 +141,17 @@ func generatesInverse[W Word[W]](si *bytecode.SkipIf[W], registers split.Allocat
 	return false
 }
 
-// bodyContainsOnlyBitEquality reports whether the SkipIf at index i heads a diamond
-// which merely selects between two constants for a single 1-bit register:
+// bodyContainsOnlyBitEquality reports whether the SkipIf at index i selects a
+// single bit:
 //
 //	skip_if (cond) 2
-//	b = k0
+//	z = a
 //	skip 1
-//	b = k1
+//	z = b
+//
+// Both arms are constant loads, as in `z = cond != 0 ? 1 : 0`, or both are
+// register copies, as in `z = cond != 0 ? t : f`. This matches only when z is
+// a u1.
 func bodyContainsOnlyBitEquality[W Word[W]](codes []Bytecode[W], i uint, registers split.Allocator[W]) bool {
 	si := codes[i].(*bytecode.SkipIf[W])
 	//
@@ -151,18 +160,44 @@ func bodyContainsOnlyBitEquality[W Word[W]](codes []Bytecode[W], i uint, registe
 	}
 	//
 	var (
-		lo, okLo  = isLoadConst(codes[i+1])
-		mid, okSk = codes[i+2].(*bytecode.Skip[W])
-		hi, okHi  = isLoadConst(codes[i+3])
+		lo, constLo, okLo = isSelectArm(codes[i+1])
+		mid, okSk         = codes[i+2].(*bytecode.Skip[W])
+		hi, constHi, okHi = isSelectArm(codes[i+3])
 	)
 	//
-	if !okLo || !okSk || !okHi || mid.Skip != 1 || lo != hi {
+	if !okLo || !okSk || !okHi || mid.Skip != 1 || lo != hi || constLo != constHi {
 		return false
 	}
 	//
-	bit := registers.Register(lo)
+	reg := registers.Register(lo)
 	//
-	return !bit.IsNative() && bit.Bitwidth().Unwrap() == 1
+	return !reg.IsNative() && reg.Bitwidth().Unwrap() == 1
+}
+
+// isSelectArm reports a one-register select arm: a constant load, or a register
+// copy. constArm is true for the load.
+func isSelectArm[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool, bool) {
+	if id, ok := isLoadConst(code); ok {
+		return id, true, true
+	}
+	//
+	if id, ok := isMove(code); ok {
+		return id, false, true
+	}
+	//
+	return 0, false, false
+}
+
+// isMove recognises a register copy (as constructed by bytecode.Assign),
+// returning its single target register.
+func isMove[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
+	a, ok := code.(*bytecode.Arith[W])
+	//
+	if !ok || a.Op != bytecode.OP_ADD || len(a.Target) != 1 || len(a.Source) != 1 || a.Constant.Cmp64(0) != 0 {
+		return 0, false
+	}
+	//
+	return a.Target[0], true
 }
 
 // isLoadConst recognises a load-constant bytecode (as constructed by
@@ -174,6 +209,63 @@ func isLoadConst[W Word[W]](code Bytecode[W]) (bytecode.RegisterId, bool) {
 	}
 	//
 	return 0, false
+}
+
+// bodyIsBranchEnd reports whether the SkipIf at index i should stay unfactored.
+// A fail aborts, so later writes are plain equalities and the comparison is not
+// copied onto them. A return or an empty skip only qualifies when nothing
+// follows it except the function epilogue: writes after a return are guarded
+// and would each repeat the comparison.
+func bodyIsBranchEnd[W Word[W]](codes []Bytecode[W], i uint) bool {
+	si := codes[i].(*bytecode.SkipIf[W])
+	//
+	var (
+		s     = uint(si.Skip)
+		taken = i + 1 + s
+	)
+	//
+	if s == 0 || taken > uint(len(codes)) {
+		return false
+	}
+	//
+	body := codes[i+1 : taken]
+	//
+	return isBodyBranchEnd(body) && (containsFail(body) || isBodyBranchEnd(codes[taken:]))
+}
+
+func containsFail[W Word[W]](codes []Bytecode[W]) bool {
+	for _, code := range codes {
+		if isFail(code) {
+			return true
+		}
+	}
+	//
+	return false
+}
+
+func isFail[W Word[W]](code Bytecode[W]) bool {
+	_, ok := code.(*bytecode.Fail[W])
+	return ok
+}
+
+func isBodyBranchEnd[W word.Word[W]](codes []Bytecode[W]) bool {
+	for _, code := range codes {
+		if !isBranchEnd(code) {
+			return false
+		}
+	}
+	//
+	return true
+}
+
+// isBranchEnd reports a skip, fail, or return.
+func isBranchEnd[W word.Word[W]](code Bytecode[W]) bool {
+	switch code.(type) {
+	case *bytecode.Skip[W], *bytecode.Fail[W], *bytecode.Ret[W]:
+		return true
+	default:
+		return false
+	}
 }
 
 // factorSkipIf expands an equality SkipIf into the diamond described on

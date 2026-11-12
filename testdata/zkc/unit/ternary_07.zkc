@@ -1,0 +1,16 @@
+pub input data(address:u8) -> (byte:u1)
+
+fn main() {
+    var cond:u1 = data[0]
+    var valueTrue:u1 = data[1]
+    var valueFalse:u1 = data[2]
+    var expectedBit:u1 = data[3]
+
+    // Register mux into a bit. FactorSkipConditions must not wrap this.
+    var computedResult:u1 = cond != 0 ? valueTrue:valueFalse
+
+    if computedResult != expectedBit {
+        fail
+    }
+    return
+}

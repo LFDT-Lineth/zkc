@@ -89,6 +89,33 @@ func (p Uint) Cmp64(o uint64) int {
 	return 1
 }
 
+// Equals implementation for Word interface.
+func (p Uint) Equals(o Uint) bool {
+	return p.Cmp(o) == 0
+}
+
+// Hash implementation for Word interface.  The hash is computed over the
+// normalised limbs of the underlying big.Int (which carry no leading zero
+// words), so equal values always hash equally.  No allocation is performed.
+func (p Uint) Hash() uint64 {
+	const golden = 0x9e3779b97f4a7c15
+	//
+	var h uint64 = golden
+	// Fold each limb into the accumulator.  Limbs are either 32 or 64 bits
+	// depending on the platform; a uint64 conversion covers both.
+	for _, limb := range p.value.Bits() {
+		h ^= uint64(limb) + golden + (h << 6) + (h >> 2)
+	}
+	// Mix bits (SplitMix64 finalizer)
+	h ^= h >> 30
+	h *= 0xbf58476d1ce4e5b9
+	h ^= h >> 27
+	h *= 0x94d049bb133111eb
+	h ^= h >> 31
+	//
+	return h
+}
+
 // Div implementation for Word interface.
 func (p Uint) Div(w Uint) Uint {
 	if w.value.Sign() == 0 {

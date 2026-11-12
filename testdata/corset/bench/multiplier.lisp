@@ -11,9 +11,14 @@
   (ST :i32)
   (CT :i4)
   ;; nibbles
-  (ARG1 :i4@prove :array [0:1])
-  (ARG2 :i4@prove :array [0:1])
-  (RES :i4@prove :array [0:3]))
+  (ARG1_0 :i4@prove)
+  (ARG1_1 :i4@prove)
+  (ARG2_0 :i4@prove)
+  (ARG2_1 :i4@prove)
+  (RES_0 :i4@prove)
+  (RES_1 :i4@prove)
+  (RES_2 :i4@prove)
+  (RES_3 :i4@prove))
 
 ;; NOTE: this is not really a finished example, since it doesn't
 ;; actually use carry lines (yet).  These would be needed if small
@@ -64,27 +69,27 @@
 ;; Multipilier
 ;; ===================================================================
 
-;; RES() == (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
+;; RES() == (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0)
 
 (defconstraint line_1 (:guard ST)
   (if (== CT 0)
-      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
-          (* [ARG1 0] [ARG2 0]))))
+      (== (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0)
+          (* ARG1_0 ARG2_0))))
 
 (defconstraint line_2 (:guard ST)
   (if (== CT 1)
-      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
-          (+ (shift (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0]) -1)
-             (* 16 [ARG1 0] [ARG2 1])))))
+      (== (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0)
+          (+ (shift (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0) -1)
+             (* 16 ARG1_0 ARG2_1)))))
 
 (defconstraint line_3 (:guard ST)
   (if (== CT 2)
-      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
-          (+ (shift (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0]) -1)
-             (* 16 [ARG1 1] [ARG2 0])))))
+      (== (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0)
+          (+ (shift (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0) -1)
+             (* 16 ARG1_1 ARG2_0)))))
 
 (defconstraint line_4 (:guard ST)
   (if (== CT 3)
-      (== (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0])
-          (+ (shift (+ (* 4096 [RES 3]) (* 256 [RES 2]) (* 16 [RES 1]) [RES 0]) -1)
-             (* 256 [ARG1 1] [ARG2 1])))))
+      (== (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0)
+          (+ (shift (+ (* 4096 RES_3) (* 256 RES_2) (* 16 RES_1) RES_0) -1)
+             (* 256 ARG1_1 ARG2_1)))))

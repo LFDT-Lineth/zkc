@@ -16,9 +16,7 @@ import (
 	"math"
 	"math/big"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
-	zkc_util "github.com/LFDT-Lineth/zkc/pkg/zkc/util"
 )
 
 // Config is (for now) simply an alias for field config.
@@ -36,17 +34,6 @@ var WORD_UINT128 = Config{Name: "Uint128", BandWidth: 128, RegisterWidth: 64}
 // WORD_UINT provides metadata about the Uint word type.  This word type should
 // not be used in practice for execution as it is highly inefficient.
 var WORD_UINT = Config{Name: "Uint", BandWidth: math.MaxUint, RegisterWidth: math.MaxUint}
-
-// Base captures the minimal set of requirements for a word used in the base
-// machine.
-type Base[W any] interface {
-	util.Comparable[W]
-	util.ComparableUint64
-	util.Uinter64
-	zkc_util.Formattable
-	// Check whether this value fits within the given bitwidth.
-	FitsWithin(uint) bool
-}
 
 // Word abstracts the data type (a.k.a the "machine word") used for holding
 // values within the machine.  The reason for abstracting this concept is to
@@ -77,6 +64,10 @@ type Word[W any] interface {
 	Cmp(y W) int
 	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
 	Cmp64(y uint64) int
+	// Equals implementation of Hasher interface.
+	Equals(y W) bool
+	// Hash implementation of Hasher interface.
+	Hash() uint64
 	// Div divides this word by another.  Panics on division by zero.
 	Div(W) W
 	// DwDiv divides the double word formed from this word (as the most

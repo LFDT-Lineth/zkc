@@ -19,7 +19,6 @@ import (
 	"regexp"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/view"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/termio"
 )
@@ -53,8 +52,6 @@ type SourceColumnFilter struct {
 	Computed bool
 	// UserDefined filters columns based on whether they are non-computed columns.
 	UserDefined bool
-	// Register mappin
-	Mapping register.Map
 }
 
 // Column matches this filter against a given column.
@@ -84,7 +81,6 @@ func newModuleState(view view.ModuleView) ModuleState {
 	// Include all columns initially
 	state.columnFilter.Computed = true
 	state.columnFilter.UserDefined = true
-	state.columnFilter.Mapping = view.Data().Mapping().LimbsMap()
 	//
 	return state
 }
@@ -175,37 +171,31 @@ func historyAppend[T comparable](history []T, item T) []T {
 
 // Build an environment suitable for querying from a given module's data.
 func buildEnvironment(data view.ModuleData) QueryEnv {
-	var (
-		mapping = data.Mapping()
-	)
 	//
 	return func(col string, row uint) (big.Int, bool) {
 		var (
-			limbs []register.LimbId
-			ok    bool
-			id    register.Id
+			ok   bool
+			zero big.Int
 		)
 		// Look in the register mapping first
-		if id, ok = mapping.HasRegister(col); ok {
-			limbs = mapping.LimbIds(id)
-		} else {
-			var (
-				srcId  view.SourceColumnId
-				srcCol view.SourceColumn
-			)
-			// Failed, so try for a source column.
-			if srcId, ok = data.HasSourceColumn(col); !ok {
-				// give up
-				panic(fmt.Sprintf("unknown column \"%s\"", col))
-			}
-			// Extract source column
-			srcCol = data.SourceColumn(srcId)
-			// Extract underlying register id
-			limbs = srcCol.Limbs
-			// Check whether source column actually active
-			ok = data.IsActive(srcCol, row)
+		var (
+			srcId  view.SourceColumnId
+			srcCol view.SourceColumn
+		)
+		// Failed, so try for a source column.
+		if srcId, ok = data.HasSourceColumn(col); !ok {
+			// give up
+			panic(fmt.Sprintf("unknown column \"%s\"", col))
+		}
+		// Extract source column
+		srcCol = data.SourceColumn(srcId)
+		// Extract cell value (which may be missing, e.g. for a raw trace)
+		cell := data.DataOf(srcCol.Register).Get(row)
+		//
+		if cell.IsEmpty() {
+			return zero, false
 		}
 		//
-		return data.DataOf(limbs).Get(row), ok
+		return cell.Unwrap(), true
 	}
 }

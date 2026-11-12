@@ -25,8 +25,8 @@ import (
 type ModuleId = uint
 
 // ModuleView provides access to certain structural information about a module.
-type ModuleView interface {
-	register.Map
+type ModuleView[F field.Element[F]] interface {
+	register.Map[F]
 	// Module name
 	Name() module.Name
 	// IsPublicOutput indicates whether or not this module represents a public
@@ -56,7 +56,7 @@ type ModuleView interface {
 // Module represents a "table" within a schema which contains zero or more rows
 // for a given set of registers.
 type Module[F field.Element[F]] interface {
-	ModuleView
+	ModuleView[F]
 	// Assignments returns an iterator over the assignments of this module.
 	// These are the computations used to assign values to all computed columns
 	// in this module.
@@ -64,10 +64,10 @@ type Module[F field.Element[F]] interface {
 	// Constraints provides access to those constraints associated with this
 	// module.
 	Constraints() iter.Iterator[Constraint[F]]
-	// Consistent applies a number of internal consistency checks.  Whilst not
+	// Validate applies a number of internal consistency checks.  Whilst not
 	// strictly necessary, these can highlight otherwise hidden problems as an aid
 	// to debugging.
-	Consistent(fieldWidth uint, schema Schema[F]) []error
+	Validate(schema Schema[F])
 	// StaticContents returns the contents of this module, assuming it
 	// corresponds with a static reference table.  Each entry in the entries
 	// array returned should have Width() elements and correspond to a row in
@@ -94,7 +94,7 @@ type Table[F field.Element[F]] struct {
 	synthetic      bool
 	native         bool
 	static         bool
-	registers      []register.Register
+	registers      []register.Register[F]
 	constraints    []Constraint[F]
 	assignments    []Assignment[F]
 	staticContents [][]F
@@ -122,21 +122,17 @@ func (p *Table[F]) Constraints() iter.Iterator[Constraint[F]] {
 	return iter.NewArrayIterator(p.constraints)
 }
 
-// Consistent applies a number of internal consistency checks.  Whilst not
-// strictly necessary, these can highlight otherwise hidden problems as an aid
-// to debugging.
-func (p *Table[F]) Consistent(fieldWidth uint, schema Schema[F]) []error {
-	var errors []error
+// Validate applies a number of internal consistency checks can highlight
+// otherwise hidden problems as an aid to debugging.
+func (p *Table[F]) Validate(schema Schema[F]) {
 	// Check constraints
 	for _, c := range p.constraints {
-		errors = append(errors, c.Consistent(schema)...)
+		c.Validate(schema)
 	}
 	// Check assignments
 	for _, a := range p.assignments {
-		errors = append(errors, a.Consistent(schema)...)
+		a.Validate(schema)
 	}
-	// Done
-	return errors
 }
 
 // HasRegister checks whether a register with the given name exists and, if
@@ -197,26 +193,14 @@ func (p *Table[F]) StaticContents() [][]F {
 	return p.staticContents
 }
 
-// RawAssignments provides raw access to those assignments defined as part of this
-// table.
-func (p *Table[F]) RawAssignments() []Assignment[F] {
-	return p.assignments
-}
-
-// RawConstraints provides raw access to those constraints associated with this
-// module.
-func (p *Table[F]) RawConstraints() []Constraint[F] {
-	return p.constraints
-}
-
 // Register returns the given register in this table.
-func (p *Table[F]) Register(id register.Id) register.Register {
+func (p *Table[F]) Register(id register.Id) register.Register[F] {
 	return p.registers[id.Unwrap()]
 }
 
 // Registers returns an iterator over the underlying registers of this schema.
 // Specifically, the index of a register in this array is its register index.
-func (p *Table[F]) Registers() []register.Register {
+func (p *Table[F]) Registers() []register.Register[F] {
 	return p.registers
 }
 
@@ -227,22 +211,6 @@ func (p *Table[F]) Width() uint {
 
 func (p *Table[F]) String() string {
 	return register.MapToString(p)
-}
-
-// ConstRegister implementation for register.ConstMap interface
-func (p *Table[F]) ConstRegister(constant uint8) register.Id {
-	var (
-		name  = fmt.Sprintf("%d", constant)
-		nregs = uint(len(p.registers))
-	)
-	// Check whether register already exists
-	if rid, ok := p.HasRegister(name); ok {
-		return rid
-	}
-	// Allocate constant register
-	p.registers = append(p.registers, register.NewConst(constant))
-	//
-	return register.NewId(nregs)
 }
 
 // ============================================================================
@@ -260,7 +228,7 @@ func (p *Table[F]) AddConstraints(constraints ...Constraint[F]) {
 }
 
 // AddRegisters adds new registers to this table.
-func (p *Table[F]) AddRegisters(registers ...register.Register) {
+func (p *Table[F]) AddRegisters(registers ...register.Register[F]) {
 	// Add registers
 	p.registers = append(p.registers, registers...)
 }

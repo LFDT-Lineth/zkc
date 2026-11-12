@@ -24,7 +24,7 @@ import (
 // reading registers only.
 type RegisterReader[F field.Element[F]] interface {
 	// Register returns information about a given register
-	Register(register.Id) register.Register
+	Register(register.Id) register.Register[F]
 	// RegisterWidths returns the bitwidth of a given set of registers.
 	RegisterWidths(reg ...register.Id) []uint
 	// ReadRegister constructs a suitable accessor for referring to a given register.

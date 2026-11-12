@@ -15,6 +15,7 @@ package bus
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
@@ -52,7 +53,7 @@ func (p *Port) Len() uint {
 }
 
 // Lisp returns a textual representation of this port.
-func (p *Port) Lisp(mapping register.Map) sexp.SExp {
+func (p *Port) Lisp[F field.Element[F]](mapping register.Map[F]) sexp.SExp {
 	var terms = sexp.EmptyList()
 	//
 	terms.Append(lispOfRegister(p.Selector, mapping))
@@ -64,6 +65,6 @@ func (p *Port) Lisp(mapping register.Map) sexp.SExp {
 	return terms
 }
 
-func lispOfRegister(rid register.Id, mapping register.Map) sexp.SExp {
+func lispOfRegister[F field.Element[F]](rid register.Id, mapping register.Map[F]) sexp.SExp {
 	return sexp.NewSymbol(mapping.Register(rid).QualifiedName(mapping))
 }

@@ -17,7 +17,6 @@ import (
 	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/corset/ast"
-	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	util_math "github.com/LFDT-Lineth/zkc/pkg/util/math"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -34,10 +33,10 @@ type DeclPredicate = array.Predicate[ast.Declaration]
 // etc.
 func ResolveCircuit(srcmap *source.Maps[ast.Node], circuit *ast.Circuit) (*ModuleScope, []SyntaxError) {
 	// Construct top-level scope
-	scope := NewModuleScope(true)
+	scope := NewModuleScope()
 	// Register modules
 	for _, m := range circuit.Modules {
-		scope.Declare(m.Name, util.None[string](), true)
+		scope.Declare(m.Name)
 	}
 	// Construct resolver
 	r := resolver{srcmap}
@@ -342,8 +341,6 @@ func (r *resolver) finaliseColumnAccessInModule(scope LocalScope, symbol ast.Typ
 	var errors []SyntaxError
 	// Resolve the underlying access
 	switch s := symbol.(type) {
-	case *ast.ArrayAccess:
-		errors = r.finaliseArrayAccessInModule(scope, s)
 	case *ast.VariableAccess:
 		errors = r.finaliseVariableInModule(scope, s)
 	default:
@@ -384,8 +381,6 @@ func (r *resolver) finaliseExpressionsInModule(scope LocalScope, args []ast.Expr
 //nolint:staticcheck
 func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) []SyntaxError {
 	switch v := expr.(type) {
-	case *ast.ArrayAccess:
-		return r.finaliseArrayAccessInModule(scope, v)
 	case *ast.Add:
 		return r.finaliseExpressionsInModule(scope, v.Args)
 	case *ast.Connective:
@@ -419,23 +414,6 @@ func (r *resolver) finaliseExpressionInModule(scope LocalScope, expr ast.Expr) [
 
 		return r.srcmap.SyntaxErrors(expr, msg)
 	}
-}
-
-// Resolve a specific array access contained within some expression which, in
-// turn, is contained within some module.
-func (r *resolver) finaliseArrayAccessInModule(scope LocalScope, expr *ast.ArrayAccess) []SyntaxError {
-	// Resolve argument
-	errors := r.finaliseExpressionInModule(scope, expr.Arg)
-	//
-	if !expr.IsResolved() && !scope.Bind(expr) {
-		errors = append(errors, *r.srcmap.SyntaxError(expr, "unknown array column"))
-	} else if binding, ok := expr.Binding().(*ast.ColumnBinding); !ok {
-		errors = append(errors, *r.srcmap.SyntaxError(expr, "unknown array column"))
-	} else if !scope.FixContext(binding.Context()) {
-		return r.srcmap.SyntaxErrors(expr, "conflicting context")
-	}
-	// All good
-	return errors
 }
 
 // Resolve a specific variable access contained within some expression which, in
