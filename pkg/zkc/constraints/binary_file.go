@@ -307,7 +307,7 @@ func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.Executi
 		output, _, errs = vm.BootAndCheckpointWithGogen(p.RawProgram(), input, checkpointing.Unwrap())
 	} else if config.GoGen() {
 		// Fast-mode execution via gogen
-		output, errs = vm.BootAndExecuteWithGogen(p.RawProgram(), input)
+		output, _, errs = vm.BootAndExecuteWithGogen(p.RawProgram(), input)
 	} else if checkpointing.HasValue() {
 		// Fast-mode execution via interpreter (with checkpointing)
 		// Boot and execute fast machine

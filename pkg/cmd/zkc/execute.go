@@ -60,8 +60,8 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		build   = GetBuildConfig[F](cmd, field)
 		input   map[string]bit.Array
 		outputs map[string]bit.Array
-		// extract checkpointing config
-		checkpointing = GetString(cmd, "checkpointing")
+		// extract sharding config
+		sharding = GetString(cmd, "sharding")
 	)
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
@@ -70,17 +70,17 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		WithGoGen(build.gogen)
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binfile := Build[F, W](build, args[1:]...)
-	// Including checkpointing configuration (if this makes sense).
-	if checkpointing != "" {
+	// Include sharding configuration (if this makes sense).
+	if sharding != "" {
 		var (
-			strategy = parseShardingConfig(checkpointing)
-			// checkpoint identifier
-			checkpointId uint
+			strategy = parseShardingConfig(sharding)
+			// shard/checkpoint identifier
+			shardId uint
 			//
 			statsFn = func(cp vm.CheckPoint) {
-				logCheckpointStats(checkpointId, cp)
+				logCheckpointStats(shardId, cp)
 				//
-				checkpointId++
+				shardId++
 			}
 		)
 		//
@@ -136,6 +136,6 @@ func logCheckpointStats(id uint, cp vm.CheckPoint) {
 
 //nolint:errcheck
 func init() {
-	executeCmd.Flags().String("checkpointing", "", "specify checkpointing strategy")
+	executeCmd.Flags().String("sharding", "", "specify sharding strategy")
 	rootCmd.AddCommand(executeCmd)
 }

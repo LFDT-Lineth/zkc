@@ -54,7 +54,7 @@ func GoGenCompile(program Program[Uint]) (GoGenBinary, error) {
 
 // BootAndExecuteWithGogen executes the given program by generating native Go,
 // compiling it, and running the resulting binary as a subprocess.
-func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) (map[string]bit.Array, []error) {
+func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) (map[string]bit.Array, bool, []error) {
 	var (
 		stats  = util.NewPerfStats()
 		output map[string]bit.Array
@@ -65,7 +65,7 @@ func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) 
 	binary, err = gogen.Compile(program, gogen.DEFAULT_CONFIG)
 	// Check for errors
 	if err != nil {
-		return nil, []error{err}
+		return nil, false, []error{err}
 	}
 	// Log result
 	stats.Log(fmt.Sprintf("compiling binary %s", binary.Path()))
@@ -78,13 +78,16 @@ func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) 
 	// Run the compiled program, passing only the machine's declared inputs (the
 	// generated harness rejects unknown keys).  Forward its debug/printf and
 	// fail output to our stderr so those statements are surfaced to the user.
-	if output, err = binary.Run(input, os.Stderr); err != nil {
-		return output, []error{err}
+	if output, err = binary.Run(input, os.Stderr); err == gogen.ErrMachineFailure {
+		// NOTE: convert gogen failure into generic vm failure
+		return output, true, []error{&Failure{Message: err.Error()}}
+	} else if err != nil {
+		return output, false, []error{err}
 	}
 	// Log stats
 	stats.Log("Machine execution")
 	// success
-	return output, nil
+	return output, true, nil
 }
 
 // BootAndCheckpointWithGogen executes the given program by generating native
@@ -118,8 +121,11 @@ func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Arra
 	// Run the compiled program, passing only the machine's declared inputs (the
 	// generated harness rejects unknown keys).  Forward its debug/printf and
 	// fail output to our stderr so those statements are surfaced to the user.
-	if output, nCheckPoints, err = binary.CheckPoint(input, cp.checkpoint, os.Stderr); err != nil {
-		return output, err == gogen.ErrMachineFailure, []error{err}
+	if output, nCheckPoints, err = binary.CheckPoint(input, cp.checkpoint, os.Stderr); err == gogen.ErrMachineFailure {
+		// NOTE: convert gogen failure into generic vm failure
+		return output, true, []error{&Failure{Message: err.Error()}}
+	} else if err != nil {
+		return output, false, []error{err}
 	}
 	// Log stats
 	stats.Log(fmt.Sprintf("Machine execution (%d checkpoints)", nCheckPoints))

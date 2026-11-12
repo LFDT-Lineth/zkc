@@ -61,19 +61,19 @@ var generateFlags FlagChecks
 
 func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []string, field field.Config) {
 	var (
-		build         = GetBuildConfig[F](cmd, field)
-		output        = GetString(cmd, "output")
-		pkg           = GetString(cmd, "pkg")
-		checkpointing = GetString(cmd, "checkpointing")
-		strategy      util.Option[vm.ShardingStrategy]
+		build    = GetBuildConfig[F](cmd, field)
+		output   = GetString(cmd, "output")
+		pkg      = GetString(cmd, "pkg")
+		sharding = GetString(cmd, "sharding")
+		strategy util.Option[vm.ShardingStrategy]
 	)
 	// Ensure gogen flag is set by default
 	if err := cmd.Flags().Set("gogen", "true"); err != nil {
 		panic(err)
 	}
-	// Including checkpointing configuration (if this makes sense).
-	if checkpointing != "" {
-		strategy = util.Some(parseShardingConfig(checkpointing))
+	// Including sharding configuration (if this makes sense).
+	if sharding != "" {
+		strategy = util.Some(parseShardingConfig(sharding))
 	}
 	// Sanity permitted flag combinations
 	checkFlags(cmd, generateFlags)
@@ -130,7 +130,7 @@ func init() {
 	rootCmd.AddCommand(generateCmd)
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
 	generateCmd.Flags().String("pkg", "", "generated package name (default main, which carries the standalone harness)")
-	generateCmd.Flags().String("checkpointing", "", "specify checkpointing strategy")
+	generateCmd.Flags().String("sharding", "", "specify sharding strategy")
 	// Gogen does not currently support splitting (for now)
 	generateFlags.Exclude("gogen", "split")
 }
