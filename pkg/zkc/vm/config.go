@@ -33,7 +33,9 @@ func NewShardingStrategy(fun string, n uint64) ShardingStrategy {
 // to be called on each checkpoint.
 type CheckPointer struct {
 	ShardingStrategy
-	//
+	// Checkpoint handler is triggered on every checkpoint generated, as they
+	// are generated.  Thus, some checkpoints will be generated even if
+	// execution eventually leads to a failure.
 	checkpoint func(checkpoint.CheckPoint)
 }
 

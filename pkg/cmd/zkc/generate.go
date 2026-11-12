@@ -65,6 +65,7 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 		output   = GetString(cmd, "output")
 		pkg      = GetString(cmd, "pkg")
 		sharding = GetString(cmd, "sharding")
+		json     = GetFlag(cmd, "json")
 		strategy util.Option[vm.ShardingStrategy]
 	)
 	// Ensure gogen flag is set by default
@@ -84,6 +85,7 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 		Package:       packageName(pkg),
 		Source:        sourceProvenance(args),
 		CheckPointing: strategy,
+		Json:          json,
 	})
 	if err != nil {
 		log.Error(err)
@@ -131,6 +133,7 @@ func init() {
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
 	generateCmd.Flags().String("pkg", "", "generated package name (default main, which carries the standalone harness)")
 	generateCmd.Flags().String("sharding", "", "specify sharding strategy")
+	generateCmd.Flags().Bool("json", true, "specify json interchange format")
 	// Gogen does not currently support splitting (for now)
 	generateFlags.Exclude("gogen", "split")
 }

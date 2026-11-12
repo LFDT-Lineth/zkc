@@ -15,7 +15,7 @@ package gogen
 import (
 	"bufio"
 	"bytes"
-	"encoding/hex"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -32,6 +32,19 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
+// Binary interchange between a generated harness and its parent (i.e. Binary):
+// the harness writes stdout as a sequence of packets, each a header of one byte
+// (the packet kind) followed by a big endian uint32 (the payload length) and
+// then the payload itself.  Checkpoints precede the (single, final) output.
+const (
+	packetHeaderSize = 5
+	// packetCheckpoint carries a checkpoint as encoded by checkpoint.Marshal.
+	packetCheckpoint byte = 0
+	// packetOutput carries the output memories as a JSON object mapping each
+	// memory to its hex string (as per hexString in the generated code).
+	packetOutput byte = 1
+)
+
 // ErrMachineFailure is used to indicate when a gogen binary leads to a machine
 // failure, as opposed to any other kind of internal error.
 var ErrMachineFailure = errors.New("machine failure")
@@ -39,10 +52,10 @@ var ErrMachineFailure = errors.New("machine failure")
 // Config controls the shape of the generated artefact.
 type Config struct {
 	// Package is the name of the generated Go package.  The package "main"
-	// additionally gets a JSON stdin/stdout main() harness (used by Compile and
-	// the differential tests), which is the only supported way of executing
-	// the generated code.  Any other name yields a package without a harness
-	// or entry point, useful only for inspecting the generated functions.
+	// additionally gets a stdin/stdout main() harness (used by Compile and the
+	// differential tests), which is the only supported way of executing the
+	// generated code.  Any other name yields a package without a harness or
+	// entry point, useful only for inspecting the generated functions.
 	Package string
 	// NoIntervals disables the flow-sensitive interval analysis, falling back
 	// to width-derived bounds only (more emitted checks, otherwise identical
@@ -54,6 +67,12 @@ type Config struct {
 	Source string
 	// CheckPointing strategy
 	CheckPointing util.Option[descriptor.ShardingStrategy]
+	// Json selects newline-delimited JSON (rather than the binary packets
+	// described above) as the interchange format written to stdout by the
+	// harness: checkpoints as {"$":"0x…"} and the output as a JSON object.
+	// Since this dramatically reduces performance, and Binary only speaks the
+	// binary format, it is only intended for debugging generated programs.
+	Json bool
 }
 
 // WithCheckPointing returns a config with the checkpointing strategy updated
@@ -161,27 +180,38 @@ func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.Ch
 	//
 	var (
 		input []byte
-		// byteconsumer is responsible for converting a byte array into a
-		// checkpoint, and passing it onto the checkpoint consumer.
-		byteConsumer = func(line []byte) error {
-			// Parse json
-			if combo, err := unmarshalCombo(line); err != nil {
-				return fmt.Errorf("decoding generated output %q: %v", string(line), err)
-			} else if combo.HasSecond() {
-				nCheckpoints++
+		// packetConsumer decodes each packet written by the harness, passing
+		// checkpoints on to the checkpoint consumer and retaining the output.
+		packetConsumer = func(kind byte, payload []byte) error {
+			switch kind {
+			case packetCheckpoint:
+				var cp checkpoint.CheckPoint
+				// Unmarshal aliases the payload, which is safe as readPackets
+				// allocates a fresh payload for every packet.
+				if err := cp.Unmarshal(payload); err != nil {
+					return fmt.Errorf("decoding checkpoint: %w", err)
+				}
 				//
-				consumer(combo.Second())
-			} else {
-				output = combo.First()
+				nCheckpoints++
+				// pass on checkpoint
+				consumer(cp)
+				//
+				return nil
+			case packetOutput:
+				var err error
+				//
+				output, err = unmarshalOutput(payload)
+				//
+				return err
+			default:
+				return fmt.Errorf("decoding generated output: unknown packet kind %d", kind)
 			}
-			//
-			return nil
 		}
 	)
 	// Marshal input data into bytes
 	if input, err = marshalInputs(in); err != nil {
 		return nil, nCheckpoints, err
-	} else if err = runRaw(p.path, input, byteConsumer, stderr); err != nil {
+	} else if err = runRaw(p.path, input, packetConsumer, stderr); err != nil {
 		return nil, nCheckpoints, err
 	}
 	// Decode final output
@@ -200,36 +230,14 @@ func marshalInputs(in map[string]bit.Array) ([]byte, error) {
 	return json.Marshal(raw)
 }
 
-func unmarshalCombo(line []byte) (util.Union[map[string]bit.Array, checkpoint.CheckPoint], error) {
-	var (
-		raw   map[string]string
-		combo util.Union[map[string]bit.Array, checkpoint.CheckPoint]
-		cp    checkpoint.CheckPoint
-	)
-	// Parse line
-	if err := json.Unmarshal(line, &raw); err != nil {
-		return combo, fmt.Errorf("decoding generated output %q: %v", string(line), err)
+// unmarshalOutput decodes the payload of an output packet: a JSON object
+// mapping each output memory to its hex string.
+func unmarshalOutput(payload []byte) (map[string]bit.Array, error) {
+	var raw map[string]string
+	// Parse JSON
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return nil, fmt.Errorf("decoding generated output %q: %v", string(payload), err)
 	}
-	// Distinguish checkpoint from output
-	if data, ok := raw["$"]; ok {
-		// Parse input array
-		bytes, err := hex.DecodeString(strings.TrimPrefix(data, "0x"))
-		// Check for errors
-		if err != nil {
-			return combo, err
-		} else if err = cp.Unmarshal(bytes); err != nil {
-			return combo, err
-		}
-		//
-		return util.Union2[map[string]bit.Array](cp), nil
-	}
-	// Parse output
-	var out, err = unmarshalOutput(raw)
-	//
-	return util.Union1[map[string]bit.Array, checkpoint.CheckPoint](out), err
-}
-
-func unmarshalOutput(raw map[string]string) (map[string]bit.Array, error) {
 	// Parse output
 	out := make(map[string]bit.Array, len(raw))
 	//
@@ -246,7 +254,7 @@ func unmarshalOutput(raw map[string]string) (map[string]bit.Array, error) {
 	return out, nil
 }
 
-func runRaw(path string, input []byte, consumer func([]byte) error, stderr io.Writer) error {
+func runRaw(path string, input []byte, consumer func(byte, []byte) error, stderr io.Writer) error {
 	var (
 		cmd    = exec.Command(path)
 		stdout io.ReadCloser
@@ -261,8 +269,8 @@ func runRaw(path string, input []byte, consumer func([]byte) error, stderr io.Wr
 	} else if err = cmd.Start(); err != nil {
 		return err
 	}
-	// Process output lines
-	if err = readLines(stdout, consumer); err != nil {
+	// Process output packets
+	if err = readPackets(stdout, consumer); err != nil {
 		// Nobody will read stdout anymore, so the process must be terminated
 		// (otherwise it could block forever writing to a full pipe).  Wait is
 		// then required to release the process and close the pipe.
@@ -284,48 +292,32 @@ func runRaw(path string, input []byte, consumer func([]byte) error, stderr io.Wr
 	return err
 }
 
-// readLines splits r into newline-terminated lines and passes each one to the
-// given consumer, stopping at the first error.  Unlike bufio.Scanner, there is
-// no upper bound on the length of a line.  Each line is passed to the consumer
-// as-is, including its terminating newline (if any); this is tolerated by the
-// JSON decoder, so no trimming is performed.  The slice passed to the consumer
-// is only valid until the consumer returns.
-func readLines(r io.Reader, consumer func([]byte) error) error {
+// readPackets splits r into packets (see packetHeaderSize) and passes the kind
+// and payload of each one to the given consumer, stopping at the first error.
+// A stream ending part way through a packet is an error.  Every payload is a
+// fresh allocation (which the consumer may therefore retain), read directly
+// from r without an intermediate copy.
+func readPackets(r io.Reader, consumer func(byte, []byte) error) error {
 	var (
 		reader = bufio.NewReader(r)
-		// line accumulates fragments of a line which does not fit within the
-		// reader's internal buffer.  Its capacity is retained across lines.
-		line []byte
+		header [packetHeaderSize]byte
 	)
 	//
 	for {
-		chunk, err := reader.ReadSlice('\n')
-		// Line exceeds internal buffer, hence accumulate and keep reading.
-		// Sentinel errors from bufio.Reader are never wrapped, so direct
-		// comparison is sufficient (and cheaper than errors.Is).
-		if err == bufio.ErrBufferFull {
-			line = append(line, chunk...)
-			continue
-		} else if err != nil && err != io.EOF {
-			return err
-		}
-		// Complete any line being accumulated.  Afterwards, line is reset to
-		// the (possibly grown) buffer returned by append, so the largest buffer
-		// seen is retained for subsequent long lines.  For short lines, chunk
-		// is a view of the reader's buffer so no copy is needed.
-		if len(line) > 0 {
-			chunk = append(line, chunk...)
-			line = chunk[:0]
-		}
-		// Skip empty tail at EOF (i.e. input ended with a newline)
-		if len(chunk) > 0 {
-			if err := consumer(chunk); err != nil {
-				return err
-			}
+		// io.ReadFull reports io.EOF only when no bytes at all were read, i.e.
+		// exactly at a packet boundary; a truncated header is ErrUnexpectedEOF.
+		if _, err := io.ReadFull(reader, header[:]); err == io.EOF {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("reading packet header: %w", err)
 		}
 		//
-		if err == io.EOF {
-			return nil
+		payload := make([]byte, binary.BigEndian.Uint32(header[1:]))
+		//
+		if _, err := io.ReadFull(reader, payload); err != nil {
+			return fmt.Errorf("reading packet payload: %w", err)
+		} else if err := consumer(header[0], payload); err != nil {
+			return err
 		}
 	}
 }

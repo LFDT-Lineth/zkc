@@ -448,10 +448,14 @@ func (g *generator) emitImports(c *code) {
 	if g.config.Package == "main" {
 		deps = append(deps,
 			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strconv"`, `"strings"`)
-	}
-	// The checkpoint writer encodes with encoding/binary.
-	if g.config.Package == "main" && g.config.CheckPointing.HasValue() {
-		deps = append(deps, `"encoding/binary"`)
+		// The binary interchange frames stdout into packets (see writePacket),
+		// whilst the JSON interchange only encodes with encoding/binary when
+		// checkpointing.
+		if !g.config.Json {
+			deps = append(deps, `"bytes"`, `"encoding/binary"`)
+		} else if g.config.CheckPointing.HasValue() {
+			deps = append(deps, `"encoding/binary"`)
+		}
 	}
 
 	if g.usesBits {
@@ -893,6 +897,10 @@ func (g *generator) emitInputReader(c *code) {
 	c.line("}")
 }
 
+// emitOutputWriter emits writeOutputs(), which writes the output memories to
+// stdout as a JSON object of hex strings: as a line under the JSON interchange,
+// otherwise as the payload of an output packet.  The packet is encoded directly
+// behind its (reserved) header, so no copy of the payload is made.
 func (g *generator) emitOutputWriter(c *code) {
 	c.line("")
 	c.line("func writeOutputs() {")
@@ -903,34 +911,89 @@ func (g *generator) emitOutputWriter(c *code) {
 		c.linef(`enc[%q] = hexString(encodeBytes(%s, %s))`, m.name, m.varName, widthsLiteral(m.dataWidths))
 	}
 	//
-	c.commentf("write JSON to stdout")
-	c.line("if err := json.NewEncoder(os.Stdout).Encode(enc); err != nil {")
+	if g.config.Json {
+		c.commentf("write JSON line to stdout")
+		c.line("if err := json.NewEncoder(os.Stdout).Encode(enc); err != nil {")
+	} else {
+		c.commentf("write JSON packet to stdout")
+		c.linef("buf := bytes.NewBuffer([]byte{%s})", packetHeaderLiteral(packetOutput))
+		c.line("if err := json.NewEncoder(buf).Encode(enc); err != nil {")
+	}
+	//
 	c.line(`fmt.Fprintln(os.Stderr, "encode:", err)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	//
+	if !g.config.Json {
+		c.line("writePacket(buf.Bytes())")
+	}
+	//
+	c.line("}")
+	//
+	if !g.config.Json {
+		g.emitPacketWriter(c)
+	}
+}
+
+// emitPacketWriter emits writePacket(buf), which writes buf to stdout as one
+// packet of the binary interchange (see readPackets): buf[0] holds the packet
+// kind, the following four bytes are reserved for the payload length (filled in
+// here) and the payload follows.  Reserving the header in the caller's buffer
+// (see packetHeaderLiteral) means a packet is written with a single Write and
+// without copying the payload.
+func (g *generator) emitPacketWriter(c *code) {
+	c.line("")
+	c.line("func writePacket(buf []byte) {")
+	c.linef("n := len(buf) - %d", packetHeaderSize)
+	c.commentf("payload length must fit the uint32 header")
+	c.line("if uint64(n) > 0xFFFFFFFF {")
+	c.line(`fmt.Fprintln(os.Stderr, "packet:", n, "byte payload exceeds limit")`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	c.line("binary.BigEndian.PutUint32(buf[1:], uint32(n))")
+	c.line("if _, err := os.Stdout.Write(buf); err != nil {")
+	c.line(`fmt.Fprintln(os.Stderr, "packet:", err)`)
 	c.line("os.Exit(2)")
 	c.line("}")
 	c.line("}")
 }
 
+// packetHeaderLiteral returns the bytes of a packet header for the given kind,
+// with a zero (i.e. not yet known) payload length, as a comma separated list
+// suitable for a []byte literal or variadic append.
+func packetHeaderLiteral(kind byte) string {
+	return fmt.Sprintf("%d%s", kind, strings.Repeat(", 0", packetHeaderSize-1))
+}
+
 // emitCheckpointWriter emits writeCheckpoint(fid, args), which serialises the
 // current machine state in the binary format decoded by checkpoint.Unmarshal
-// (see checkpoint/encoding.go) and writes it to stdout as a single JSON line of
-// the form {"$":"0x…"}.  The caller supplies the identifier of the function
-// being entered along with its (non-stamp) arguments, already packed as per
+// (see checkpoint/encoding.go) and writes it to stdout: as a checkpoint packet
+// (see writePacket), or as a single JSON line of the form {"$":"0x…"} under the
+// JSON interchange.  The caller supplies the identifier of the function being
+// entered along with its (non-stamp) arguments, already packed as per
 // interpreter.Pack (see emitCheckpointArgs).  As with interpreter.Checkpoint,
 // every non-static memory is included in module order (Restore relies on
 // this), with page contents packed likewise (a fixed number of bytes per cell)
 // and the memory clock as tracked by the generated program.
 //
-// A checkpoint of a large memory runs to tens of megabytes, so the binary and
-// hex buffers are package-level and reused: after the first checkpoint, no
-// allocation is made and the hex rendering is the only copy of the payload.
+// A checkpoint of a large memory runs to tens of megabytes, so the buffer is
+// package-level and reused: after the first checkpoint, no allocation is made
+// and (under the binary interchange) the payload is written in place.
 func (g *generator) emitCheckpointWriter(c *code) error {
 	c.line("")
-	c.commentf("buffers reused across checkpoints (binary encoding, and its JSON line)")
-	c.line("var checkpointBuf, checkpointLine []byte")
+	c.commentf("buffer reused across checkpoints")
+	c.line("var checkpointBuffer []byte")
 	c.line("")
 	c.line("func writeCheckpoint(fid uint16, args []byte) {")
-	c.line("buf := checkpointBuf[:0]")
+	//
+	if g.config.Json {
+		c.commentf("reset buffer")
+		c.line("buf := checkpointBuffer[:0]")
+	} else {
+		c.commentf("reset buffer, reserving the packet header")
+		c.linef("buf := append(checkpointBuffer[:0], %s)", packetHeaderLiteral(packetCheckpoint))
+	}
+	//
 	c.commentf("function")
 	c.line("buf = binary.BigEndian.AppendUint16(buf, fid)")
 	c.commentf("arguments")
@@ -939,25 +1002,19 @@ func (g *generator) emitCheckpointWriter(c *code) error {
 	//
 	g.emitCheckpointWriterMemories(c)
 	//
-	c.line("checkpointBuf = buf")
-	c.commentf(`render as the JSON line {"$":"0x<hex>"} directly into the line buffer`)
-	c.line(`const prefix, suffix = "{\"$\":\"0x", "\"}\n"`)
-	c.line("n := len(prefix) + hex.EncodedLen(len(buf)) + len(suffix)")
-	c.line("line := checkpointLine")
-	c.line("if cap(line) < n {")
-	c.line("line = make([]byte, n)")
-	c.line("} else {")
-	c.line("line = line[:n]")
-	c.line("}")
-	c.line("copy(line, prefix)")
-	c.line("hex.Encode(line[len(prefix):], buf)")
-	c.line("copy(line[n-len(suffix):], suffix)")
-	c.line("checkpointLine = line")
-	c.commentf("write to stdout")
-	c.line("if _, err := os.Stdout.Write(line); err != nil {")
-	c.line(`fmt.Fprintln(os.Stderr, "checkpoint:", err)`)
-	c.line("os.Exit(2)")
-	c.line("}")
+	if g.config.Json {
+		c.commentf("write JSON line to stdout")
+		c.line(`if _, err := fmt.Fprintf(os.Stdout, "{\"$\":\"0x%s\"}\n", hex.EncodeToString(buf)); err != nil {`)
+		c.line(`fmt.Fprintln(os.Stderr, "checkpoint:", err)`)
+		c.line("os.Exit(2)")
+		c.line("}")
+	} else {
+		c.commentf("write packet to stdout")
+		c.line("writePacket(buf)")
+	}
+	//
+	c.commentf("write back checkpoint buffer")
+	c.line("checkpointBuffer = buf")
 	c.line("}")
 	//
 	g.emitCheckpointWriterHelpers(c)
