@@ -1,29 +1,10 @@
-pub input data(address:u16) -> (word:u32)
+pub input inp(addr:u8) -> (w:u8)
+pub output out(addr:u8) -> (w:u16)
 
-// basic_115 with u32 operands, so register splitting divides each value into
-// limbs.  Inputs are a and b, followed by the expected value of each case.
+// Constant subtraction into a wider register
+// Operation bitwidth is u16
 fn main() {
-    var a:u32 = data[0]
-    var b:u32 = data[1]
-    // CSUB_1c1n cases
-    var csub_1c1n_case0:u32 = 3 - a
-    var csub_1c1n_case1:u32 = 3 - a - 2
-
-    // CSUB_nm cases
-    var csub_2n1m:u32 = 3 - a - b
-    var csub_1n2m_0:u16
-    var csub_1n2m_1:u16
-    csub_1n2m_1::csub_1n2m_0 = 171 - a
-    //
-    var csub_1n2m:u32 = csub_1n2m_1::csub_1n2m_0
-    //
-    if csub_1c1n_case0 != data[2] {
-        fail
-    } else if csub_1c1n_case1 != data[3] {
-        fail
-    } else if csub_2n1m != data[4] {
-        fail
-    } else if csub_1n2m != data[5] {
-        fail
-    }
+    var a:u8 = inp[0]
+    var r:u16 = 3 - (a as u16)
+    out[0] = r
 }
