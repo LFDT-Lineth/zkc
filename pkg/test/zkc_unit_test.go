@@ -1113,6 +1113,10 @@ func Test_ZkcUnit_Cast_07(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/cast_07", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Cast_08(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/cast_08", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Division Tests
 // ===================================================================

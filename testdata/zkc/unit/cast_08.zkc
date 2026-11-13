@@ -1,0 +1,21 @@
+pub input data(address:u16) -> (word:u32)
+pub output result(address:u16) -> (word:u32)
+
+// As for cast_07, but for a cast to a width which (depending on the field) is
+// above the static limit (u24), and one checked by a vanishing constraint
+// (u2).  In both cases, the cast's target is overwritten on the same row by the
+// call's return, whose value never fits within the cast's width.
+fn main() {
+    var x:u32 = data[0]
+    x = add((x as u24) as u32, 0x01000000)
+    result[0] = x
+    var y:u32 = data[1]
+    y = add((y as u2) as u32, 0x4)
+    result[1] = y
+    return
+}
+
+fn add(a:u32, b:u32) -> (r:u32) {
+    r = a + b
+    return
+}

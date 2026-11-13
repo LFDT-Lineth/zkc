@@ -110,7 +110,7 @@ func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F],
 							mirc.ToRegisterIds(c.Address), mirc.ToRegisterIds(c.Data), srcSelector, p.program)
 					}
 				case *vm.BytecodeCheckCast[W]:
-					p.emitCastCheck(mod, ctx, uint(pc), entry.cc, c, srcSelector)
+					p.emitCastCheck(mod, ctx, uint(pc), entry.cc, vec, writeMap, c, srcSelector)
 				}
 			}
 		}

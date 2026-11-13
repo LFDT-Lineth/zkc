@@ -116,7 +116,8 @@ func (p *constraintTranslator[W, F]) translateFunction(ctx schema.ModuleId, fn *
 	// it is safe to add range proof constraints for all registers before, as the registers
 	// that will be introduced later will be already range-proved (as a product of bit registers).
 	// Note that registers coming from control flow have been added to the module before this point,
-	// so they will be range-proved as well.
+	// so they will be range-proved as well.  The exception are the cast snapshot columns ($cast_*),
+	// which need no range proof as they are only used as the source of a lookup into a range table.
 	p.addRangeProofConstraints(mod, ctx, fn.Registers()...)
 	// Emit lookup constraints for any function calls and memory accesses made
 	// by this function (recording send ports for calls into global functions).

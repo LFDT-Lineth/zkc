@@ -14,9 +14,12 @@ package constraints
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
+	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
@@ -24,6 +27,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/constraints/mirc"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
 )
 
@@ -155,43 +159,116 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 //     inserted a call "$range_uN(r)" after the cast (on the same path), which is
 //     lowered into a call lookup gated likewise.
 //
-// The target is read on the current row; FlattenLookupAccess ensures its column
-// there holds the value actually checked.
+// The value checked is that held by the target at the cast.  Usually, the
+// target's column holds this value on the cast's row.  However, when the target
+// may be written later on the same row (e.g. "x = f(x as u8)", where the call
+// returns into x), that column holds the later value instead.  In such case,
+// the value checked is read from the previous row (see castShift) and, for a
+// lookup (which cannot read across rows), materialised in a fresh column bound
+// to it.  This snapshot is taken here, rather than in the bytecode, since a
+// cast also narrows the bitwidth of its target for subsequent bytecodes (e.g.
+// a call passing it to a narrower argument), which a snapshot would lose.
 func (p *constraintTranslator[W, F]) emitCastCheck(mod *schema.Table[F], ctx schema.ModuleId, pc, cc uint,
-	cast *vm.BytecodeCheckCast[W], srcSelector register.Id) {
+	vec vm.BytecodeVector[W], writes dfa.Result[dfa.Writes], cast *vm.BytecodeCheckCast[W],
+	srcSelector register.Id) {
 	var (
 		width  = uint(cast.Bitwidth)
 		regId  = register.NewId(uint(cast.Target))
 		handle = fmt.Sprintf("cast_u%d_%d_%d_%d", width, ctx, pc, cc)
 	)
-	//
-	switch {
-	case width > p.maxStaticWidth:
-		// Range-checked via the call to $range_uN following the cast.
+	// Range-checked via the call to $range_uN following the cast.
+	if width > p.maxStaticWidth {
 		return
-	case width <= 2:
+	}
+	//
+	var (
+		regWidth = mod.Registers()[regId.Unwrap()].Width()
+		shift    = castShift(vec, writes, cc, cast.Target)
+	)
+	//
+	if width <= 2 {
 		var (
 			sel = mirc.Variable[F](srcSelector, 1, 0)
-			r   = mirc.Variable[F](regId, mod.Registers()[regId.Unwrap()].Width(), 0)
+			r   = mirc.Variable[F](regId, regWidth, shift)
 		)
 		//
 		mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
 			mirc.If(sel.NotEquals(mirc.Number[F](0)), smallRangeCheck(r, width)).AsLogical()))
-	default:
-		table, ok := p.rangeTables[width]
-		// Sanity check a static table was generated for this width.
-		util.Assert(ok, "missing static range table for cast to u%d", width)
 		//
-		var (
-			// Source: the cast's target on the rows executing the cast.
-			source = lookup.FilteredVector(ctx, srcSelector, regId)
-			// Target: the enumerated value column of the matching $range_un table.
-			target = lookup.UnfilteredVector(table.module, table.value)
-		)
-		//
-		mod.AddConstraints(lookup.NewConstraint[F](handle,
-			[]mir.LookupVector{target}, []mir.LookupVector{source}))
+		return
 	}
+	//
+	table, ok := p.rangeTables[width]
+	// Sanity check a static table was generated for this width.
+	util.Assert(ok, "missing static range table for cast to u%d", width)
+	// Snapshot the value checked into a fresh column, if necessary.
+	if shift != 0 {
+		regId = newCastSnapshot(mod, ctx, regId, regWidth, shift, srcSelector)
+	}
+	//
+	var (
+		// Source: the value checked on the rows executing the cast.
+		source = lookup.FilteredVector(ctx, srcSelector, regId)
+		// Target: the enumerated value column of the matching $range_un table.
+		target = lookup.UnfilteredVector(table.module, table.value)
+	)
+	//
+	mod.AddConstraints(lookup.NewConstraint[F](handle,
+		[]mir.LookupVector{target}, []mir.LookupVector{source}))
+}
+
+// castShift determines the row, relative to that of the cast at offset cc,
+// whose target column holds the value checked by the cast.  This is the cast's
+// own row (0), unless the target may be written at or after the cast on that
+// row.  In such case, the target cannot have been written before the cast on
+// this row (as vectorisation starts a new row on reassignment) and, hence, holds
+// the value checked on the previous row (-1).
+func castShift[W vm.Word[W]](vec vm.BytecodeVector[W], writes dfa.Result[dfa.Writes], cc uint,
+	target vm.RegisterId) int {
+	//
+	var reaches = vec.ReachMap()
+	//
+	for j := cc; j < uint(len(vec.Bytecodes)); j++ {
+		var reachable = j == cc || reaches.StateOf(j).ReachableFrom(cc)
+		//
+		if reachable && slices.Contains(vec.Bytecodes[j].Definitions(), target) {
+			// Sanity check target not also written before the cast.
+			util.Assert(!writes.StateOf(cc).MaybeAssigned(target),
+				"cast target %d written both before and after cast on same row", target)
+			//
+			return -1
+		}
+	}
+	//
+	return 0
+}
+
+// newCastSnapshot allocates a fresh column holding the value of the given
+// register on the given (relative) row, and returns its id.  The column is
+// filled during trace expansion and, on the rows where the given selector is
+// on, constrained to equal that value.  The binding is gated since it cannot
+// hold on padding rows (e.g. on the first padding row, the register's previous
+// value is that of the last non-padding row, whilst the column holds padding).
+func newCastSnapshot[F field.Element[F]](mod *schema.Table[F], ctx schema.ModuleId, regId register.Id,
+	width uint, shift int, selector register.Id) register.Id {
+	var (
+		// Allocate the snapshot column.
+		snapId = register.NewId(mod.Width())
+		// Default padding
+		padding F
+		sel     = mirc.Variable[F](selector, 1, 0)
+	)
+	//
+	mod.AddRegisters(register.NewComputed[F](fmt.Sprintf("$cast_%d", snapId.Unwrap()), width, padding))
+	// Fill it during trace expansion with the register's (shifted) value.
+	mod.AddAssignments(assignment.NewComputedRegister(snapId,
+		term.NewRegisterAccess[F, mir.Term[F]](regId, width, shift), ctx))
+	// Bind it for soundness: sel != 0 ==> $cast == register on the given row.
+	mod.AddConstraints(vanishing.NewConstraint(fmt.Sprintf("cast_%d", snapId.Unwrap()), ctx, util.None[int](),
+		mirc.If(sel.NotEquals(mirc.Number[F](0)),
+			mirc.Variable[F](snapId, width, 0).Equals(mirc.Variable[F](regId, width, shift))).AsLogical()))
+	//
+	return snapId
 }
 
 // smallRangeCheck constructs the vanishing constraint "r * (r - 1) * ... * (r -

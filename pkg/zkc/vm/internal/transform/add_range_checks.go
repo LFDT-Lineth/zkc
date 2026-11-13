@@ -17,11 +17,15 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -354,7 +358,9 @@ func addRangeCalls[W Word[W]](modules []descriptor.Module[W],
 // call into $range_uN(r).  The cast itself is retained, since it is what fails
 // execution on overflow (the call copies its argument without any width check).
 // The call populates the recursive range module and, being on the same path as
-// the cast, is lowered into a lookup gated by the cast's branch condition.
+// the cast, is lowered into a lookup gated by the cast's branch condition.  When
+// r may be written later on the same row, the call is passed a snapshot of r
+// taken just after the cast (see FlattenLookupAccess for why).
 // Narrower casts are instead lowered directly into conditional lookups (or
 // vanishing constraints) when generating constraints.
 func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
@@ -384,26 +390,72 @@ func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
+		alloc   = split.NewAllocator(fn)
+		// snapshots identifies the registers allocated to snapshot the target
+		// of a wide cast.
+		snapshots bit.Set
 	)
 	//
 	for i, vec := range vectors {
-		nvecs[i] = vec.Map(func(_ uint, ith Bytecode[W]) []Bytecode[W] {
+		var reaches = vec.ReachMap()
+		//
+		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
 			switch c := ith.(type) {
 			case *bytecode.Ret[W], *bytecode.Jmp[W]:
 				return append(slices.Clone(checks), ith)
 			case *bytecode.CheckCast[W]:
-				if w := uint(c.Bitwidth); w > maxStaticWidth {
-					return []Bytecode[W]{ith, rangeCheck[W](rangeModuleId(idOf, w), c.Target, w, maxStaticWidth)}
+				var (
+					w      = uint(c.Bitwidth)
+					target = c.Target
+					codes  = []Bytecode[W]{ith}
+				)
+				//
+				if w <= maxStaticWidth {
+					return codes
+				}
+				// The lookup gluing the call to $range_uN reads its argument's
+				// column on this row.  If the cast's target may be written later
+				// on this row, that column holds the later value and, hence, the
+				// argument is snapshotted (as done by FlattenLookupAccess for
+				// ordinary calls).  The snapshot follows the cast so that it
+				// inherits the narrowed bitwidth of the target.
+				if isWrittenFrom(vec, reaches, idx, target, alloc) {
+					tmp := alloc.Allocate("fla", alloc.Register(target).Bitwidth())
+					snapshots.Insert(uint(tmp))
+					codes = append(codes, bytecode.Assign[W](tmp, target))
+					target = tmp
 				}
 				//
-				return []Bytecode[W]{ith}
+				return append(codes, rangeCheck[W](rangeModuleId(idOf, w), target, w, maxStaticWidth))
 			default:
 				return []Bytecode[W]{ith}
 			}
 		})
 	}
+	// A snapshot is a copy of a register, so requires no range check of its own.
+	registers := array.Map(alloc.Registers(), func(i uint, r Register[W]) Register[W] {
+		if snapshots.Contains(i) {
+			return bytecode.NewRegister(r.Kind().WithRangeCheck(false), r.Name(), r.Bitwidth(), r.Padding())
+		}
+		//
+		return r
+	})
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), nvecs)
+	return descriptor.NewFunction(fn.Name(), registers, fn.Kind(), fn.Effects(), nvecs)
+}
+
+// isWrittenFrom determines whether the given register may be written by the
+// bytecode at offset "from", or by any bytecode on some path through it.
+func isWrittenFrom[W Word[W]](vec BytecodeVector[W], reaches dfa.Result[dfa.Reaches], from uint,
+	reg bytecode.RegisterId, registers RegisterMap[W]) bool {
+	//
+	for j := from; j < uint(len(vec.Bytecodes)); j++ {
+		if isReachableFrom(reaches, from, j) && isDefinedIn(reg, vec.Bytecodes[j], registers) {
+			return true
+		}
+	}
+	//
+	return false
 }
 
 // rangeModuleId returns the module id of $range_u{w}, which must exist.

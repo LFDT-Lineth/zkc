@@ -1,0 +1,14 @@
+{ "data": "0x0000000000000004", "result": "0x" }
+{ "data": "0x00000000ffffffff", "result": "0x" }
+{ "data": "0x00ffffff00000004", "result": "0x" }
+{ "data": "0x00ffffffffffffff", "result": "0x" }
+{ "data": "0x0012345600000004", "result": "0x" }
+{ "data": "0x00123456ffffffff", "result": "0x" }
+{ "data": "0x0100000000000000", "result": "0x" }
+{ "data": "0x0100000000000003", "result": "0x" }
+{ "data": "0x0100000000000004", "result": "0x" }
+{ "data": "0x01000000ffffffff", "result": "0x" }
+{ "data": "0xffffffff00000000", "result": "0x" }
+{ "data": "0xffffffff00000003", "result": "0x" }
+{ "data": "0xffffffff00000004", "result": "0x" }
+{ "data": "0xffffffffffffffff", "result": "0x" }
