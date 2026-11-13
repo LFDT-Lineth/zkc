@@ -97,10 +97,10 @@ func checkValidInternal(t *testing.T, test TestCase) {
 	// Run (fast mode) execution test
 	if test.fastMode {
 		runExecutionTests(t, p, test.vector)
-	}
-	// Run gogen (if requested)
-	if test.gogen.HasValue() {
-		runGogenExecutionTest(t, p, test.gogen.Unwrap(), test.vector)
+		// Run gogen (if requested)
+		if test.gogen.HasValue() {
+			runGogenExecutionTest(t, p, test.gogen.Unwrap(), test.vector)
+		}
 	}
 	// Run constraint check (if requsted)
 	if test.constraints {
@@ -117,6 +117,8 @@ func checkValidInternal(t *testing.T, test TestCase) {
 		runConstraintTest(t, p, test.vector, field, traceConfig)
 		//
 		if test.gogen.HasValue() {
+			// TODO: support gogen tracing.  See #2336
+			//
 			// Rerun test (with gogen)
 			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true))
 		}

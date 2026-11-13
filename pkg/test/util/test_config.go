@@ -181,6 +181,7 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 		if err != nil {
 			t.Error(err)
 		} else {
+			var localTests []TestCase
 			// Iterate all vectors
 			for _, vector := range vecs {
 				// Construct base test
@@ -188,16 +189,18 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 				// Only test different padding for default static height.
 				if height == codegen.DEFAULT_MAX_STATIC_HEIGHT {
 					for _, padding := range cfg.paddingStrategies {
-						tests = append(tests, t.Padding(padding))
+						localTests = append(localTests, t.Padding(padding))
 					}
 				} else {
-					tests = append(tests, t)
+					localTests = append(localTests, t)
 				}
 			}
-		}
-		// Apply GoGen (if requested)
-		if cfg.gogen {
-			tests = applyGoGen(t, test, pU, tests)
+			// Apply GoGen (if requested)
+			if cfg.gogen {
+				localTests = applyGoGen(t, test, pU, localTests)
+			}
+			//
+			tests = append(tests, localTests...)
 		}
 	}
 	//

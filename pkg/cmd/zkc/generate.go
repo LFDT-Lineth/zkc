@@ -63,7 +63,6 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 	var (
 		build    = GetBuildConfig[F](cmd, field)
 		output   = GetString(cmd, "output")
-		pkg      = GetString(cmd, "pkg")
 		sharding = GetString(cmd, "sharding")
 		json     = GetFlag(cmd, "json")
 		strategy util.Option[vm.ShardingStrategy]
@@ -82,7 +81,6 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 	_, binfile := Build[F, W](build, args...)
 	// Translate bytecode => word machine
 	src, err := vm.GoGenGenerate(binfile.RawProgram(), vm.GoGenConfig{
-		Package:       packageName(pkg),
 		Source:        sourceProvenance(args),
 		CheckPointing: strategy,
 		Json:          json,
@@ -98,18 +96,6 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 		log.Error(err)
 		os.Exit(5)
 	}
-}
-
-// packageName determines the generated package name: the --pkg flag when set,
-// otherwise "main" (which carries the standalone JSON harness).  Deriving a
-// name from the output filename proved surprising — `-o test.go` yielded an
-// unrunnable `package test` — so the non-main case is always explicit.
-func packageName(pkg string) string {
-	if pkg != "" {
-		return pkg
-	}
-
-	return "main"
 }
 
 // sourceProvenance renders the input filenames plus a digest of their contents,
@@ -131,7 +117,6 @@ func sourceProvenance(args []string) string {
 func init() {
 	rootCmd.AddCommand(generateCmd)
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
-	generateCmd.Flags().String("pkg", "", "generated package name (default main, which carries the standalone harness)")
 	generateCmd.Flags().String("sharding", "", "specify sharding strategy")
 	generateCmd.Flags().Bool("json", true, "specify json interchange format")
 	// Gogen does not currently support splitting (for now)

@@ -104,6 +104,10 @@ func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Arra
 		err          error
 		nCheckPoints uint
 	)
+	// Locate the function whose calls are to be checkpointed.
+	if _, err = checkShardingStrategy(program, cp.ShardingStrategy); err != nil {
+		return nil, false, []error{err}
+	}
 	// Compile program into gogen executable.
 	binary, err = gogen.Compile(program, gogen.DEFAULT_CONFIG.WithCheckPointing(cp.ShardingStrategy))
 	// Check for errors

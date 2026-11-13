@@ -115,10 +115,6 @@ type pos struct {
 // See the package documentation for the semantics contract and Config for the
 // artefact shape.
 func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error) {
-	if cfg.Package == "" {
-		cfg.Package = "main"
-	}
-
 	g := &generator{
 		config:   cfg,
 		memByID:  map[uint]memInfo{},
@@ -166,15 +162,13 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 	if !hasMain {
 		return "", fmt.Errorf("gogen: no 'main' function found")
 	}
-	// The package-main JSON harness encodes inputs/outputs as bytes (the format
-	// `zkc exec` accepts), which a field-element data line has no fixed width
-	// for.  Non-main packages have no harness, so only main is affected.
-	if g.config.Package == "main" {
-		for _, info := range append(append([]memInfo{}, g.inputs...), g.outputs...) {
-			if hasNativeDataLine(info) {
-				return "", fmt.Errorf("gogen: memory %q has a field-element data line, which the JSON "+
-					"harness cannot encode", info.name)
-			}
+	// The harness encodes inputs/outputs as bytes (the format `zkc exec`
+	// accepts), which a field-element data line has no fixed width for.
+	// Non-main packages have no harness, so only main is affected.
+	for _, info := range append(append([]memInfo{}, g.inputs...), g.outputs...) {
+		if hasNativeDataLine(info) {
+			return "", fmt.Errorf("gogen: memory %q has a field-element data line, which"+
+				" is currently unsupported", info.name)
 		}
 	}
 	// Checkpointing requires a known shard function, and that every paged
@@ -381,7 +375,7 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) error
 		c.linef("// Source: %s", g.config.Source)
 	}
 
-	c.linef("package %s", g.config.Package)
+	c.line("package main")
 	c.line("")
 	g.emitImports(c)
 
@@ -422,14 +416,12 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) error
 	for _, id := range order {
 		c.raw(bodies[id].String())
 	}
-
-	if g.config.Package == "main" {
-		if err := g.emitMainHarness(c); err != nil {
-			return err
-		}
-		//
-		g.emitConversionHelpers(c)
+	// write out main() function
+	if err := g.emitMainHarness(c); err != nil {
+		return err
 	}
+	//
+	g.emitConversionHelpers(c)
 	//
 	emitTerminationHelpers(c, g.usesHelper(helperDone))
 	//
@@ -445,17 +437,16 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) error
 
 func (g *generator) emitImports(c *code) {
 	deps := []string{}
-	if g.config.Package == "main" {
-		deps = append(deps,
-			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strconv"`, `"strings"`)
-		// The binary interchange frames stdout into packets (see writePacket),
-		// whilst the JSON interchange only encodes with encoding/binary when
-		// checkpointing.
-		if !g.config.Json {
-			deps = append(deps, `"bytes"`, `"encoding/binary"`)
-		} else if g.config.CheckPointing.HasValue() {
-			deps = append(deps, `"encoding/binary"`)
-		}
+	// Include dependencies required for main harness.
+	deps = append(deps,
+		`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strconv"`, `"strings"`)
+	// The binary interchange frames stdout into packets (see writePacket),
+	// whilst the JSON interchange only encodes with encoding/binary when
+	// checkpointing.
+	if !g.config.Json {
+		deps = append(deps, `"bytes"`, `"encoding/binary"`)
+	} else if g.config.CheckPointing.HasValue() {
+		deps = append(deps, `"encoding/binary"`)
 	}
 
 	if g.usesBits {
@@ -465,43 +456,17 @@ func (g *generator) emitImports(c *code) {
 	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0 {
 		deps = append(deps, `"slices"`)
 	}
-	// Optional generated helpers add their own imports. Package main already
-	// imports bufio/os/fmt/math/big for its harness
-	if g.config.Package != "main" {
-		if g.usesHelper(helperDbgWriter) {
-			deps = append(deps, `"bufio"`, `"os"`)
-		}
 
-		// romRead and womWrite format their messages.
-		if g.usesHelper(helperFmtSprintf) {
-			deps = append(deps, `"fmt"`)
-		}
-
-		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) ||
-			g.usesHelper(helperCatU64) || g.usesHelper(helperWideInt) {
-			deps = append(deps, `"math/big"`)
-		}
-
-		if g.usesHelper(helperDbgU) {
-			deps = append(deps, `"strconv"`)
-		}
+	// The harness dependencies alone guarantee several imports, so the block
+	// form is always appropriate.
+	slices.Sort(deps)
+	c.line("import (")
+	//
+	for _, d := range deps {
+		c.line(d)
 	}
-
-	switch len(deps) {
-	case 0:
-		return
-	case 1:
-		c.linef("import %s", deps[0])
-	default:
-		slices.Sort(deps)
-		c.line("import (")
-
-		for _, d := range deps {
-			c.line(d)
-		}
-
-		c.line(")")
-	}
+	//
+	c.line(")")
 
 	c.line("")
 }
@@ -509,14 +474,17 @@ func (g *generator) emitImports(c *code) {
 // emitMemHelpers writes the grow-on-write / zero-on-miss helpers backing the
 // writable memories, each only when some memory of that kind exists.
 func (g *generator) emitMemHelpers(c *code) {
-	var usesMemory = len(g.sroms) > 0 || len(g.inputs) > 0 || len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0
-
-	if usesMemory {
+	var (
+		usesMemory      = len(g.sroms) > 0 || len(g.inputs) > 0 || len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0
+		isCheckpointing = g.config.CheckPointing.HasValue()
+	)
+	//
+	if usesMemory || isCheckpointing {
 		c.commentf("===============================================================================")
 		c.commentf("Memory Helpers")
 		c.commentf("===============================================================================")
 
-		if len(g.rams) > 0 || len(g.prams) > 0 || g.config.CheckPointing.HasValue() {
+		if len(g.rams) > 0 || len(g.prams) > 0 || isCheckpointing {
 			c.line("")
 			c.commentf("RamPage encapsulates a page of read/write memory")
 			c.line("type RamPage struct { data []uint64; stamps []uint64 }")
@@ -812,9 +780,7 @@ func (g *generator) emitMainHarness(c *code) error {
 	c.line("readInputs()")
 	//
 	if g.config.CheckPointing.HasValue() {
-		if err := g.emitBootCheckpoint(c); err != nil {
-			return err
-		}
+		g.emitBootCheckpoint(c)
 	}
 	//
 	c.commentf("execute zkc main function")
@@ -1050,34 +1016,13 @@ func (g *generator) emitCheckpointArgs(c *code, fn *descFunction, args []limb) {
 
 // emitBootCheckpoint emits the initial checkpoint written by main() before
 // execution begins, mirroring BootAndCheckpoint: it records the boot frame
-// (main) whose (non-stamp) inputs are all zero.  The trace builder relies on
-// this being the first checkpoint, as the first shard is traced from boot.
-func (g *generator) emitBootCheckpoint(c *code) error {
-	var (
-		mid, _ = g.program.HasModule("main")
-		fn     = g.funcByID[uint(mid)]
-		native = lword.ByteWidth(g.program.Field().BandWidth)
-		nbytes uint
-	)
+// (main).  The trace builder relies on this being the first checkpoint, as the
+// first shard is traced from boot.
+func (g *generator) emitBootCheckpoint(c *code) {
+	var mid, _ = g.program.HasModule("main")
 	//
-	args, err := g.checkpointArgs(fn)
-	if err != nil {
-		return err
-	}
-	//
-	for _, l := range args {
-		nbytes += cellByteWidth(fn.Register(l.id), native)
-	}
-	//
-	c.commentf("boot checkpoint (inputs of main are zero)")
-	//
-	if nbytes == 0 {
-		c.linef("writeCheckpoint(%d, nil)", mid)
-	} else {
-		c.linef("writeCheckpoint(%d, make([]byte, %d))", mid, nbytes)
-	}
-	//
-	return nil
+	c.commentf("boot checkpoint (main has no arguments, hence nil)")
+	c.linef("writeCheckpoint(%d, nil)", mid)
 }
 
 func (g *generator) emitCheckpointWriterMemories(c *code) {
@@ -1299,7 +1244,7 @@ func (g *generator) emitFunction(c *code, id uint, fn *descFunction, cfg Config)
 			c.linef("var clk_%s uint64 = %d", fn.Name(), cfg.CheckPointing.Unwrap().ShardSteps)
 		}
 	}
-	//
+	// NOTE: the boot function is guaranteed to have no arguments or returns.
 	if err := g.emitFunctionSignature(c, fn); err != nil {
 		return err
 	} else if err = g.emitFunctionBody(c, id, fn, cfg); err != nil {
@@ -1365,8 +1310,7 @@ func (g *generator) emitFunctionSignature(c *code, fn *descFunction) error {
 
 func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction, cfg Config) error {
 	var (
-		isBoot = fn.Name() == "main"
-		regs   = fn.Registers()
+		regs = fn.Registers()
 	)
 	// Emit the body to a fixpoint: each pass replays the emitters (the
 	// analysis transfer function) over the whole body; label states stabilise
@@ -1378,7 +1322,7 @@ func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction, cfg Con
 		savedBits, savedMP, savedHelpers = g.usesBits, g.usesModP, cloneHelpers(g.helpers)
 	)
 
-	g.iv = newIntervals(fn, isBoot, g.config.NoIntervals)
+	g.iv = newIntervals(fn, g.config.NoIntervals)
 
 	for pass := 0; ; pass++ {
 		body = code{}

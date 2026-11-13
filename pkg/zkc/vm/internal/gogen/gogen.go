@@ -51,12 +51,6 @@ var ErrMachineFailure = errors.New("machine failure")
 
 // Config controls the shape of the generated artefact.
 type Config struct {
-	// Package is the name of the generated Go package.  The package "main"
-	// additionally gets a stdin/stdout main() harness (used by Compile and the
-	// differential tests), which is the only supported way of executing the
-	// generated code.  Any other name yields a package without a harness or
-	// entry point, useful only for inspecting the generated functions.
-	Package string
 	// NoIntervals disables the flow-sensitive interval analysis, falling back
 	// to width-derived bounds only (more emitted checks, otherwise identical
 	// semantics).  A debugging escape hatch.
