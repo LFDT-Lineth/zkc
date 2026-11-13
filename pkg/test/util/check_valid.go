@@ -78,12 +78,8 @@ func CheckValid(t *testing.T, zkcfile string, config TestConfig) {
 	// work is serialised across every file in the suite.
 	t.Parallel()
 	//
-	var (
-		// generate actual tests for the given file.
-		testcases = config.GenerateTests(t, zkcfile)
-	)
 	// Check for each field requested
-	for _, test := range testcases {
+	for _, test := range config.GenerateTests(t, zkcfile) {
 		t.Run(fmt.Sprintf("%s", test.Handle()), func(t *testing.T) {
 			t.Parallel()
 			//
@@ -101,10 +97,10 @@ func checkValidInternal(t *testing.T, test TestCase) {
 	// Run (fast mode) execution test
 	if test.fastMode {
 		runExecutionTests(t, p, test.vector)
-	}
-	// Run gogen (if requested)
-	if test.gogen.HasValue() {
-		runGogenExecutionTest(t, p, test.gogen.Unwrap(), test.vector)
+		// Run gogen (if requested)
+		if test.gogen.HasValue() {
+			runGogenExecutionTest(t, p, test.gogen.Unwrap(), test.vector)
+		}
 	}
 	// Run constraint check (if requsted)
 	if test.constraints {
@@ -117,8 +113,15 @@ func checkValidInternal(t *testing.T, test TestCase) {
 		if test.sharding.HasValue() {
 			traceConfig = traceConfig.WithSharding(test.sharding.Unwrap())
 		}
-		// Run the test
+		// Run the test (without gogen)
 		runConstraintTest(t, p, test.vector, field, traceConfig)
+		//
+		if test.gogen.HasValue() {
+			// TODO: support gogen tracing.  See #2336
+			//
+			// Rerun test (with gogen)
+			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true))
+		}
 	}
 }
 
@@ -153,7 +156,7 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		// construct binary file
 		binf = constraints.NewBinaryFile[F, W](nil, nil, p)
 		// Execute the test
-		actuals, errs = binf.Execute(inputs)
+		actuals, errs = binf.Execute(inputs, vm.DEFAULT_EXECUTION_CONFIG)
 		// Record whether test accepted or not.
 		accepted = len(errs) == 0
 	)

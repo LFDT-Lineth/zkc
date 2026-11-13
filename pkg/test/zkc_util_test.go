@@ -198,6 +198,10 @@ func Test_ZkcUtil_Sharding_05(t *testing.T) {
 	checkZkcUtil(t, "zkc/util/sharding_05", DEFAULT_UTIL_CONFIG.Sharding("copy", 1))
 }
 
+func Test_ZkcUtil_Sharding_06(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/sharding_06", DEFAULT_UTIL_CONFIG.Sharding("copy", 1))
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================

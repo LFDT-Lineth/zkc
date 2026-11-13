@@ -34,3 +34,12 @@ type RegisterId = bytecode.RegisterId
 
 // ModuleId detemines the type of module identifiers.
 type ModuleId = bytecode.ModuleId
+
+// ShardingStrategy is used to configure parallel tracing.
+type ShardingStrategy struct {
+	// Function around which sharding pivots.  That is, the function for which
+	// checkpoints are made.
+	ShardFunction string
+	// Maximum executions of the given function to execute in each shard.
+	ShardSteps uint64
+}

@@ -13,6 +13,8 @@
 package gogen_test
 
 import (
+	"errors"
+	"io"
 	"reflect"
 	"testing"
 
@@ -20,6 +22,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
 )
 
 // fieldTestProgram hand-builds a word machine exercising the WordTypeF mod-P ops
@@ -108,12 +111,10 @@ func fieldTestProgram[W vm.Word[W]]() vm.Program[W] {
 func TestGenFieldOps(t *testing.T) {
 	const koalabear = 0x7f000001 // 2^31 - 2^24 + 1
 
-	src, err := vm.GenerateGo(fieldTestProgram[vm.Uint](), vm.GoGenConfig{})
+	binary, err := gogen.Compile(fieldTestProgram[vm.Uint](), gogen.DEFAULT_CONFIG)
 	if err != nil {
 		t.Fatalf("GenerateGo: %v", err)
 	}
-
-	prog := buildProgram(t, src)
 
 	vectors := []map[string][]uint64{
 		{"data": {0, 0}},
@@ -123,19 +124,24 @@ func TestGenFieldOps(t *testing.T) {
 		{"data": {koalabear, 1}},                 // operand equal to p (reduces to 0)
 		{"data": {0xFFFFFFFF, 0xFFFFFFFF}},       // operands above p (reduced by the ops)
 	}
-
+	//
+	registerCleanUp(t, binary)
+	//
 	for _, in := range vectors {
 		t.Run(inputName(in), func(t *testing.T) {
 			inBytes := encodeInputs(fieldTestProgram[vm.Uint](), in)
-
-			refOut, refErr := referenceRun(t, fieldTestProgram[vm.Uint](), inBytes)
-
-			genOut, genErr := runProgram(t, prog, inBytes)
-			if refErr != genErr {
-				t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
-			}
-
-			if refErr {
+			// Run reference program
+			refOut, refFail := referenceRun(t, fieldTestProgram[vm.Uint](), inBytes)
+			// Run gogen program
+			genOut, genErr := binary.Run(inBytes, io.Discard)
+			// Determine whether we have a machine failure, or not
+			genFail := errors.Is(genErr, vm.GoGenMachineFailure)
+			// Check same outcome
+			if refFail != genFail {
+				t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refFail, genFail, in)
+			} else if genErr != nil && !genFail {
+				t.Fatalf("internal failure: %v", genErr)
+			} else if refFail {
 				return
 			}
 

@@ -13,6 +13,8 @@
 package gogen_test
 
 import (
+	"errors"
+	"io"
 	"math/rand"
 	"os"
 	"reflect"
@@ -20,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
 )
 
 // TestGenFuzz drives the differential corpus with pseudo-random inputs (a
@@ -52,25 +55,29 @@ func TestGenFuzz(t *testing.T) {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				m := compileUint(t, tc.src, shape.fastMode)
 
-				src, err := vm.GenerateGo(m, vm.GoGenConfig{})
+				binary, err := gogen.Compile(m, gogen.DEFAULT_CONFIG)
+				//
 				if err != nil {
 					t.Fatalf("GenerateGo: %v", err)
 				}
-
-				prog := buildProgram(t, src)
-
+				//
+				registerCleanUp(t, binary)
+				//
 				for i := 0; i < n; i++ {
 					in := randomInputs(rng, tc.vectors[0])
 					inBytes := encodeInputs(m, in)
-
-					refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.fastMode), inBytes)
-
-					genOut, genErr := runProgram(t, prog, inBytes)
-					if refErr != genErr {
-						t.Fatalf("verdict mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
-					}
-
-					if !refErr && !reflect.DeepEqual(refOut, genOut) {
+					// Run reference program
+					refOut, refFail := referenceRun(t, compileUint(t, tc.src, shape.fastMode), inBytes)
+					// Run gogen program
+					genOut, genErr := binary.Run(inBytes, io.Discard)
+					// Determine whether we have a machine failure, or not
+					genFail := errors.Is(genErr, vm.GoGenMachineFailure)
+					// Check same outcome
+					if refFail != genFail {
+						t.Fatalf("verdict mismatch: reference err=%v, generated err=%v (in=%v)", refFail, genFail, in)
+					} else if genErr != nil && !genFail {
+						t.Fatalf("internal failure (in=%v): %v", in, genErr)
+					} else if !refFail && !reflect.DeepEqual(refOut, genOut) {
 						t.Fatalf("output mismatch (in=%v):\n  reference=%v\n  generated=%v", in, refOut, genOut)
 					}
 				}

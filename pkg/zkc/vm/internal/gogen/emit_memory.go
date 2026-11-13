@@ -56,8 +56,8 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 	var inner error
 
 	c.block(func() {
-		c.linef("start := %s", start)
-
+		g.emitAccessPrologue(c, mi, start, len(x.Data))
+		//
 		for i, d := range x.Data {
 			// A discarded data line binds no register: skip the load (the
 			// address offset i is explicit, so later lines are unaffected).
@@ -78,27 +78,21 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 
 			switch mi.role {
 			case sromStatic:
-				// Baked contents: the read is a direct index (OOB panics, like
-				// StaticArray.Read) and the bound is the largest baked value.  A
-				// narrowed element type widens back to the uint64 cell type.
-				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
+				expr = fmt.Sprintf("sromRead(%s[:], start + %d)", mi.varName, i)
 				if mi.elemType != "uint64" {
 					expr = "uint64(" + expr + ")"
 				}
-
+				//
 				bound = maxContents(mi.contents)
-			case fixedScratch:
-				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
-				bound = widthMax(widthOf(dataRegs[i]))
-			case ramScratch:
-				expr = fmt.Sprintf("memGet(%s, start+%d)", mi.varName, i)
-				bound = widthMax(widthOf(dataRegs[i]))
-			case pagedScratch:
-				expr = fmt.Sprintf("%s.get(start + %d)", mi.varName, i)
-				bound = widthMax(widthOf(dataRegs[i]))
-			default: // input ROM: untrusted contents
-				expr = fmt.Sprintf("%s[start+%d]", mi.varName, i)
+			case romInput:
+				expr = fmt.Sprintf("romRead(%s, start + %d)", mi.varName, i)
 				bound = widthMax(64)
+			case ramScratch:
+				expr = fmt.Sprintf("%s.data[start+%d]", mi.varName, i)
+				bound = widthMax(widthOf(dataRegs[i]))
+			default:
+				expr = fmt.Sprintf("page.data[offset+%d]", i)
+				bound = widthMax(widthOf(dataRegs[i]))
 			}
 
 			g.assignSingle(c, l, operand{expr: expr, max: bound})
@@ -121,7 +115,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	}
 
 	switch mi.role {
-	case womOutput, fixedScratch, ramScratch, pagedScratch:
+	case womOutput, ramScratch, pagedScratch:
 	default:
 		return fmt.Errorf("gogen: MEMORY_WRITE to read-only memory %q", mi.name)
 	}
@@ -139,8 +133,8 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	var inner error
 
 	c.block(func() {
-		c.linef("start := %s", start)
-
+		g.emitAccessPrologue(c, mi, start, len(x.Data))
+		//
 		for i, s := range x.Data {
 			src, e := g.registerOperand(fn, s)
 			if e != nil {
@@ -153,14 +147,12 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 			}
 
 			switch mi.role {
-			case pagedScratch:
-				c.linef("%s.set(start+%d, %s)", mi.varName, i, src.expr)
-			case fixedScratch:
-				c.linef("%s[start+%d] = %s", mi.varName, i, src.expr)
 			case womOutput:
-				c.linef("%s = womWrite(%s, start+%d, %s, %q)", mi.varName, mi.varName, i, src.expr, womFailMsg(mi.name))
+				c.linef("%s = womWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+			case ramScratch:
+				c.linef("%s.data[start+%d] = %s", mi.varName, i, src.expr)
 			default:
-				c.linef("%s = memWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+				c.linef("page.data[offset+%d] = %s", i, src.expr)
 			}
 		}
 	})
@@ -168,11 +160,34 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	return inner
 }
 
-// womFailMsg is the failure reported when a write-once memory cell is written
-// a second time with a different value (mirroring the interpreter's
-// WriteOnce.Write message).
-func womFailMsg(name string) string {
-	return fmt.Sprintf("address already written for write-only memory %s", name)
+// emitAccessPrologue emits the preamble shared by every read and write of a
+// memory: for scratch memories, the access clock tick and the stamping of the
+// accessed row (which also grows / allocates the storage as needed).  A
+// non-paged access leaves the first cell's address in "start"; a paged access
+// instead leaves the accessed page in "page" and the first cell's offset within
+// it in "offset".
+func (g *generator) emitAccessPrologue(c *code, mi memInfo, start string, width int) {
+	switch mi.role {
+	case ramScratch:
+		c.linef("start := %s", start)
+		c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
+		c.linef("ramStamp(%s_stamp, &%s, %s, start+%d)", mi.varName, mi.varName, rowExpr(width), width)
+	case pagedScratch:
+		c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
+		c.linef("page, offset := pagedRamStamp(%s_stamp, &%s, %s, %d)", mi.varName, mi.varName, start, width)
+	default:
+		c.linef("start := %s", start)
+	}
+}
+
+// rowExpr returns the row holding cell "start" of a memory with the given
+// number of data lanes.
+func rowExpr(width int) string {
+	if width == 1 {
+		return "start"
+	}
+	//
+	return fmt.Sprintf("start/%d", width)
 }
 
 // addrExpr mirrors the interpreter's decodeAddress: fold the address registers

@@ -57,27 +57,11 @@ import (
 	"slices"
 	"strings"
 
+	lword "github.com/LFDT-Lineth/zkc/pkg/util/word"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
-
-// Config controls the shape of the generated artefact.
-type Config struct {
-	// Package is the name of the generated Go package.  The package "main"
-	// additionally gets a JSON stdin/stdout main() harness, used by the
-	// differential tests; any other name yields an importable package whose
-	// only entry point is Run.
-	Package string
-	// NoIntervals disables the flow-sensitive interval analysis, falling back
-	// to width-derived bounds only (more emitted checks, otherwise identical
-	// semantics).  A debugging escape hatch.
-	NoIntervals bool
-	// Source, when non-empty, is recorded in the generated header (e.g.
-	// "keccakf.zkc sha256:ab12…"), so go:generate workflows can detect a stale
-	// artefact by comparing it against the current source.
-	Source string
-}
 
 // regId identifies a register within the enclosing function's frame.
 type regId = bytecode.RegisterId
@@ -93,13 +77,14 @@ const (
 	romInput     memRole = iota // non-static read-only: loaded from the program inputs
 	womOutput                   // write-once: forms the program outputs (grow-on-write)
 	sromStatic                  // static read-only: fixed contents baked into the program
-	fixedScratch                // small read-write scratch: fixed, zero-initialised array
 	ramScratch                  // read-write scratch: zero-initialised, grows on write
 	pagedScratch                // paged read-write scratch (demand-allocated pages)
 )
 
 type memInfo struct {
-	name    string
+	name string
+	// id is the module identifier of this memory within the program.
+	id      uint16
 	varName string
 	role    memRole
 	geom    descriptor.Memory[word.Uint]
@@ -113,14 +98,11 @@ type memInfo struct {
 	// elemType is the Go array element type of a static (SROM) memory (the
 	// narrowest that holds its contents); empty for all other roles.
 	elemType string
-	// cells is the total number of data cells for a fixed scratch memory.
-	cells uint64
 }
 
-// Fixed arrays remove grow-on-write and bounds-helper overhead from small
-// scratch memories. Keep the cap deliberately small: every Run clears the
-// array, and larger or unbounded address spaces retain the sparse VM semantics.
-const maxFixedScratchCells = 1024
+// pagedPageSize is the number of cells per page of a paged scratch memory in
+// the generated program (mirroring interpreter.PAGE_SIZE).
+const pagedPageSize uint64 = 1 << 20
 
 // pos is a 2-D program-counter position: a macro vector index plus a micro code
 // index within that vector.  It is the target of skips and jumps.
@@ -129,24 +111,18 @@ type pos struct {
 	micro uint
 }
 
-// Generate compiles a bytecode program into a self-contained Go source file
-// exposing Run(inputs) (outputs, error).  See the package documentation for
-// the semantics contract and Config for the artefact shape.
+// Generate compiles a bytecode program into a self-contained Go source file.
+// See the package documentation for the semantics contract and Config for the
+// artefact shape.
 func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error) {
-	if cfg.Package == "" {
-		cfg.Package = "main"
-	}
-
 	g := &generator{
-		pkg:         cfg.Package,
-		noIntervals: cfg.NoIntervals,
-		source:      cfg.Source,
-		memByID:     map[uint]memInfo{},
-		funcByID:    map[uint]*descFunction{},
-		program:     program,
-		modulus:     program.Field().Modulus(),
-		names:       map[string]bool{},
-		helpers:     map[string]bool{},
+		config:   cfg,
+		memByID:  map[uint]memInfo{},
+		funcByID: map[uint]*descFunction{},
+		program:  program,
+		modulus:  program.Field().Modulus(),
+		names:    map[string]bool{},
+		helpers:  map[string]bool{},
 	}
 	mainID, hasMain := uint(0), false
 
@@ -158,7 +134,9 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 				return "", err
 			}
 
+			info.id = uint16(id)
 			g.memByID[uint(id)] = info
+
 			switch info.role {
 			case romInput:
 				g.inputs = append(g.inputs, info)
@@ -166,12 +144,10 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 				g.outputs = append(g.outputs, info)
 			case sromStatic:
 				g.sroms = append(g.sroms, info)
-			case fixedScratch:
-				g.fixeds = append(g.fixeds, info)
 			case ramScratch:
 				g.rams = append(g.rams, info)
 			case pagedScratch:
-				g.pageds = append(g.pageds, info)
+				g.prams = append(g.prams, info)
 			}
 		case *descFunction:
 			g.funcByID[uint(id)] = mm
@@ -186,14 +162,27 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 	if !hasMain {
 		return "", fmt.Errorf("gogen: no 'main' function found")
 	}
-	// The package-main JSON harness encodes inputs/outputs as bytes (the format
-	// `zkc exec` accepts), which a field-element data line has no fixed width
-	// for.  Importable packages expose words directly, so only main is affected.
-	if g.pkg == "main" {
-		for _, info := range append(append([]memInfo{}, g.inputs...), g.outputs...) {
-			if hasNativeDataLine(info) {
-				return "", fmt.Errorf("gogen: memory %q has a field-element data line, which the JSON "+
-					"harness cannot encode; generate an importable package (--pkg) to consume it as words", info.name)
+	// The harness encodes inputs/outputs as bytes (the format `zkc exec`
+	// accepts), which a field-element data line has no fixed width for.
+	// Non-main packages have no harness, so only main is affected.
+	for _, info := range append(append([]memInfo{}, g.inputs...), g.outputs...) {
+		if hasNativeDataLine(info) {
+			return "", fmt.Errorf("gogen: memory %q has a field-element data line, which"+
+				" is currently unsupported", info.name)
+		}
+	}
+	// Checkpointing requires a known shard function, and that every paged
+	// memory's pages are row aligned, as checkpoint pages are addressed by row
+	// (see emitCheckpointWriter).
+	if g.config.CheckPointing.HasValue() {
+		if fn := g.config.CheckPointing.Unwrap().ShardFunction; !hasFunction(g.funcByID, fn) {
+			return "", fmt.Errorf("gogen: unknown shard function %q", fn)
+		}
+		//
+		for _, info := range g.prams {
+			if lanes := uint64(len(info.geom.DataRegisters())); pagedPageSize%lanes != 0 {
+				return "", fmt.Errorf("gogen: paged memory %q has %d data lanes, which do not divide the page size %d",
+					info.name, lanes, pagedPageSize)
 			}
 		}
 	}
@@ -212,7 +201,7 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 		}
 
 		var b code
-		if err := g.emitFunction(&b, id, fn); err != nil {
+		if err := g.emitFunction(&b, id, fn, cfg); err != nil {
 			return "", err
 		}
 
@@ -220,31 +209,30 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 	}
 	// Assemble the full file.
 	var file code
-	g.emitFile(&file, order, bodies)
+	if err := g.emitFile(&file, order, bodies); err != nil {
+		return "", err
+	}
 
 	return formatSource(file.String())
 }
 
 type generator struct {
-	pkg         string
-	noIntervals bool
-	source      string // provenance line for the generated header (may be empty)
-	memByID     map[uint]memInfo
-	inputs      []memInfo
-	outputs     []memInfo
-	sroms       []memInfo // static read-only memories (baked contents)
-	fixeds      []memInfo // small read-write scratch memories
-	rams        []memInfo // read-write scratch memories
-	pageds      []memInfo // paged read-write scratch memories
-	program     descriptor.Program[word.Uint]
-	funcByID    map[uint]*descFunction
-	modulus     *big.Int        // the machine's prime modulus (for mod-P ops)
-	names       map[string]bool // sanitized identifiers already taken
-	helpers     map[string]bool // optional generated helpers/import needs
-	usesBits    bool            // whether math/bits is referenced (decides the import)
-	usesModP    fieldHelpers    // which mod-P helpers are referenced
-	cur         fnView          // the function currently being emitted (return shape)
-	iv          *intervals      // bound analysis for the function being emitted
+	config   Config
+	memByID  map[uint]memInfo
+	inputs   []memInfo
+	outputs  []memInfo
+	sroms    []memInfo // static read-only memories (baked contents)
+	rams     []memInfo // read-write scratch memories
+	prams    []memInfo // paged read-write scratch memories
+	program  descriptor.Program[word.Uint]
+	funcByID map[uint]*descFunction
+	modulus  *big.Int        // the machine's prime modulus (for mod-P ops)
+	names    map[string]bool // sanitized identifiers already taken
+	helpers  map[string]bool // optional generated helpers/import needs
+	usesBits bool            // whether math/bits is referenced (decides the import)
+	usesModP fieldHelpers    // which mod-P helpers are referenced
+	cur      fnView          // the function currently being emitted (return shape)
+	iv       *intervals      // bound analysis for the function being emitted
 }
 
 const (
@@ -288,6 +276,17 @@ type fnView struct {
 	isBoot   bool     // the boot frame ('main'); its outputs are discarded
 	outNames []string // output result names, limb-expanded (empty for boot)
 	tailLoop bool     // body contains a self tail call, needing the entry label
+}
+
+// hasFunction checks whether a function with the given name exists.
+func hasFunction(funcs map[uint]*descFunction, name string) bool {
+	for _, fn := range funcs {
+		if fn.Name() == name {
+			return true
+		}
+	}
+
+	return false
 }
 
 // reachableFunctions returns the ids of the functions reachable from the entry
@@ -369,23 +368,16 @@ func (c *code) String() string { return c.b.String() }
 // emitFile writes the package, imports, failure helpers, memory globals and
 // helpers, the Run entry point, every reachable function, and (for package
 // main) the JSON stdin/stdout harness.
-func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
+func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) error {
 	c.line("// Code generated by zkc gogen. DO NOT EDIT.")
 
-	if g.source != "" {
-		c.linef("// Source: %s", g.source)
+	if g.config.Source != "" {
+		c.linef("// Source: %s", g.config.Source)
 	}
 
-	c.linef("package %s", g.pkg)
+	c.line("package main")
 	c.line("")
 	g.emitImports(c)
-	emitFailureHelpers(c)
-
-	if g.usesHelper(helperDone) {
-		emitDoneHelpers(c)
-	}
-
-	g.emitPrintfHelpers(c)
 
 	// Memories are shared across the call stack, so they live as package-level
 	// globals (matching the VM's shared memory banks); callees read/write them
@@ -401,19 +393,16 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 		c.linef("var %s []uint64", m.varName)
 	}
 
-	for _, m := range g.fixeds {
-		c.linef("// Fixed scratch RAM %q.", m.name)
-		c.linef("var %s [%d]uint64", m.varName, m.cells)
-	}
-
 	for _, m := range g.rams {
 		c.linef("// Scratch RAM %q.", m.name)
-		c.linef("var %s []uint64", m.varName)
+		c.linef("var %s RamPage", m.varName)
+		c.linef("var %s_stamp uint64", m.varName)
 	}
 
-	for _, m := range g.pageds {
+	for _, m := range g.prams {
 		c.linef("// Paged RAM %q.", m.name)
-		c.linef("var %s paged", m.varName)
+		c.linef("var %s []RamPage", m.varName)
+		c.linef("var %s_stamp uint64", m.varName)
 	}
 
 	// Static read-only memories have fixed contents baked in as a literal.
@@ -423,138 +412,61 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) {
 	}
 
 	c.line("")
-	g.emitMemHelpers(c)
-	g.emitShiftHelpers(c)
-	g.emitWideIntHelper(c)
-	g.emitModPHelpers(c)
-
-	c.line("// Run executes the program on the given input memories, returning its")
-	c.line("// output memories, or an error if the execution fails (a rejected trace).")
-	c.line("func Run(in map[string][]uint64) (out map[string][]uint64, err error) {")
-	// Flush buffered printf output on the way out (registered first, so it runs
-	// last — after the recover below has produced any error), so a failing run
-	// still surfaces the diagnostics that preceded it.
-	if g.usesHelper(helperDbgWriter) {
-		c.line("defer dbgw.Flush()")
-	}
-
-	// A DONE (see doneSignal) unwinds via panic just like a failure, but from
-	// arbitrarily deep in the call stack it must still report success with
-	// whatever outputs were written before it fired — so output collection
-	// happens here in the defer, on every path except a genuine failure,
-	// rather than only after fn_main() returns normally.
-	c.line("defer func() {")
-	c.line("r := recover()")
-	c.line("if f, ok := r.(failure); ok {")
-	c.line("out, err = nil, f")
-	c.line("return")
-	c.line("}")
-	c.line("if r != nil {")
-
-	if g.usesHelper(helperDone) {
-		c.line("if _, ok := r.(doneSignal); !ok {")
-		c.line("panic(r)")
-		c.line("}")
-	} else {
-		c.line("panic(r)")
-	}
-
-	c.line("}")
-	c.line("out = map[string][]uint64{}")
-
-	for _, m := range g.outputs {
-		c.linef("out[%q] = %s", m.name, m.varName)
-	}
-
-	c.line("}()")
-
-	for _, m := range g.inputs {
-		c.linef("%s = in[%q]", m.varName, m.name)
-	}
-	// Outputs and scratch memories start empty on every run.
-	for _, m := range g.outputs {
-		c.linef("%s = nil", m.varName)
-	}
-
-	for _, m := range g.fixeds {
-		c.linef("%s = [%d]uint64{}", m.varName, m.cells)
-	}
-
-	for _, m := range g.rams {
-		c.linef("%s = nil", m.varName)
-	}
-
-	for _, m := range g.pageds {
-		c.linef("%s = paged{}", m.varName)
-	}
-
-	// Output collection now happens in the defer above, on every return path.
-	c.line("fn_main()")
-	c.line("return")
-	c.line("}")
-	c.line("")
 
 	for _, id := range order {
 		c.raw(bodies[id].String())
 	}
-
-	if g.pkg == "main" {
-		c.raw(conversionHelpers)
-		g.emitInputDecoders(c)
-		g.emitMainHarness(c)
+	// write out main() function
+	if err := g.emitMainHarness(c); err != nil {
+		return err
 	}
+	//
+	g.emitConversionHelpers(c)
+	//
+	emitTerminationHelpers(c, g.usesHelper(helperDone))
+	//
+	g.emitPrintfHelpers(c)
+	//
+	g.emitMemHelpers(c)
+	g.emitShiftHelpers(c)
+	g.emitWideIntHelper(c)
+	g.emitModPHelpers(c)
+	//
+	return nil
 }
 
 func (g *generator) emitImports(c *code) {
 	deps := []string{}
-	if g.pkg == "main" {
-		deps = append(deps,
-			`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strconv"`, `"strings"`)
+	// Include dependencies required for main harness.
+	deps = append(deps,
+		`"bufio"`, `"encoding/hex"`, `"encoding/json"`, `"fmt"`, `"math/big"`, `"os"`, `"strconv"`, `"strings"`)
+	// The binary interchange frames stdout into packets (see writePacket),
+	// whilst the JSON interchange only encodes with encoding/binary when
+	// checkpointing.
+	if !g.config.Json {
+		deps = append(deps, `"bytes"`, `"encoding/binary"`)
+	} else if g.config.CheckPointing.HasValue() {
+		deps = append(deps, `"encoding/binary"`)
 	}
 
 	if g.usesBits {
 		deps = append(deps, `"math/bits"`)
 	}
 	// memWrite (WOM/dynamic RAM) and paged.set both use slices.Grow.
-	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.pageds) > 0 {
+	if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0 {
 		deps = append(deps, `"slices"`)
 	}
-	// Optional generated helpers add their own imports. Package main already
-	// imports bufio/os/fmt/math/big for its harness
-	if g.pkg != "main" {
-		if g.usesHelper(helperDbgWriter) {
-			deps = append(deps, `"bufio"`, `"os"`)
-		}
 
-		if g.usesHelper(helperFmtSprintf) {
-			deps = append(deps, `"fmt"`)
-		}
-
-		if g.usesHelper(helperDbgB) || g.usesHelper(helperU128) ||
-			g.usesHelper(helperCatU64) || g.usesHelper(helperWideInt) {
-			deps = append(deps, `"math/big"`)
-		}
-
-		if g.usesHelper(helperDbgU) {
-			deps = append(deps, `"strconv"`)
-		}
+	// The harness dependencies alone guarantee several imports, so the block
+	// form is always appropriate.
+	slices.Sort(deps)
+	c.line("import (")
+	//
+	for _, d := range deps {
+		c.line(d)
 	}
-
-	switch len(deps) {
-	case 0:
-		return
-	case 1:
-		c.linef("import %s", deps[0])
-	default:
-		slices.Sort(deps)
-		c.line("import (")
-
-		for _, d := range deps {
-			c.line(d)
-		}
-
-		c.line(")")
-	}
+	//
+	c.line(")")
 
 	c.line("")
 }
@@ -562,70 +474,110 @@ func (g *generator) emitImports(c *code) {
 // emitMemHelpers writes the grow-on-write / zero-on-miss helpers backing the
 // writable memories, each only when some memory of that kind exists.
 func (g *generator) emitMemHelpers(c *code) {
-	// memWrite backs both write-once (WOM) outputs and read-write (RAM) scratch:
-	// it grows the slice to cover addr and stores v, matching the VM's
-	// grow-on-write memories.
-	if len(g.outputs) > 0 || len(g.rams) > 0 {
-		c.line("func memWrite(s []uint64, addr uint64, v uint64) []uint64 {")
-		c.line("if n := addr + 1; uint64(len(s)) < n {")
-		c.line("s = slices.Grow(s, int(n)-len(s))[:n]")
-		c.line("}")
-		c.line("s[addr] = v")
-		c.line("return s")
-		c.line("}")
-		c.line("")
-	}
+	var (
+		usesMemory      = len(g.sroms) > 0 || len(g.inputs) > 0 || len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0
+		isCheckpointing = g.config.CheckPointing.HasValue()
+	)
+	//
+	if usesMemory || isCheckpointing {
+		c.commentf("===============================================================================")
+		c.commentf("Memory Helpers")
+		c.commentf("===============================================================================")
 
-	// womWrite backs write-once (WOM) outputs: a cell already holding a
-	// different value fails, matching the VM's WriteOnce.Write.
-	if len(g.outputs) > 0 {
-		c.line("func womWrite(s []uint64, addr uint64, v uint64, msg string) []uint64 {")
-		c.line("if addr < uint64(len(s)) && s[addr] != v {")
-		c.line("fail(msg)")
-		c.line("}")
-		c.line("return memWrite(s, addr, v)")
-		c.line("}")
-		c.line("")
-	}
-
-	// memGet reads RAM scratch: an unwritten cell reads 0, matching the VM's
-	// zero-initialised RandomAccess memory.
-	if len(g.rams) > 0 {
-		c.line("func memGet(s []uint64, addr uint64) uint64 {")
-		c.line("if addr < uint64(len(s)) {")
-		c.line("return s[addr]")
-		c.line("}")
-		c.line("return 0")
-		c.line("}")
-		c.line("")
-	}
-
-	// paged mirrors the VM's PagedRandomAccess: a page table indexed densely by
-	// address/pageSize, pages allocated on first write, unwritten reads are 0.
-	if len(g.pageds) > 0 {
-		c.line("const pageSize = 1 << 20")
-		c.line("")
-		c.line("type paged struct{ pages [][]uint64 }")
-		c.line("")
-		c.line("func (m *paged) get(addr uint64) uint64 {")
-		c.line("page, off := addr/pageSize, addr%pageSize")
-		c.line("if page < uint64(len(m.pages)) && m.pages[page] != nil {")
-		c.line("return m.pages[page][off]")
-		c.line("}")
-		c.line("return 0")
-		c.line("}")
-		c.line("")
-		c.line("func (m *paged) set(addr uint64, v uint64) {")
-		c.line("page, off := addr/pageSize, addr%pageSize")
-		c.line("if n := page + 1; uint64(len(m.pages)) < n {")
-		c.line("m.pages = slices.Grow(m.pages, int(n)-len(m.pages))[:n]")
-		c.line("}")
-		c.line("if m.pages[page] == nil {")
-		c.line("m.pages[page] = make([]uint64, pageSize)")
-		c.line("}")
-		c.line("m.pages[page][off] = v")
-		c.line("}")
-		c.line("")
+		if len(g.rams) > 0 || len(g.prams) > 0 || isCheckpointing {
+			c.line("")
+			c.commentf("RamPage encapsulates a page of read/write memory")
+			c.line("type RamPage struct { data []uint64; stamps []uint64 }")
+		}
+		// sroms
+		if len(g.sroms) > 0 {
+			c.line("")
+			c.line("func sromRead[T uint8|uint16|uint32|uint64](data []T, addr uint64) T {")
+			c.line("if addr >= uint64(len(data)) {")
+			c.line(`fail("out-of-bounds read of static read-only memory")`)
+			c.line("}")
+			c.line("return data[addr]")
+			c.line("}")
+		}
+		// roms
+		if len(g.inputs) > 0 {
+			c.line("")
+			c.line("func romRead(data []uint64, addr uint64) uint64 {")
+			c.line("if addr >= uint64(len(data)) {")
+			c.line(`fail("out-of-bounds read of read-only memory")`)
+			c.line("}")
+			c.line("return data[addr]")
+			c.line("}")
+		}
+		// woms
+		if len(g.outputs) > 0 {
+			c.line("")
+			c.line("func womWrite(data []uint64, addr uint64, v uint64) []uint64 {")
+			c.line("if addr < uint64(len(data)) && data[addr] != v {")
+			c.line("fail(\"address already written for write-once memory\")")
+			c.line("} else if n := addr + 1; uint64(len(data)) < n {")
+			c.line("data = expand(data, n)")
+			c.line("}")
+			c.line("data[addr] = v")
+			c.line("return data")
+			c.line("}")
+		}
+		// rams (ramStamp also backs paged rams, page by page)
+		if len(g.rams) > 0 || len(g.prams) > 0 {
+			c.line("")
+			// The page is mutated through a pointer (rather than passed and
+			// returned by value) since this sits on the hottest path of most
+			// programs: a by-value page costs two 48-byte copies plus a
+			// write-barriered store of the result into the package-level
+			// variable on every access.  The caller supplies the row and the
+			// (exclusive) end cell so that the helper stays within the
+			// inlining budget; growth is a cold path kept out of line.
+			c.commentf("ramStamp stamps the row holding cells [row*width, end), growing the page as needed.")
+			c.line("func ramStamp(stamp uint64, page *RamPage, row, end uint64) {")
+			c.line("if uint64(len(page.data)) < end {")
+			c.line("ramGrow(page, row+1, end)")
+			c.line("}")
+			c.line("page.stamps[row] = stamp")
+			c.line("}")
+			c.line("")
+			c.commentf("ramGrow ensures a page holds at least the given number of rows and cells.")
+			c.line("//go:noinline")
+			c.line("func ramGrow(page *RamPage, rows, cells uint64) {")
+			c.line("page.data = expand(page.data, cells)")
+			c.line("page.stamps = expand(page.stamps, rows)")
+			c.line("}")
+		}
+		// paged rams
+		if len(g.prams) > 0 {
+			c.line("")
+			c.linef("const pageSize = %d", pagedPageSize)
+			c.line("")
+			c.commentf("pagedRamStamp stamps the row holding cells [addr, addr+width), allocating its page as")
+			c.commentf("needed, and returns that page along with the offset of addr within it.")
+			c.line("func pagedRamStamp(stamp uint64, pages *[]RamPage, addr, width uint64) (*RamPage, uint64) {")
+			c.line("index, offset := addr/pageSize, addr%pageSize")
+			c.line("if n := index + 1; uint64(len(*pages)) < n {")
+			c.line("*pages = expandPages(*pages, n)")
+			c.line("}")
+			c.line("page := &(*pages)[index]")
+			c.line("ramStamp(stamp, page, offset/width, offset+width)")
+			c.line("return page, offset")
+			c.line("}")
+		}
+		// helpers
+		if len(g.outputs) > 0 || len(g.rams) > 0 || len(g.prams) > 0 {
+			c.commentf("ensure a given slice has at least n elements")
+			c.line("func expand(data []uint64, n uint64) []uint64 {")
+			c.line("return slices.Grow(data, int(n)-len(data))[:n]")
+			c.line("}")
+		}
+		//
+		if len(g.prams) > 0 {
+			c.commentf("ensure a given slice has at least n elements")
+			c.line("func expandPages(data []RamPage, n uint64) []RamPage {")
+			c.line("return slices.Grow(data, int(n)-len(data))[:n]")
+			c.line("}")
+		}
 	}
 }
 
@@ -781,12 +733,16 @@ func isSingleU8(widths []uint) bool {
 	return len(widths) == 1 && widths[0] == 8
 }
 
-// emitInputDecoders writes the input decoders the harness actually references:
-// the specialized decodeU8 for single-u8-line inputs and/or the generic decoder
-// for any other layout.
-func (g *generator) emitInputDecoders(c *code) {
+func (g *generator) emitConversionHelpers(c *code) {
 	var anyU8, anyGeneric bool
-
+	//
+	c.commentf("===============================================================================")
+	c.commentf("Encoding / Decoding Helpers")
+	c.commentf("===============================================================================")
+	c.line("")
+	c.raw(conversionHelpers)
+	c.line("")
+	//
 	for _, m := range g.inputs {
 		if isSingleU8(m.dataWidths) {
 			anyU8 = true
@@ -811,14 +767,75 @@ func (g *generator) emitInputDecoders(c *code) {
 // each into its data-line cells, runs the program, and writes the outputs as
 // JSON hex strings in the same encoding.  Exit 1 signals an execution error (a
 // rejected trace — the reference error path); exit 2 signals an I/O problem.
-func (g *generator) emitMainHarness(c *code) {
+func (g *generator) emitMainHarness(c *code) error {
 	c.line("func main() {")
+	c.commentf("handler for failures / early termination")
+	c.line("defer failureHandler()")
+	// Flush buffered printf output on the way out.
+	if g.usesHelper(helperDbgWriter) {
+		c.line("defer dbgw.Flush()")
+	}
+	//
+	c.commentf("read input memories")
+	c.line("readInputs()")
+	//
+	if g.config.CheckPointing.HasValue() {
+		g.emitBootCheckpoint(c)
+	}
+	//
+	c.commentf("execute zkc main function")
+	c.line("zkc_main()")
+	c.commentf("write output memories")
+	c.line("writeOutputs()")
+	c.line("}")
+	//
+	g.emitFailureHandler(c)
+	g.emitInputReader(c)
+	g.emitOutputWriter(c)
+	//
+	if g.config.CheckPointing.HasValue() {
+		return g.emitCheckpointWriter(c)
+	}
+	//
+	return nil
+}
+
+// emitFailureHandler emits the deferred handler which turns a ZkC failure into
+// exit code 1 (the reference error path) and a DONE into normal, successful
+// termination.  Since a DONE unwinds via panic from arbitrarily deep in the
+// call stack, output collection for that path happens here rather than in
+// main.  recover() must be called directly by the deferred function (and not,
+// for example, be evaluated as an argument at the defer statement) for the
+// panic to be caught.
+func (g *generator) emitFailureHandler(c *code) {
+	c.line("")
+	c.line("func failureHandler() {")
+	c.line("switch r := recover(); f := r.(type) {")
+	c.line("case nil:")
+	c.line("case failure:")
+	c.line(`fmt.Fprintln(os.Stderr, "exec error:", f)`)
+	c.line("os.Exit(1)")
+	//
+	if g.usesHelper(helperDone) {
+		c.line("case doneSignal:")
+		c.line("writeOutputs()")
+	}
+	//
+	c.line("default:")
+	c.line("panic(r)")
+	c.line("}")
+	c.line("}")
+}
+
+func (g *generator) emitInputReader(c *code) {
+	c.line("")
+	c.line("func readInputs() {")
 	c.line("var raw map[string]string")
+	c.commentf("read JSON from stdin")
 	c.line("if err := json.NewDecoder(bufio.NewReader(os.Stdin)).Decode(&raw); err != nil {")
 	c.line(`fmt.Fprintln(os.Stderr, "decode:", err)`)
 	c.line("os.Exit(2)")
 	c.line("}")
-	c.line("in := map[string][]uint64{}")
 
 	for _, m := range g.inputs {
 		c.line("{")
@@ -830,9 +847,9 @@ func (g *generator) emitMainHarness(c *code) {
 		c.line("data, nbits := parseInput(rawInput)")
 		//
 		if isSingleU8(m.dataWidths) {
-			c.linef("in[%q] = decodeU8(data, nbits)", m.name)
+			c.linef("%s = decodeU8(data, nbits)", m.varName)
 		} else {
-			c.linef("in[%q] = decodeBytes(data, nbits, %s)", m.name, widthsLiteral(m.dataWidths))
+			c.linef("%s = decodeBytes(data, nbits, %s)", m.varName, widthsLiteral(m.dataWidths))
 		}
 
 		c.linef("delete(raw, %q)", m.name)
@@ -843,33 +860,356 @@ func (g *generator) emitMainHarness(c *code) {
 	c.line(`fmt.Fprintf(os.Stderr, "decode: unknown input %q\n", name)`)
 	c.line("os.Exit(2)")
 	c.line("}")
-
-	if len(g.inputs) > 0 {
-		c.line("")
-	}
-	// Bind 'out' only when there are outputs to read from it; an unreferenced
-	// result would not compile.
-	if len(g.outputs) == 0 {
-		c.line("if _, err := Run(in); err != nil {")
-	} else {
-		c.line("out, err := Run(in)")
-		c.line("if err != nil {")
-	}
-
-	c.line(`fmt.Fprintln(os.Stderr, "exec error:", err)`)
-	c.line("os.Exit(1)")
 	c.line("}")
+}
+
+// emitOutputWriter emits writeOutputs(), which writes the output memories to
+// stdout as a JSON object of hex strings: as a line under the JSON interchange,
+// otherwise as the payload of an output packet.  The packet is encoded directly
+// behind its (reserved) header, so no copy of the payload is made.
+func (g *generator) emitOutputWriter(c *code) {
+	c.line("")
+	c.line("func writeOutputs() {")
+	//
 	c.line("enc := map[string]string{}")
-
+	// write outputs
 	for _, m := range g.outputs {
-		c.linef(`enc[%q] = hexString(encodeBytes(out[%q], %s))`, m.name, m.name, widthsLiteral(m.dataWidths))
+		c.linef(`enc[%q] = hexString(encodeBytes(%s, %s))`, m.name, m.varName, widthsLiteral(m.dataWidths))
 	}
-
-	c.line("if err := json.NewEncoder(os.Stdout).Encode(enc); err != nil {")
+	//
+	if g.config.Json {
+		c.commentf("write JSON line to stdout")
+		c.line("if err := json.NewEncoder(os.Stdout).Encode(enc); err != nil {")
+	} else {
+		c.commentf("write JSON packet to stdout")
+		c.linef("buf := bytes.NewBuffer([]byte{%s})", packetHeaderLiteral(packetOutput))
+		c.line("if err := json.NewEncoder(buf).Encode(enc); err != nil {")
+	}
+	//
 	c.line(`fmt.Fprintln(os.Stderr, "encode:", err)`)
 	c.line("os.Exit(2)")
 	c.line("}")
+	//
+	if !g.config.Json {
+		c.line("writePacket(buf.Bytes())")
+	}
+	//
 	c.line("}")
+	//
+	if !g.config.Json {
+		g.emitPacketWriter(c)
+	}
+}
+
+// emitPacketWriter emits writePacket(buf), which writes buf to stdout as one
+// packet of the binary interchange (see readPackets): buf[0] holds the packet
+// kind, the following four bytes are reserved for the payload length (filled in
+// here) and the payload follows.  Reserving the header in the caller's buffer
+// (see packetHeaderLiteral) means a packet is written with a single Write and
+// without copying the payload.
+func (g *generator) emitPacketWriter(c *code) {
+	c.line("")
+	c.line("func writePacket(buf []byte) {")
+	c.linef("n := len(buf) - %d", packetHeaderSize)
+	c.commentf("payload length must fit the uint32 header")
+	c.line("if uint64(n) > 0xFFFFFFFF {")
+	c.line(`fmt.Fprintln(os.Stderr, "packet:", n, "byte payload exceeds limit")`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	c.line("binary.BigEndian.PutUint32(buf[1:], uint32(n))")
+	c.line("if _, err := os.Stdout.Write(buf); err != nil {")
+	c.line(`fmt.Fprintln(os.Stderr, "packet:", err)`)
+	c.line("os.Exit(2)")
+	c.line("}")
+	c.line("}")
+}
+
+// packetHeaderLiteral returns the bytes of a packet header for the given kind,
+// with a zero (i.e. not yet known) payload length, as a comma separated list
+// suitable for a []byte literal or variadic append.
+func packetHeaderLiteral(kind byte) string {
+	return fmt.Sprintf("%d%s", kind, strings.Repeat(", 0", packetHeaderSize-1))
+}
+
+// emitCheckpointWriter emits writeCheckpoint(fid, args), which serialises the
+// current machine state in the binary format decoded by checkpoint.Unmarshal
+// (see checkpoint/encoding.go) and writes it to stdout: as a checkpoint packet
+// (see writePacket), or as a single JSON line of the form {"$":"0x…"} under the
+// JSON interchange.  The caller supplies the identifier of the function being
+// entered along with its (non-stamp) arguments, already packed as per
+// interpreter.Pack (see emitCheckpointArgs).  As with interpreter.Checkpoint,
+// every non-static memory is included in module order (Restore relies on
+// this), with page contents packed likewise (a fixed number of bytes per cell)
+// and the memory clock as tracked by the generated program.
+//
+// A checkpoint of a large memory runs to tens of megabytes, so the buffer is
+// package-level and reused: after the first checkpoint, no allocation is made
+// and (under the binary interchange) the payload is written in place.
+func (g *generator) emitCheckpointWriter(c *code) error {
+	c.line("")
+	c.commentf("buffer reused across checkpoints")
+	c.line("var checkpointBuffer []byte")
+	c.line("")
+	c.line("func writeCheckpoint(fid uint16, args []byte) {")
+	//
+	if g.config.Json {
+		c.commentf("reset buffer")
+		c.line("buf := checkpointBuffer[:0]")
+	} else {
+		c.commentf("reset buffer, reserving the packet header")
+		c.linef("buf := append(checkpointBuffer[:0], %s)", packetHeaderLiteral(packetCheckpoint))
+	}
+	//
+	c.commentf("function")
+	c.line("buf = binary.BigEndian.AppendUint16(buf, fid)")
+	c.commentf("arguments")
+	c.line("buf = binary.BigEndian.AppendUint32(buf, uint32(len(args)))")
+	c.line("buf = append(buf, args...)")
+	//
+	g.emitCheckpointWriterMemories(c)
+	//
+	if g.config.Json {
+		c.commentf("write JSON line to stdout")
+		c.line(`if _, err := fmt.Fprintf(os.Stdout, "{\"$\":\"0x%s\"}\n", hex.EncodeToString(buf)); err != nil {`)
+		c.line(`fmt.Fprintln(os.Stderr, "checkpoint:", err)`)
+		c.line("os.Exit(2)")
+		c.line("}")
+	} else {
+		c.commentf("write packet to stdout")
+		c.line("writePacket(buf)")
+	}
+	//
+	c.commentf("write back checkpoint buffer")
+	c.line("checkpointBuffer = buf")
+	c.line("}")
+	//
+	g.emitCheckpointWriterHelpers(c)
+	//
+	return nil
+}
+
+// emitCheckpointArgs emits a local "args" holding the given (non-stamp input)
+// limbs of fn packed as checkpoint argument bytes, mirroring interpreter.Pack:
+// each register big endian in cellByteWidth bytes.
+func (g *generator) emitCheckpointArgs(c *code, fn *descFunction, args []limb) {
+	var native = lword.ByteWidth(g.program.Field().BandWidth)
+	//
+	c.line("var args []byte")
+	//
+	for _, l := range args {
+		var (
+			r = fn.Register(l.id)
+			n = cellByteWidth(r, native)
+		)
+		//
+		c.commentf("argument %q", r.Name())
+		// A wide (lo/hi pair) register packs big endian as the hi limb in the
+		// leading n-8 bytes followed by the lo limb in the trailing 8.
+		if l.width > 64 {
+			c.linef("args = encodeCell(args, %s, %d)", l.hiName(), n-8)
+			c.linef("args = encodeCell(args, %s, 8)", l.lo())
+		} else {
+			c.linef("args = encodeCell(args, %s, %d)", l.lo(), n)
+		}
+	}
+}
+
+// emitBootCheckpoint emits the initial checkpoint written by main() before
+// execution begins, mirroring BootAndCheckpoint: it records the boot frame
+// (main).  The trace builder relies on this being the first checkpoint, as the
+// first shard is traced from boot.
+func (g *generator) emitBootCheckpoint(c *code) {
+	var mid, _ = g.program.HasModule("main")
+	//
+	c.commentf("boot checkpoint (main has no arguments, hence nil)")
+	c.linef("writeCheckpoint(%d, nil)", mid)
+}
+
+func (g *generator) emitCheckpointWriterMemories(c *code) {
+	var (
+		// Non-static memories, in module order.
+		memories []memInfo
+	)
+	// Extract memories
+	for id := range g.program.Modules() {
+		if info, ok := g.memByID[uint(id)]; ok && info.role != sromStatic {
+			memories = append(memories, info)
+		}
+	}
+	//
+	c.commentf("%d memories", len(memories))
+	c.linef("buf = binary.BigEndian.AppendUint32(buf, %d)", len(memories))
+	//
+	for _, m := range memories {
+		widths := widthsLiteral(g.cellByteWidths(m))
+		//
+		c.commentf("memory %q", m.name)
+		//
+		switch m.role {
+		case pagedScratch:
+			rows := pagedPageSize / uint64(len(m.geom.DataRegisters()))
+			c.linef("buf = encodePaged(buf, %d, %s, %s_stamp, %d, %s)", m.id, m.varName, m.varName, rows, widths)
+		case ramScratch:
+			c.linef("buf = encodeMemory(buf, %d, %s, %s_stamp, %s)", m.id, m.varName, m.varName, widths)
+		default:
+			c.linef("buf = encodeMemory(buf, %d, RamPage{%s, nil}, 0, %s)", m.id, m.varName, widths)
+		}
+	}
+}
+
+func (g *generator) emitCheckpointWriterHelpers(c *code) {
+	c.commentf("===============================================================================")
+	c.commentf("Checkpoint Encoders")
+	c.commentf("===============================================================================")
+	// encodeCell appends v big endian in exactly n bytes: the low n bytes of its
+	// 8-byte encoding, preceded by zero padding when n exceeds 8 (wide or native
+	// registers), in one append rather than one per byte.
+	c.line("")
+	c.line("func encodeCell(buf []byte, v uint64, n uint) []byte {")
+	c.line("var tmp [8]byte")
+	c.line("binary.BigEndian.PutUint64(tmp[:], v)")
+	c.line("for ; n > 8; n-- {")
+	c.line("buf = append(buf, 0)")
+	c.line("}")
+	c.line("return append(buf, tmp[8-n:]...)")
+	c.line("}")
+	c.line("")
+	// pageBytes returns the encoded size of the given number of cells packed round
+	// robin with the given widths (whole rows, plus a trailing partial row).
+	c.line("func pageBytes(cells int, widths []uint) uint {")
+	c.line("var row uint")
+	c.line("for _, w := range widths {")
+	c.line("row += w")
+	c.line("}")
+	c.line("n := uint(cells/len(widths)) * row")
+	c.line("for _, w := range widths[:cells%len(widths)] {")
+	c.line("n += w")
+	c.line("}")
+	c.line("return n")
+	c.line("}")
+	c.line("")
+	// encodePage appends one checkpoint page: u64 address, u32 len(data), data
+	// (cells packed big endian using widths[i % len(widths)] bytes for cell i),
+	// u32 len(stamps) and the row stamps (one u64 per row; none for memories
+	// which do not track timestamps, i.e. ROMs and WOMs).  The buffer is grown
+	// once up front, so the per-cell appends never reallocate.
+	c.line("func encodePage(buf []byte, address uint64, page RamPage, widths []uint) []byte {")
+	c.line("n := pageBytes(len(page.data), widths)")
+	c.line("buf = reserve(buf, 8+4+int(n)+4+8*len(page.stamps))")
+	c.line("buf = binary.BigEndian.AppendUint64(buf, address)")
+	c.line("buf = binary.BigEndian.AppendUint32(buf, uint32(n))")
+	c.line("for i, v := range page.data {")
+	c.line("buf = encodeCell(buf, v, widths[i%len(widths)])")
+	c.line("}")
+	c.line("buf = binary.BigEndian.AppendUint32(buf, uint32(len(page.stamps)))")
+	c.line("for _, v := range page.stamps {")
+	c.line("buf = binary.BigEndian.AppendUint64(buf, v)")
+	c.line("}")
+	c.line("return buf")
+	c.line("}")
+	c.line("")
+	// reserve ensures buf has capacity for n more bytes (a single, exact growth,
+	// avoiding append's doubling and its intermediate copies).
+	c.line("func reserve(buf []byte, n int) []byte {")
+	c.line("if cap(buf)-len(buf) < n {")
+	c.line("grown := make([]byte, len(buf), len(buf)+n)")
+	c.line("copy(grown, buf)")
+	c.line("return grown")
+	c.line("}")
+	c.line("return buf")
+	c.line("}")
+	c.line("")
+	// encodeMemory appends one memory header (u16 module, u64 clock) followed by
+	// a single page at address zero holding all cells (and row stamps, if any).
+	c.line("func encodeMemory(buf []byte, mid uint16, page RamPage, stamp uint64, widths []uint) []byte {")
+	c.commentf("module identifier")
+	c.line("buf = binary.BigEndian.AppendUint16(buf, mid)")
+	c.commentf("timestamp")
+	c.line("buf = binary.BigEndian.AppendUint64(buf, stamp)")
+	c.commentf("page count")
+	c.line("buf = binary.BigEndian.AppendUint32(buf, 1)")
+	c.line("return encodePage(buf, 0, page, widths)")
+	c.line("}")
+	c.line("")
+	//
+	if len(g.prams) > 0 {
+		// encodePaged is as encodeMemory, but with one page per allocated page of a
+		// paged memory, addressed by its first row (rows is rows per page).
+		c.line("func encodePaged(buf []byte, mid uint16, pages []RamPage, stamp," +
+			"rowsPerPage uint64, widths []uint) []byte {")
+		c.line("var n uint32")
+		c.line("for _, p := range pages {")
+		c.line("if p.data != nil {")
+		c.line("n++")
+		c.line("}")
+		c.line("}")
+		c.commentf("module identifier")
+		c.line("buf = binary.BigEndian.AppendUint16(buf, mid)")
+		c.commentf("timestamp")
+		c.line("buf = binary.BigEndian.AppendUint64(buf, stamp)")
+		c.commentf("page count")
+		c.line("buf = binary.BigEndian.AppendUint32(buf, n)")
+		c.line("for i, p := range pages {")
+		c.line("if p.data != nil {")
+		c.line("buf = encodePage(buf, uint64(i)*rowsPerPage, p, widths)")
+		c.line("}")
+		c.line("}")
+		c.line("return buf")
+		c.line("}")
+		c.line("")
+	}
+}
+
+// cellByteWidths returns, for each data lane of the given memory, the number
+// of bytes used to encode one cell of that lane in a checkpoint page.
+func (g *generator) cellByteWidths(info memInfo) []uint {
+	var (
+		regs   = info.geom.DataRegisters()
+		native = lword.ByteWidth(g.program.Field().BandWidth)
+		widths = make([]uint, len(regs))
+	)
+	//
+	for i, r := range regs {
+		widths[i] = cellByteWidth(r, native)
+	}
+	//
+	return widths
+}
+
+// cellByteWidth returns the number of bytes used to encode one cell of the
+// given register in a checkpoint.  This mirrors interpreter.Pack: the
+// register's bytewidth or, for native registers, that of the field's bandwidth
+// (given here as native).
+func cellByteWidth(r descriptor.Register[word.Uint], native uint) uint {
+	if r.IsNative() {
+		return native
+	}
+	//
+	return lword.ByteWidth(r.Bitwidth().Unwrap())
+}
+
+// checkpointArgs returns the limbs of the given (shard) function's non-stamp
+// input registers, in register order.  These are the arguments recorded in a
+// checkpoint (mirroring Function.InputsExStamps), and hence the parameters of
+// the generated writeCheckpoint.
+func (g *generator) checkpointArgs(fn *descFunction) ([]limb, error) {
+	var limbs []limb
+	//
+	for i := range fn.NumInputs() {
+		if fn.Register(regId(i)).IsStamp() {
+			continue
+		}
+		//
+		l, err := g.limbOf(fn, regId(i))
+		//
+		if err != nil {
+			return nil, err
+		}
+		//
+		limbs = append(limbs, l)
+	}
+	//
+	return limbs, nil
 }
 
 // widthsLiteral renders a Go []uint literal of data-line bit-widths.
@@ -887,62 +1227,91 @@ func widthsLiteral(widths []uint) string {
 // ===========================================================================
 
 // goFuncName returns the Go function name for a ZkC function.
-func goFuncName(fn *descFunction) string { return "fn_" + sanitize(fn.Name()) }
+func goFuncName(fn *descFunction) string { return "zkc_" + sanitize(fn.Name()) }
 
 // emitFunction emits a complete Go function: signature, register locals, body.
 // Input registers become parameters (named rN so the operand helpers address
 // them unchanged) and output registers become plain results.  The boot frame
 // ('main') takes no parameters — its inputs are zero, matching the boot frame's
 // zero-allocated activation record — and discards its outputs.
-func (g *generator) emitFunction(c *code, id uint, fn *descFunction) error {
+func (g *generator) emitFunction(c *code, id uint, fn *descFunction, cfg Config) error {
+	//
+	if cfg.CheckPointing.HasValue() {
+		var cp = cfg.CheckPointing.Unwrap()
+		//
+		if cp.ShardFunction == fn.Name() {
+			c.linef("// checkpointing clock for function \"%s\"", fn.Name())
+			c.linef("var clk_%s uint64 = %d", fn.Name(), cfg.CheckPointing.Unwrap().ShardSteps)
+		}
+	}
+	// NOTE: the boot function is guaranteed to have no arguments or returns.
+	if err := g.emitFunctionSignature(c, fn); err != nil {
+		return err
+	} else if err = g.emitFunctionBody(c, id, fn, cfg); err != nil {
+		return err
+	}
+	//
+	c.line("}")
+	c.line("")
+	//
+	return nil
+}
+
+func (g *generator) emitFunctionSignature(c *code, fn *descFunction) error {
 	var (
 		isBoot   = fn.Name() == "main"
-		ni       = fn.NumInputs()
-		no       = fn.NumOutputs()
-		regs     = fn.Registers()
+		nInputs  = fn.NumInputs()
+		nOutputs = fn.NumOutputs()
 		outNames []string
 		retType  string
 		paramFmt []string
-		params   = uint(0)
 	)
-
-	if !isBoot {
-		params = ni
-		for i := range ni {
-			l, err := g.limbOf(fn, regId(i))
-			if err != nil {
-				return err
-			}
-
-			if l.width > 64 {
-				paramFmt = append(paramFmt, fmt.Sprintf("%s, %s uint64", l.lo(), l.hiName()))
-			} else {
-				paramFmt = append(paramFmt, fmt.Sprintf("%s uint64", l.lo()))
-			}
+	// Parameters
+	for i := range nInputs {
+		l, err := g.limbOf(fn, regId(i))
+		if err != nil {
+			return err
 		}
 
-		for i := range no {
-			l, err := g.limbOf(fn, regId(ni+i))
-			if err != nil {
-				return err
-			}
-
-			outNames = append(outNames, l.lo())
-			if l.width > 64 {
-				outNames = append(outNames, l.hiName())
-			}
-		}
-
-		switch len(outNames) {
-		case 0:
-		case 1:
-			retType = " uint64"
-		default:
-			retType = " (" + strings.TrimSuffix(strings.Repeat("uint64, ", len(outNames)), ", ") + ")"
+		if l.width > 64 {
+			paramFmt = append(paramFmt, fmt.Sprintf("%s, %s uint64", l.lo(), l.hiName()))
+		} else {
+			paramFmt = append(paramFmt, fmt.Sprintf("%s uint64", l.lo()))
 		}
 	}
+	// Returns
+	for i := range nOutputs {
+		l, err := g.limbOf(fn, regId(nInputs+i))
+		if err != nil {
+			return err
+		}
 
+		outNames = append(outNames, l.lo())
+		if l.width > 64 {
+			outNames = append(outNames, l.hiName())
+		}
+	}
+	//
+	switch len(outNames) {
+	case 0:
+	case 1:
+		retType = " uint64"
+	default:
+		retType = " (" + strings.TrimSuffix(strings.Repeat("uint64, ", len(outNames)), ", ") + ")"
+	}
+	//
+	c.commentf("%s corresponds to ZkC function %q.", goFuncName(fn), fn.Name())
+	c.linef("func %s(%s)%s {", goFuncName(fn), strings.Join(paramFmt, ", "), retType)
+	//
 	g.cur = fnView{isBoot: isBoot, outNames: outNames}
+	//
+	return nil
+}
+
+func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction, cfg Config) error {
+	var (
+		regs = fn.Registers()
+	)
 	// Emit the body to a fixpoint: each pass replays the emitters (the
 	// analysis transfer function) over the whole body; label states stabilise
 	// within a few passes thanks to widening (see intervals).  The final
@@ -953,7 +1322,7 @@ func (g *generator) emitFunction(c *code, id uint, fn *descFunction) error {
 		savedBits, savedMP, savedHelpers = g.usesBits, g.usesModP, cloneHelpers(g.helpers)
 	)
 
-	g.iv = newIntervals(fn, isBoot, g.noIntervals)
+	g.iv = newIntervals(fn, g.config.NoIntervals)
 
 	for pass := 0; ; pass++ {
 		body = code{}
@@ -961,7 +1330,7 @@ func (g *generator) emitFunction(c *code, id uint, fn *descFunction) error {
 		g.helpers = cloneHelpers(savedHelpers)
 		g.iv.beginPass()
 
-		if err := g.emitFunctionBody(&body, id, fn); err != nil {
+		if err := g.emitFunctionVectors(&body, id, fn); err != nil {
 			return err
 		}
 
@@ -974,19 +1343,16 @@ func (g *generator) emitFunction(c *code, id uint, fn *descFunction) error {
 			g.iv.disabled = true
 		}
 	}
-
-	c.commentf("%s corresponds to ZkC function %q.", goFuncName(fn), fn.Name())
-	c.linef("func %s(%s)%s {", goFuncName(fn), strings.Join(paramFmt, ", "), retType)
 	// The self-tail-call back edge lands BEFORE the local declarations, so each
 	// iteration re-executes them and starts from a zeroed frame, exactly like
 	// the interpreter's frame reuse.
 	if g.cur.tailLoop {
 		c.line("entry:")
 	}
-
+	//
 	used, read := usedRegisters(body.String())
-
-	for i := params; i < uint(len(regs)); i++ {
+	// Variable declarations
+	for i := fn.NumInputs(); i < uint(len(regs)); i++ {
 		l, err := g.limbOf(fn, regId(i))
 		if err != nil {
 			return err
@@ -1010,11 +1376,32 @@ func (g *generator) emitFunction(c *code, id uint, fn *descFunction) error {
 			}
 		}
 	}
+	//
+	if cfg.CheckPointing.HasValue() {
+		if strategy := cfg.CheckPointing.Unwrap(); strategy.ShardFunction == fn.Name() {
+			// The checkpoint records this function's (non-stamp) arguments,
+			// packed from the parameters at the point of capture.
+			args, err := g.checkpointArgs(fn)
+			//
+			if err != nil {
+				return err
+			}
+			//
+			c.commentf("decrement clock")
+			c.linef("clk_%s = clk_%s - 1", strategy.ShardFunction, strategy.ShardFunction)
+			c.linef("if clk_%s == 0 {", strategy.ShardFunction)
+			c.commentf("reset clock")
+			c.linef("clk_%s = %d", strategy.ShardFunction, strategy.ShardSteps)
+			c.commentf("capture checkpoint")
+			g.emitCheckpointArgs(c, fn, args)
+			c.linef("writeCheckpoint(%d, args)", id)
+			c.linef("}")
+		}
+	}
 
+	//
 	c.raw(body.String())
-	c.line("}")
-	c.line("")
-
+	//
 	return nil
 }
 
@@ -1074,12 +1461,12 @@ func (g *generator) returnOk() string {
 // Instruction emission
 // ===========================================================================
 
-// emitFunctionBody walks the (vectorised) code, emitting one block per micro-
+// emitFunctionVectors walks the (vectorised) code, emitting one block per micro-
 // instruction in program order, preceded by a label wherever a skip or jump
 // targets that position.  A final (unreachable for well-formed code) panic
 // satisfies Go's terminating-statement requirement and models falling off the
 // end of the function.
-func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction) error {
+func (g *generator) emitFunctionVectors(c *code, id uint, fn *descFunction) error {
 	mapping := g.program.EnvironmentOf(uint16(id))
 	code := fn.Vectors()
 	labels := collectLabels(code)
@@ -1312,7 +1699,7 @@ func hasNativeDataLine(info memInfo) bool {
 }
 
 func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, error) {
-	info := memInfo{name: m.Name(), varName: g.uniqueName("mem_" + sanitize(m.Name())), geom: *m}
+	info := memInfo{name: m.Name(), varName: g.uniqueName("zkc_" + sanitize(m.Name())), geom: *m}
 	// All memory traffic moves through uint64 cells.
 	for _, r := range append(info.geom.AddressRegisters(), info.geom.DataRegisters()...) {
 		if !r.IsNative() && r.Bitwidth().Unwrap() > 64 {
@@ -1349,42 +1736,12 @@ func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, er
 	case m.IsWriteOnly():
 		info.role = womOutput
 	case m.IsReadWrite():
-		if cells, ok := fixedScratchSize(m); ok {
-			info.role = fixedScratch
-			info.cells = cells
-		} else {
-			info.role = ramScratch
-		}
+		info.role = ramScratch
 	default:
 		return info, fmt.Errorf("gogen: unsupported memory %q (%T)", m.Name(), m)
 	}
 
 	return info, nil
-}
-
-// fixedScratchSize returns the complete flattened cell count when the memory
-// geometry proves it is small. A fixed array is semantics-preserving only
-// when it covers every address accepted by the descriptor.
-func fixedScratchSize(m *descriptor.Memory[word.Uint]) (uint64, bool) {
-	cells := uint64(m.NumOutputs())
-	if cells == 0 || cells > maxFixedScratchCells {
-		return 0, false
-	}
-
-	for _, r := range m.AddressRegisters() {
-		if r.IsNative() {
-			return 0, false
-		}
-
-		w := r.Bitwidth().Unwrap()
-		if w >= 64 || cells > maxFixedScratchCells>>w {
-			return 0, false
-		}
-
-		cells <<= w
-	}
-
-	return cells, true
 }
 
 // toU64s converts SROM contents into plain uint64s for baking.
