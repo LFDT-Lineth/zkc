@@ -3,6 +3,7 @@ include "utils.zkc"
 include "memory.zkc"
 include "write.zkc"
 include "type.zkc"
+include "keccakf.zkc"
 
 // Implementation of the keccak hash function
 // - state size = 1600 bits
@@ -14,9 +15,6 @@ include "type.zkc"
 
 // 5x5xW state with W = 64 (5x5x64 = 1600 bits)
 type lane = u64
-
-// KECCAK_ROUNDS = number of rounds = 12 + 2 * l with 2^l = W
-const KECCAK_ROUNDS:u5 = 24
 
 // ===================================================================
 // Main function
@@ -167,119 +165,68 @@ fn squeezing_phase<ram, keccak_state>(output_address:Address) {
 // The Keccak-f permutation
 // ===================================================================
 
+// keccak_f applies the Keccak-f[1600] permutation to the state held in keccak_state.
+// Lane (x, y) lives at keccak_state[ROWx + y] and is element x+5y of the array passed to
+// keccakF1600.
 fn keccak_f<keccak_state>() {
-    for j:u5 = 0; j<KECCAK_ROUNDS; j = j + 1 {
-        var round_constant:u64 = RC[j]
-        keccak_f_round(round_constant)
-    }
-}
-
-fn keccak_f_round<keccak_state>(round_constant:u64) {
-    theta()
-    rho()
-    pi()
-    chi()
-    iota(round_constant)
-}
-
-// THETA: column parity mixing step
-// C[x] = A[x,0] ^ A[x,1] ^ A[x,2] ^ A[x,3] ^ A[x,4]
-// D[x] = C[x-1] ^ rot(C[x+1], 1)
-// A[x,y] = A[x,y] ^ D[x]
-fn theta<keccak_state>() {
-
-    keccak_state[C] = keccak_state[ROW0] ^ keccak_state[ROW0 + 1] ^ keccak_state[ROW0 + 2] ^ keccak_state[ROW0 + 3] ^ keccak_state[ROW0 + 4]
-    keccak_state[C + 1] = keccak_state[ROW1] ^ keccak_state[ROW1 + 1] ^ keccak_state[ROW1 + 2] ^ keccak_state[ROW1 + 3] ^ keccak_state[ROW1 + 4]
-    keccak_state[C + 2] = keccak_state[ROW2] ^ keccak_state[ROW2 + 1] ^ keccak_state[ROW2 + 2] ^ keccak_state[ROW2 + 3] ^ keccak_state[ROW2 + 4]
-    keccak_state[C + 3] = keccak_state[ROW3] ^ keccak_state[ROW3 + 1] ^ keccak_state[ROW3 + 2] ^ keccak_state[ROW3 + 3] ^ keccak_state[ROW3 + 4]
-    keccak_state[C + 4] = keccak_state[ROW4] ^ keccak_state[ROW4 + 1] ^ keccak_state[ROW4 + 2] ^ keccak_state[ROW4 + 3] ^ keccak_state[ROW4 + 4]
-
-    for i_minus_one:u5 = 0; i_minus_one<5; i_minus_one = i_minus_one + 1 {
-        var i:u5 = i_minus_one + 1
-        keccak_state[D + (mod5[i] as u7)] = keccak_state[C + (i_minus_one as u7)] ^ bit_rotl64(keccak_state[C + (mod5[i + 1] as u7)], 1)
-    }
-
-    for j:u7 = 0; j<5; j = j + 1 {
-        keccak_state[ROW0 + j] = keccak_state[ROW0 + j] ^ keccak_state[D]
-        keccak_state[ROW1 + j] = keccak_state[ROW1 + j] ^ keccak_state[D + 1]
-        keccak_state[ROW2 + j] = keccak_state[ROW2 + j] ^ keccak_state[D + 2]
-        keccak_state[ROW3 + j] = keccak_state[ROW3 + j] ^ keccak_state[D + 3]
-        keccak_state[ROW4 + j] = keccak_state[ROW4 + j] ^ keccak_state[D + 4]
-    }
-
-}
-
-// RHO: lane rotations step
-// B[y, (2x+3y) mod 5] = rot(A[x,y], r[x,y])
-fn rho<keccak_state>() {
-
-    for j:u3 = 0; j<5; j = j + 1 {
-        keccak_state[ROW0 + (j as u7)] = bit_rotl64(keccak_state[ROW0 + (j as u7)], rot_offset[0, j])
-        keccak_state[ROW1 + (j as u7)] = bit_rotl64(keccak_state[ROW1 + (j as u7)], rot_offset[1, j])
-        keccak_state[ROW2 + (j as u7)] = bit_rotl64(keccak_state[ROW2 + (j as u7)], rot_offset[2, j])
-        keccak_state[ROW3 + (j as u7)] = bit_rotl64(keccak_state[ROW3 + (j as u7)], rot_offset[3, j])
-        keccak_state[ROW4 + (j as u7)] = bit_rotl64(keccak_state[ROW4 + (j as u7)], rot_offset[4, j])
-    }
-}
-
-// PI: lane permutation step
-// A[x,y] → B[y, (2x+3y) mod 5]
-fn pi<keccak_state>() {
-
-    // we apply bY[Z] = state_rowX[Y] with Z = (2*X + 3*Y) mod 5
-    keccak_state[B0] = keccak_state[ROW0]
-    keccak_state[B1 + 3] = keccak_state[ROW0 + 1]
-    keccak_state[B2 + 1] = keccak_state[ROW0 + 2]
-    keccak_state[B3 + 4] = keccak_state[ROW0 + 3]
-    keccak_state[B4 + 2] = keccak_state[ROW0 + 4]
-    keccak_state[B0 + 2] = keccak_state[ROW1]
-    keccak_state[B1] = keccak_state[ROW1 + 1]
-    keccak_state[B2 + 3] = keccak_state[ROW1 + 2]
-    keccak_state[B3 + 1] = keccak_state[ROW1 + 3]
-    keccak_state[B4 + 4] = keccak_state[ROW1 + 4]
-    keccak_state[B0 + 4] = keccak_state[ROW2]
-    keccak_state[B1 + 2] = keccak_state[ROW2 + 1]
-    keccak_state[B2] = keccak_state[ROW2 + 2]
-    keccak_state[B3 + 3] = keccak_state[ROW2 + 3]
-    keccak_state[B4 + 1] = keccak_state[ROW2 + 4]
-    keccak_state[B0 + 1] = keccak_state[ROW3]
-    keccak_state[B1 + 4] = keccak_state[ROW3 + 1]
-    keccak_state[B2 + 2] = keccak_state[ROW3 + 2]
-    keccak_state[B3] = keccak_state[ROW3 + 3]
-    keccak_state[B4 + 3] = keccak_state[ROW3 + 4]
-    keccak_state[B0 + 3] = keccak_state[ROW4]
-    keccak_state[B1 + 1] = keccak_state[ROW4 + 1]
-    keccak_state[B2 + 4] = keccak_state[ROW4 + 2]
-    keccak_state[B3 + 2] = keccak_state[ROW4 + 3]
-    keccak_state[B4] = keccak_state[ROW4 + 4]
-}
-
-// CHI: non-linear step
-// A[x,y] = B[x,y] ^ ((not B[x+1,y]) and B[x+2,y])
-fn chi<keccak_state>() {
-
-    for j:u7 = 0; j<5; j = j + 1 {
-        keccak_state[ROW0 + j] = keccak_state[B0 + j] ^ ((~keccak_state[B1 + j]) & keccak_state[B2 + j])
-        keccak_state[ROW1 + j] = keccak_state[B1 + j] ^ ((~keccak_state[B2 + j]) & keccak_state[B3 + j])
-        keccak_state[ROW2 + j] = keccak_state[B2 + j] ^ ((~keccak_state[B3 + j]) & keccak_state[B4 + j])
-        keccak_state[ROW3 + j] = keccak_state[B3 + j] ^ ((~keccak_state[B4 + j]) & keccak_state[B0 + j])
-        keccak_state[ROW4 + j] = keccak_state[B4 + j] ^ ((~keccak_state[B0 + j]) & keccak_state[B1 + j])
-    }
-
-}
-
-// IOTA: round constant step
-// A[0,0] = A[0,0] ^ RC
-fn iota<keccak_state>(round_constant:u64) {
-    keccak_state[ROW0] = keccak_state[ROW0] ^ round_constant
-}
-
-// ===================================================================
-// Helper functions
-// ===================================================================
-
-// rotate left by n bits
-fn bit_rotl64(word:u64, n:u6) -> (res:u64) {
-    var shift:u7 = 64 - (n as u7)
-    res = (word << n) | (word >> shift)
+    var a:[lane;25]
+    var b0:u64, b1:u64, b2:u64, b3:u64, b4:u64
+    var b5:u64, b6:u64, b7:u64, b8:u64, b9:u64
+    var b10:u64, b11:u64, b12:u64, b13:u64, b14:u64
+    var b15:u64, b16:u64, b17:u64, b18:u64, b19:u64
+    var b20:u64, b21:u64, b22:u64, b23:u64, b24:u64
+    // Read out state
+    a[0] = keccak_state[ROW0]
+    a[1] = keccak_state[ROW1]
+    a[2] = keccak_state[ROW2]
+    a[3] = keccak_state[ROW3]
+    a[4] = keccak_state[ROW4]
+    a[5] = keccak_state[ROW0 + 1]
+    a[6] = keccak_state[ROW1 + 1]
+    a[7] = keccak_state[ROW2 + 1]
+    a[8] = keccak_state[ROW3 + 1]
+    a[9] = keccak_state[ROW4 + 1]
+    a[10] = keccak_state[ROW0 + 2]
+    a[11] = keccak_state[ROW1 + 2]
+    a[12] = keccak_state[ROW2 + 2]
+    a[13] = keccak_state[ROW3 + 2]
+    a[14] = keccak_state[ROW4 + 2]
+    a[15] = keccak_state[ROW0 + 3]
+    a[16] = keccak_state[ROW1 + 3]
+    a[17] = keccak_state[ROW2 + 3]
+    a[18] = keccak_state[ROW3 + 3]
+    a[19] = keccak_state[ROW4 + 3]
+    a[20] = keccak_state[ROW0 + 4]
+    a[21] = keccak_state[ROW1 + 4]
+    a[22] = keccak_state[ROW2 + 4]
+    a[23] = keccak_state[ROW3 + 4]
+    a[24] = keccak_state[ROW4 + 4]
+    // Apply permutation
+    b0, b1, b2, b3, b4, b5, b6, b7, b8, b9, b10, b11, b12, b13, b14, b15, b16, b17, b18, b19, b20, b21, b22, b23, b24 = keccakF1600(a)
+    // Write back state
+    keccak_state[ROW0] = b0
+    keccak_state[ROW1] = b1
+    keccak_state[ROW2] = b2
+    keccak_state[ROW3] = b3
+    keccak_state[ROW4] = b4
+    keccak_state[ROW0 + 1] = b5
+    keccak_state[ROW1 + 1] = b6
+    keccak_state[ROW2 + 1] = b7
+    keccak_state[ROW3 + 1] = b8
+    keccak_state[ROW4 + 1] = b9
+    keccak_state[ROW0 + 2] = b10
+    keccak_state[ROW1 + 2] = b11
+    keccak_state[ROW2 + 2] = b12
+    keccak_state[ROW3 + 2] = b13
+    keccak_state[ROW4 + 2] = b14
+    keccak_state[ROW0 + 3] = b15
+    keccak_state[ROW1 + 3] = b16
+    keccak_state[ROW2 + 3] = b17
+    keccak_state[ROW3 + 3] = b18
+    keccak_state[ROW4 + 3] = b19
+    keccak_state[ROW0 + 4] = b20
+    keccak_state[ROW1 + 4] = b21
+    keccak_state[ROW2 + 4] = b22
+    keccak_state[ROW3 + 4] = b23
+    keccak_state[ROW4 + 4] = b24
 }
