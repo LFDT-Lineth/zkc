@@ -39,6 +39,8 @@ import (
 // the callee's input/output registers.
 // - a memory access's lookup maps the accessor's address/data registers
 // onto the memory table's address/data columns.
+// - a cast's lookup (or vanishing constraint) checks its target register fits
+// within the cast's width (see emitCastCheck).
 //
 // Calls into a global function are the exception: they are placed "on the bus"
 // instead, since caller and callee may reside in different shards (see
@@ -107,6 +109,8 @@ func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F],
 						emitMemoryLookup(mod, ctx, uint(pc), entry.cc, c.Id,
 							mirc.ToRegisterIds(c.Address), mirc.ToRegisterIds(c.Data), srcSelector, p.program)
 					}
+				case *vm.BytecodeCheckCast[W]:
+					p.emitCastCheck(mod, ctx, uint(pc), entry.cc, vec, writeMap, c, srcSelector)
 				}
 			}
 		}
@@ -131,7 +135,7 @@ type lookupEntry[W vm.Word[W]] struct {
 }
 
 // groupLookupsByCondition partitions the lookup-emitting bytecodes of a vector
-// (calls and memory accesses) by the branch condition under
+// (calls, memory accesses and casts) by the branch condition under
 // which they execute.  Conditions are shortened against the given one-hot
 // groups first (see rewriteOneHotConditions), so that accesses within a
 // switch's default body are gated on the default bit rather than on the
@@ -143,8 +147,8 @@ func groupLookupsByCondition[W vm.Word[W]](codes []vm.Bytecode[W], branchTable d
 outer:
 	for cc, code := range codes {
 		switch code.(type) {
-		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W]:
-			// functiun call and memory access emit lookups
+		case *vm.BytecodeCall[W], *vm.BytecodeReadWrite[W], *vm.BytecodeCheckCast[W]:
+			// function call, memory access and cast emit lookups
 		default:
 			continue
 		}

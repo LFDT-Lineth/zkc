@@ -1,0 +1,25 @@
+pub input data(address:u16) -> (word:u32)
+pub output narrow(address:u16) -> (byte:u8)
+pub output tiny(address:u16) -> (bits:u2)
+pub output wide(address:u16) -> (word:u24)
+pub output full(address:u16) -> (word:u32)
+
+// Prove that a cast only constrains the rows on which it executes: a value
+// overflowing the cast width is accepted when the branch holding the cast is
+// not taken.  The casts cover each lowering: a vanishing constraint (u2), a
+// static table lookup (u8) and, depending on the field, a static or recursive
+// range check (u24).
+fn main() {
+    var x:u32 = data[0]
+    var sel:u32 = data[1]
+    if sel == 0 {
+        narrow[0] = x as u8
+    } else if sel == 1 {
+        tiny[0] = x as u2
+    } else if sel == 2 {
+        wide[0] = x as u24
+    } else {
+        full[0] = x
+    }
+    return
+}

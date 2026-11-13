@@ -17,11 +17,15 @@ import (
 	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/math"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/util/dfa"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -141,6 +145,9 @@ func neededRangeWidths[W Word[W]](modules []descriptor.Module[W], field field.Co
 			}
 			// Seed from every checked register.
 			worklist.AddChecked(mod.Registers()...)
+			// Seed from every cast, which is range-checked against its own
+			// (narrower) width rather than that of its target register.
+			worklist.AddCasts(mod.Vectors()...)
 		case *descriptor.Memory[W]:
 			// TODO: the need for this highlights some problems with the current
 			// implementation of memory.  Specifically, that some columns are
@@ -346,6 +353,16 @@ func addRangeCalls[W Word[W]](modules []descriptor.Module[W],
 // Jmp terminator in each vector of the given function.  Vector.Map remaps skip
 // offsets, so a skip which targeted the terminator instead lands on the first
 // check and falls through to it.
+//
+// Likewise, every cast "check r:uN" with N > maxStaticWidth is followed by a
+// call into $range_uN(r).  The cast itself is retained, since it is what fails
+// execution on overflow (the call copies its argument without any width check).
+// The call populates the recursive range module and, being on the same path as
+// the cast, is lowered into a lookup gated by the cast's branch condition.  When
+// r may be written later on the same row, the call is passed a snapshot of r
+// taken just after the cast (see FlattenLookupAccess for why).
+// Narrower casts are instead lowered directly into conditional lookups (or
+// vanishing constraints) when generating constraints.
 func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 	maxStaticWidth uint) descriptor.Module[W] {
 	fn, ok := mod.(*Function[W])
@@ -361,35 +378,107 @@ func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 		// For registers of width <= maxStaticWidth, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
 		if w := registerWidthOrZero(r); r.IsRangeChecked() && w > maxStaticWidth {
-			mid, ok := idOf[rangeModuleName(w)]
-			// Sanity check module was found
-			util.Assert(ok, "missing range module for u%d", w)
-			//
-			checks = append(checks, rangeCheck[W](mid, bytecode.RegisterId(j), w, maxStaticWidth))
+			checks = append(checks, rangeCheck[W](rangeModuleId(idOf, w), bytecode.RegisterId(j), w, maxStaticWidth))
 		}
 	}
 	//
-	if len(checks) == 0 {
+	if len(checks) == 0 && !hasWideCast(fn, maxStaticWidth) {
 		return mod
 	}
-	// Insert the check block before every Ret / Jmp in each vector.
+	// Insert the check block before every Ret / Jmp in each vector, and a range
+	// call after every wide cast.
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
+		alloc   = split.NewAllocator(fn)
+		// snapshots identifies the registers allocated to snapshot the target
+		// of a wide cast.
+		snapshots bit.Set
 	)
 	//
 	for i, vec := range vectors {
-		nvecs[i] = vec.Map(func(_ uint, ith Bytecode[W]) []Bytecode[W] {
-			switch ith.(type) {
+		var reaches = vec.ReachMap()
+		//
+		nvecs[i] = vec.Map(func(idx uint, ith Bytecode[W]) []Bytecode[W] {
+			switch c := ith.(type) {
 			case *bytecode.Ret[W], *bytecode.Jmp[W]:
 				return append(slices.Clone(checks), ith)
+			case *bytecode.CheckCast[W]:
+				var (
+					w      = uint(c.Bitwidth)
+					target = c.Target
+					codes  = []Bytecode[W]{ith}
+				)
+				//
+				if w <= maxStaticWidth {
+					return codes
+				}
+				// The lookup gluing the call to $range_uN reads its argument's
+				// column on this row.  If the cast's target may be written later
+				// on this row, that column holds the later value and, hence, the
+				// argument is snapshotted (as done by FlattenLookupAccess for
+				// ordinary calls).  The snapshot follows the cast so that it
+				// inherits the narrowed bitwidth of the target.
+				if isWrittenFrom(vec, reaches, idx, target, alloc) {
+					tmp := alloc.Allocate("fla", alloc.Register(target).Bitwidth())
+					snapshots.Insert(uint(tmp))
+					codes = append(codes, bytecode.Assign[W](tmp, target))
+					target = tmp
+				}
+				//
+				return append(codes, rangeCheck[W](rangeModuleId(idOf, w), target, w, maxStaticWidth))
 			default:
 				return []Bytecode[W]{ith}
 			}
 		})
 	}
+	// A snapshot is a copy of a register, so requires no range check of its own.
+	registers := array.Map(alloc.Registers(), func(i uint, r Register[W]) Register[W] {
+		if snapshots.Contains(i) {
+			return bytecode.NewRegister(r.Kind().WithRangeCheck(false), r.Name(), r.Bitwidth(), r.Padding())
+		}
+		//
+		return r
+	})
 	//
-	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), nvecs)
+	return descriptor.NewFunction(fn.Name(), registers, fn.Kind(), fn.Effects(), nvecs)
+}
+
+// isWrittenFrom determines whether the given register may be written by the
+// bytecode at offset "from", or by any bytecode on some path through it.
+func isWrittenFrom[W Word[W]](vec BytecodeVector[W], reaches dfa.Result[dfa.Reaches], from uint,
+	reg bytecode.RegisterId, registers RegisterMap[W]) bool {
+	//
+	for j := from; j < uint(len(vec.Bytecodes)); j++ {
+		if isReachableFrom(reaches, from, j) && isDefinedIn(reg, vec.Bytecodes[j], registers) {
+			return true
+		}
+	}
+	//
+	return false
+}
+
+// rangeModuleId returns the module id of $range_u{w}, which must exist.
+func rangeModuleId(idOf map[string]uint, w uint) uint {
+	mid, ok := idOf[rangeModuleName(w)]
+	// Sanity check module was found
+	util.Assert(ok, "missing range module for u%d", w)
+	//
+	return mid
+}
+
+// hasWideCast determines whether the given function contains a cast whose width
+// exceeds maxStaticWidth (hence, requiring a call into a recursive range module).
+func hasWideCast[W Word[W]](fn *Function[W], maxStaticWidth uint) bool {
+	for _, vec := range fn.Vectors() {
+		for _, code := range vec.Bytecodes {
+			if cast, ok := code.(*bytecode.CheckCast[W]); ok && uint(cast.Bitwidth) > maxStaticWidth {
+				return true
+			}
+		}
+	}
+	//
+	return false
 }
 
 // BitwidthSet is a worklist data structure used to assist with decomposing
@@ -430,6 +519,18 @@ func (p *BitwidthSet) AddChecked[W word.Word[W]](registers ...descriptor.Registe
 			// NOTE: a native registers cannot be range checked, hence Unwrap()
 			// here is safe.
 			p.Push(reg.Bitwidth().Unwrap())
+		}
+	}
+}
+
+// AddCasts adds the bitwidth of every CheckCast occurring in the given vectors
+// to this worklist.
+func (p *BitwidthSet) AddCasts[W word.Word[W]](vectors ...BytecodeVector[W]) {
+	for _, vec := range vectors {
+		for _, code := range vec.Bytecodes {
+			if cast, ok := code.(*bytecode.CheckCast[W]); ok {
+				p.Push(uint(cast.Bitwidth))
+			}
 		}
 	}
 }
