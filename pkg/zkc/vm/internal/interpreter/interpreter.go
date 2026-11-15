@@ -2406,10 +2406,11 @@ func executeReadRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	)
 	//
 	address = decodeAddress(addr, ram.Descriptor(), stack)
-	// One logical access = one timestamp shared by every data lane: tick once,
-	// before touching any lane.  (ndata == 0 would tick without reading a lane;
-	// harmless but unused -- its only conceivable use is a bare access counter.)
-	ram.Tick()
+	// One logical access = one timestamp shared by every data lane: stamp once,
+	// before touching any lane (this also allocates the accessed row).  (ndata
+	// == 0 would stamp without reading a lane; harmless but unused -- its only
+	// conceivable use is a bare access counter.)
+	ram.Stamp(address)
 	//
 	for data.HasNext() {
 		//nolint
@@ -2436,7 +2437,7 @@ func executeWriteRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W,
 	address = decodeAddress(addr, ram.Descriptor(), stack)
 	// One logical access = one timestamp shared by every data lane (see
 	// executeReadRam_sn for the ndata == 0 note).
-	ram.Tick()
+	ram.Stamp(address)
 	//
 	for data.HasNext() {
 		//nolint
@@ -2463,7 +2464,7 @@ func executeReadPagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []W
 	address = decodeAddress(addr, pram.Descriptor(), stack)
 	// One logical access = one timestamp shared by every data lane (see
 	// executeReadRam_sn for the ndata == 0 note).
-	pram.Tick()
+	pram.Stamp(address)
 	//
 	for data.HasNext() {
 		//nolint
@@ -2490,7 +2491,7 @@ func executeWritePagedRam_sn[W word.Word[W]](pc uint32, codes []uint32, stack []
 	address = decodeAddress(addr, pram.Descriptor(), stack)
 	// One logical access = one timestamp shared by every data lane (see
 	// executeReadRam_sn for the ndata == 0 note).
-	pram.Tick()
+	pram.Stamp(address)
 	//
 	for data.HasNext() {
 		//nolint

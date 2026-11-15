@@ -23,17 +23,14 @@ import (
 )
 
 // runGogenExecutionTest cross-checks the generated-Go ("native") executor against
-// a test case: it generates Go from the word machine (over Uint — the same
-// machine the reference executor interprets), compiles it once (cached), runs it
-// on the test inputs as a subprocess, and verifies the outputs and accept/reject
-// verdict match — exactly as runExecutionTest does for a Core.
+// a test case: it runs the given (pre-compiled) gogen binary on the test inputs
+// as a subprocess, and verifies the outputs and accept/reject verdict match —
+// exactly as runExecutionTest does for a Core.
 //
-// Programs the generator cannot yet handle (wide registers/constants/moduli, …)
-// are skipped rather than failed: gogen coverage grows over time.
 // Note: runGogenExecutionTest shares its *testing.T with the whole CheckValid run
 // (there is no enclosing t.Run), so it must never call t.Skip / t.Fatal — doing so
-// would abort the surrounding bytecode and constraint checks.  Unsupported programs
-// are logged and skipped; only genuine mismatches use t.Errorf.
+// would abort the surrounding bytecode and constraint checks.  Hence, mismatches
+// and internal failures are reported via t.Errorf.
 func runGogenExecutionTest(t *testing.T, program vm.Program[vm.Uint], binary vm.GoGenBinary, test TestVector) {
 	var (
 		_, outputs = decodeInputsOutputs(t, program, test.data)

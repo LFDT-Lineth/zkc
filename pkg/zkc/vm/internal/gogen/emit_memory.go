@@ -170,11 +170,11 @@ func (g *generator) emitAccessPrologue(c *code, mi memInfo, start string, width 
 	switch mi.role {
 	case ramScratch:
 		c.linef("start := %s", start)
-		c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
-		c.linef("ramStamp(%s_stamp, &%s, %s, start+%d)", mi.varName, mi.varName, rowExpr(width), width)
+		c.linef("stamp_%s = stamp_%s + 1", mi.varName, mi.varName)
+		c.linef("ramStamp(stamp_%s, &%s, %s, start+%d)", mi.varName, mi.varName, rowExpr(width), width)
 	case pagedScratch:
-		c.linef("%s_stamp = %s_stamp + 1", mi.varName, mi.varName)
-		c.linef("page, offset := pagedRamStamp(%s_stamp, &%s, %s, %d)", mi.varName, mi.varName, start, width)
+		c.linef("stamp_%s = stamp_%s + 1", mi.varName, mi.varName)
+		c.linef("page, offset := pagedRamStamp(stamp_%s, &%s, %s, %d)", mi.varName, mi.varName, start, width)
 	default:
 		c.linef("start := %s", start)
 	}

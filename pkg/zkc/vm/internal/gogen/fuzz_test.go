@@ -58,7 +58,7 @@ func TestGenFuzz(t *testing.T) {
 				binary, err := gogen.Compile(m, gogen.DEFAULT_CONFIG)
 				//
 				if err != nil {
-					t.Fatalf("GenerateGo: %v", err)
+					t.Fatalf("Compile: %v", err)
 				}
 				//
 				registerCleanUp(t, binary)

@@ -11,8 +11,8 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 // This test lives in an external package (gogen_test) rather than package gogen:
-// it drives the generator through the public vm.GenerateGo entry point, and
-// vm imports gogen — so an internal test would form an import cycle.
+// it relies on the public vm API (programs, words, encodings), and vm imports
+// gogen — so an internal test would form an import cycle.
 package gogen_test
 
 import (
@@ -468,8 +468,8 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Pro
 		t.Fatalf("codegen: %v", errs)
 		return p
 	} else if fastMode {
-		// NOTE: the program stays in the Uint representation (GenerateGo
-		// requires it), but its registers are split against a bounded word.
+		// NOTE: the program stays in the Uint representation (gogen requires
+		// it), but its registers are split against a bounded word.
 		return vm.TransformForExecutionRaw[vm.Uint, vm.Uint](p, vm.WORD_UINT128, vm.DEFAULT_TRANSFORMS)
 	} else {
 		return vm.TransformForTracing[vm.Uint, vm.Uint](p, vm.DEFAULT_TRANSFORMS)
@@ -514,7 +514,7 @@ func TestGenValidGo(t *testing.T) {
 			t.Run(name+"/"+shape.name, func(t *testing.T) {
 				out, err := gogen.Generate(compileUint(t, src, shape.fastMode), gogen.Config{})
 				if err != nil {
-					t.Fatalf("GenerateGo: %v", err)
+					t.Fatalf("Generate: %v", err)
 				}
 
 				if _, err := format.Source([]byte(out)); err != nil {
@@ -813,7 +813,7 @@ func TestGenDifferential(t *testing.T) {
 
 				binary, err := gogen.Compile(p, gogen.DEFAULT_CONFIG)
 				if err != nil {
-					t.Fatalf("GenerateGo: %v", err)
+					t.Fatalf("Compile: %v", err)
 				}
 				//
 				registerCleanUp(t, binary)
@@ -852,7 +852,7 @@ func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 		binary, err = gogen.Compile(compileUint(t, doubleSrc, false), gogen.DEFAULT_CONFIG)
 	)
 	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 	//
 	registerCleanUp(t, binary)

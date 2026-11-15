@@ -278,6 +278,8 @@ func init() {
 	traceCmd.Flags().Bool("inspect", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 	rootCmd.AddCommand(traceCmd)
+	// Enforce gogen only usable with sharding (for now).
+	traceFlags.Require("gogen", "sharding")
 }
 
 func parseShardingConfig(spec string) vm.ShardingStrategy {

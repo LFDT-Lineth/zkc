@@ -139,8 +139,8 @@ func formatBase(f util.Format) int {
 // emitFail renders a FAIL instruction.  With no message chunks it panics with
 // the bare "machine panic" the interpreter reports; otherwise it formats the
 // message exactly as the interpreter does and panics with "machine panic:
-// <msg>".  The Run entry point recovers the failure into its error result,
-// which the harness relays on stderr.  FAIL is always compiled (non-verbose
+// <msg>".  The harness's failureHandler recovers the failure and relays it on
+// stderr (exiting with code 1).  FAIL is always compiled (non-verbose
 // mode only strips printf), so the message path is live in both modes.
 func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Uint]) error {
 	if len(x.Chunks) == 0 {
@@ -279,13 +279,13 @@ func (g *generator) multiLimbBig(fn *descFunction, regs []regId) (string, error)
 }
 
 // emitPrintfHelpers writes the printf support helpers actually referenced by
-// the generated code: the buffered stderr writer (flushed by Run), the
+// the generated code: the buffered stderr writer (flushed by main), the
 // width-padding writer dbgPad, the narrow-integer (dbgU) and big.Int (dbgB)
 // formatters for the hot DEBUG path, the big.Int limb folders (u128/catU64) and
 // chr (%c in a formatted FAIL).
 func (g *generator) emitPrintfHelpers(c *code) {
 	if g.usesHelper(helperDbgWriter) {
-		c.line("// dbgw buffers printf output; Run flushes it. Per-instruction printf is")
+		c.line("// dbgw buffers printf output; main flushes it. Per-instruction printf is")
 		c.line("// the hot path of a verbose run, so an unbuffered os.Stderr write (a")
 		c.line("// syscall each) would dominate; one bufio.Writer amortises that.")
 		c.line("var dbgw = bufio.NewWriter(os.Stderr)")

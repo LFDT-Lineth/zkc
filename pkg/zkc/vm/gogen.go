@@ -22,10 +22,10 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// GoGenConfig controls the shape of the Go source GenerateGo produces.
+// GoGenConfig controls the shape of the Go source GoGenGenerate produces.
 type GoGenConfig = gogen.Config
 
-// GoGenBinary gives a handle to a compiler gogen binary executable.
+// GoGenBinary gives a handle to a compiled gogen binary executable.
 type GoGenBinary = gogen.Binary
 
 // GoGenMachineFailure is used to indicate when a gogen binary leads to a
@@ -39,10 +39,20 @@ var GoGenMachineFailure = gogen.ErrMachineFailure
 // reference executor interprets), so the generated semantics mirror the
 // reference executor, with no register splitting or word narrowing in the way.
 //
-// The result exposes Run(inputs) (outputs, error); with cfg.Package == "main"
-// (the default) a JSON stdin/stdout harness is appended, so the artefact can be
-// compiled and run as a subprocess for differential testing and benchmarking.
+// The result is a standalone package main whose harness reads the input
+// memories from stdin and writes the output memories (and any checkpoints) to
+// stdout, so the artefact can be compiled and run as a subprocess (see
+// GoGenCompile).
 func GoGenGenerate(program Program[Uint], cfg GoGenConfig) (string, error) {
+	if cfg.CheckPointing.HasValue() {
+		// Extract sharding strategy
+		strategy := cfg.CheckPointing.Unwrap()
+		// Sanity check sharding strategy
+		if _, err := checkShardingStrategy(program, strategy); err != nil {
+			return "", err
+		}
+	}
+	//
 	return gogen.Generate(program, cfg)
 }
 

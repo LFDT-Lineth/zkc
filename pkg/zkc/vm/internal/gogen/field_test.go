@@ -113,7 +113,7 @@ func TestGenFieldOps(t *testing.T) {
 
 	binary, err := gogen.Compile(fieldTestProgram[vm.Uint](), gogen.DEFAULT_CONFIG)
 	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
 
 	vectors := []map[string][]uint64{

@@ -22,8 +22,8 @@ import (
 
 // Runtime failures (width-check violations, underflow, division by zero, FAIL)
 // are exceptional: generated functions panic with a `failure` value which the
-// Run entry point recovers into its error result.  This keeps every generated
-// signature free of error plumbing.
+// harness's failureHandler recovers, reporting it on stderr and exiting with
+// code 1.  This keeps every generated signature free of error plumbing.
 
 // checkWidth enforces a store of `op` into a width-w register, unless the
 // bound proves the check dead (omitted entirely) or the exact value proves it
@@ -107,4 +107,9 @@ func emitTerminationHelpers(c *code, usesDone bool) {
 		c.line("func done() { panic(doneSignal{}) }")
 		c.line("")
 	}
+	//
+	c.line("func exit(format string, args...any) {")
+	c.line("fmt.Fprintf(os.Stderr, format, args...)")
+	c.line("os.Exit(2)")
+	c.line("}")
 }

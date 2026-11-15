@@ -23,7 +23,7 @@ var zkc_result []uint64
 
 // Scratch RAM "scratch".
 var zkc_scratch RamPage
-var zkc_scratch_stamp uint64
+var stamp_zkc_scratch uint64
 
 // zkc_main corresponds to ZkC function "main".
 func zkc_main() {
@@ -57,8 +57,8 @@ func zkc_main() {
 	// [0.3] write scratch[$0] = $1
 	{
 		start := r0
-		zkc_scratch_stamp = zkc_scratch_stamp + 1
-		ramStamp(zkc_scratch_stamp, &zkc_scratch, start, start+1)
+		stamp_zkc_scratch = stamp_zkc_scratch + 1
+		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
 		zkc_scratch.data[start+0] = r1
 	}
 	// [0.4] ldc $3 = 0xf
@@ -76,8 +76,8 @@ func zkc_main() {
 	// [0.7] write scratch[$3] = $4
 	{
 		start := r3
-		zkc_scratch_stamp = zkc_scratch_stamp + 1
-		ramStamp(zkc_scratch_stamp, &zkc_scratch, start, start+1)
+		stamp_zkc_scratch = stamp_zkc_scratch + 1
+		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
 		zkc_scratch.data[start+0] = r4
 	}
 	// [0.8] ldc $6 = 0x0
@@ -87,8 +87,8 @@ func zkc_main() {
 	// [0.10] read $7 = scratch[$8]
 	{
 		start := r8
-		zkc_scratch_stamp = zkc_scratch_stamp + 1
-		ramStamp(zkc_scratch_stamp, &zkc_scratch, start, start+1)
+		stamp_zkc_scratch = stamp_zkc_scratch + 1
+		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
 		r7 = zkc_scratch.data[start+0]
 	}
 	// [0.11] write result[$6] = $7
@@ -103,8 +103,8 @@ func zkc_main() {
 	// [0.14] read $10 = scratch[$11]
 	{
 		start := r11
-		zkc_scratch_stamp = zkc_scratch_stamp + 1
-		ramStamp(zkc_scratch_stamp, &zkc_scratch, start, start+1)
+		stamp_zkc_scratch = stamp_zkc_scratch + 1
+		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
 		r10 = zkc_scratch.data[start+0]
 	}
 	// [0.15] write result[$9] = $10
@@ -119,8 +119,8 @@ func zkc_main() {
 	// [0.18] read $13 = scratch[$14]
 	{
 		start := r14
-		zkc_scratch_stamp = zkc_scratch_stamp + 1
-		ramStamp(zkc_scratch_stamp, &zkc_scratch, start, start+1)
+		stamp_zkc_scratch = stamp_zkc_scratch + 1
+		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
 		r13 = zkc_scratch.data[start+0]
 	}
 	// [0.19] write result[$12] = $13
@@ -158,22 +158,19 @@ func readInputs() {
 	var raw map[string]string
 	// read JSON from stdin
 	if err := json.NewDecoder(bufio.NewReader(os.Stdin)).Decode(&raw); err != nil {
-		fmt.Fprintln(os.Stderr, "decode:", err)
-		os.Exit(2)
+		exit("decode: %s\n", err)
 	}
 	{
 		rawInput, ok := raw["data"]
 		if !ok {
-			fmt.Fprintf(os.Stderr, "decode: missing input %q\n", "data")
-			os.Exit(2)
+			exit("decode: missing input %q\n", "data")
 		}
 		data, nbits := parseInput(rawInput)
 		zkc_data = decodeU8(data, nbits)
 		delete(raw, "data")
 	}
 	for name := range raw {
-		fmt.Fprintf(os.Stderr, "decode: unknown input %q\n", name)
-		os.Exit(2)
+		exit("decode: unknown input %q\n", name)
 	}
 }
 
@@ -183,8 +180,7 @@ func writeOutputs() {
 	// write JSON packet to stdout
 	buf := bytes.NewBuffer([]byte{1, 0, 0, 0, 0})
 	if err := json.NewEncoder(buf).Encode(enc); err != nil {
-		fmt.Fprintln(os.Stderr, "encode:", err)
-		os.Exit(2)
+		exit("encode: %s\n", err)
 	}
 	writePacket(buf.Bytes())
 }
@@ -193,13 +189,11 @@ func writePacket(buf []byte) {
 	n := len(buf) - 5
 	// payload length must fit the uint32 header
 	if uint64(n) > 0xFFFFFFFF {
-		fmt.Fprintln(os.Stderr, "packet:", n, "byte payload exceeds limit")
-		os.Exit(2)
+		exit("packet: byte payload exceeds limit (%d)\n", n)
 	}
 	binary.BigEndian.PutUint32(buf[1:], uint32(n))
 	if _, err := os.Stdout.Write(buf); err != nil {
-		fmt.Fprintln(os.Stderr, "packet:", err)
-		os.Exit(2)
+		exit("packet: %s\n", err)
 	}
 }
 
@@ -220,8 +214,7 @@ func parseInput(s string) ([]byte, uint) {
 	default:
 		var v big.Int
 		if _, ok := v.SetString(s, 10); !ok {
-			fmt.Fprintln(os.Stderr, "malformed numeric literal: ", s)
-			os.Exit(2)
+			exit("malformed numeric literal: %s\n", s)
 		}
 		bytes := v.Bytes()
 		return bytes, uint(len(bytes)) * 8
@@ -247,26 +240,20 @@ func parseExtendedHexString(s string) ([]byte, uint) {
 	)
 	//
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(2)
+		exit("%s\n", err.Error())
 	} else if len(splits) > 2 {
-		fmt.Fprintln(os.Stderr, "malformed extended hex string: ", s)
-		os.Exit(2)
+		exit("malformed extended hex string: %s\n", s)
 	} else if len(splits) != 1 {
 		var mask uint64
 		// parse mask
 		if mask, err = strconv.ParseUint(splits[1], 10, 3); err != nil {
-			fmt.Fprintln(os.Stderr, err.Error())
-			os.Exit(2)
+			exit("%s\n", err.Error())
 		} else if len(data) == 0 {
-			fmt.Fprintln(os.Stderr, "malformed extended hex string: ", s)
-			os.Exit(2)
+			exit("malformed extended hex string: %s\n", s)
 		} else if mask > 7 || mask == 0 {
-			fmt.Fprintln(os.Stderr, "malformed extended hex string (invalid mask): ", s)
-			os.Exit(2)
+			exit("malformed extended hex string (invalid mask): %s\n", s)
 		} else if rest := data[len(data)-1] << mask; rest != 0 {
-			fmt.Fprintln(os.Stderr, "malformed extended hex string (non-zero masked bits): ", s)
-			os.Exit(2)
+			exit("malformed extended hex string (non-zero masked bits): %s\n", s)
 		}
 		//
 		nbits = nbits - 8 + uint(mask)
@@ -300,8 +287,7 @@ func encodeBytes(values []uint64, widths []uint) ([]byte, uint) {
 // decodeU8 unpacks a single-u8-line byte blob into one cell per input byte.
 func decodeU8(data []byte, nbits uint) []uint64 {
 	if nbits%8 != 0 {
-		fmt.Fprintln(os.Stderr, "decode: partial row")
-		os.Exit(2)
+		exit("decode: partial row\n")
 	}
 	out := make([]uint64, len(data))
 	for i, b := range data {
@@ -320,6 +306,11 @@ type failure string
 func (e failure) Error() string { return string(e) }
 
 func fail(msg string) { panic(failure(msg)) }
+
+func exit(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, format, args...)
+	os.Exit(2)
+}
 
 // ===============================================================================
 // Memory Helpers

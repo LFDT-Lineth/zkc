@@ -195,8 +195,17 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 					localTests = append(localTests, t)
 				}
 			}
+			// TODO: fully support gogen tracing.  Currently, using gogen for
+			// tracing only covers checkpointing during the initial fast-mode
+			// execution run.  As such, it only makes sense to run the test when
+			// sharding is active.  Issue #2336 will add full tracing support;
+			// whilst #2331 will eliminate the redundancy of rebuilding the
+			// gogen file within BinaryFile.Trace().  For now, overhead from the
+			// latter is tolerable because relatively few tests cover sharding
+			// anyway.
+			//
 			// Apply GoGen (if requested)
-			if cfg.gogen {
+			if cfg.gogen && cfg.sharding.HasValue() {
 				localTests = applyGoGen(t, test, pU, localTests)
 			}
 			//
@@ -213,7 +222,7 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 func applyGoGen(t *testing.T, test string, program vm.Program[vm.Uint], tests []TestCase) []TestCase {
 	// Attempt to extend tests to include gogen
 	var (
-		// Lower through the execution pipeline before handing to gogen.  GenerateGo
+		// Lower through the execution pipeline before handing to gogen.  GoGenCompile
 		// requires Program[Uint] with registers no wider than 64 bits, so we split
 		// against a bounded word whilst staying in the Uint representation.
 		pG = vm.TransformForExecutionRaw[vm.Uint, vm.Uint](program, vm.WORD_UINT128, vm.DEFAULT_TRANSFORMS)

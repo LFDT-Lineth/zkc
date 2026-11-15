@@ -212,9 +212,8 @@ func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.Ch
 	return output, nCheckpoints, nil
 }
 
-// MarshalInputs renders input memories as the JSON the generated harness reads:
-// one "0x…" hex string per memory.  Benchmarks pre-marshal once so the timed
-// loop measures the executor, not the marshalling.
+// marshalInputs renders input memories as the JSON the generated harness reads:
+// one "0x…" hex string per memory.
 func marshalInputs(in map[string]bit.Array) ([]byte, error) {
 	raw := make(map[string]string, len(in))
 	for name, bits := range in {

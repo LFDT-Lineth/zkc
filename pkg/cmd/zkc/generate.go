@@ -35,11 +35,8 @@ import (
 var generateCmd = &cobra.Command{
 	Use:   "generate [flags] file1.zkc file2.zkc ...",
 	Short: "generate native Go source from a zkc program.",
-	Long: `Compile a zkc program into native Go source: the generated-code alternative to
-interpreting the word machine ("fast execution mode").  The artefact is a package main
-carrying a JSON stdin/stdout harness, so it can be built and run standalone.  Naming
-any other package via --pkg omits the harness (and hence any entry point); such output
-is only useful for inspecting the generated functions.`,
+	Long: `Compile a zkc program into native Go source which can be built and run standalone.
+This is primarily useful for debugging the generated programs.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runFieldAgnosticCmd(cmd, args, generateCmds)
 	},
