@@ -88,14 +88,14 @@ func initialiseAddChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W]
 			c   = lazy.IfDefault(i < nConstants, lazy.Read(i, constants))
 		)
 		//
-		codes = append(codes, partAdd[W]{lhs, mapAddRhs(rhs), c, addChunkBitwidth(alloc, lhs)})
+		codes = append(codes, partAdd[W]{lhs, mapAddRhs(rhs), c, chunkBitwidth(alloc, lhs)})
 	}
 	// Handle overhangs.  This arises e.g. when assigning a small constant to a
 	// wide target register.
 	for stack.Size() > 0 {
 		var limb = []RegisterId{stack.Pop()}
 		//
-		codes = append(codes, partAdd[W]{limb, nil, zero, addChunkBitwidth(alloc, limb)})
+		codes = append(codes, partAdd[W]{limb, nil, zero, chunkBitwidth(alloc, limb)})
 	}
 	//
 	return codes, stack.post
@@ -130,12 +130,6 @@ func insertAddCarryLines[W word.Word[W]](alloc Allocator[W], chunks []partAdd[W]
 	}
 	//
 	return chunks
-}
-
-// addChunkBitwidth is the width of a chunk's targets before any carry line is
-// appended.
-func addChunkBitwidth[W word.Word[W]](alloc Allocator[W], targets []RegisterId) uint16 {
-	return util.Cast[uint16](descriptor.BitwidthOf(alloc, targets...).Unwrap())
 }
 
 func addRhsBitwidth[W word.Word[W]](chunk partAdd[W], mapping descriptor.RegisterMap[W]) uint {

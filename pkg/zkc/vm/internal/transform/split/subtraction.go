@@ -223,14 +223,14 @@ func initialiseSubChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W]
 			c   = lazy.IfDefault(i < nConstants, lazy.Read(i, constants))
 		)
 		//
-		codes = append(codes, partSub[W]{lhs, mapSubRhs(rhs, alloc), c, subChunkBitwidth(alloc, lhs)})
+		codes = append(codes, partSub[W]{lhs, mapSubRhs(rhs, alloc), c, chunkBitwidth(alloc, lhs)})
 	}
 	// Handle overhangs.  This arises e.g. when assigning a small constant to a
 	// wide target register.
 	for stack.Size() > 0 {
 		var limb = []RegisterId{stack.Pop()}
 		//
-		codes = append(codes, partSub[W]{limb, nil, zero, subChunkBitwidth(alloc, limb)})
+		codes = append(codes, partSub[W]{limb, nil, zero, chunkBitwidth(alloc, limb)})
 	}
 	//
 	return codes, stack.post
@@ -297,10 +297,4 @@ func csubAssignment[W word.Word[W]](_ uint, chunk partSub[W]) Bytecode[W] {
 	}
 	// Done
 	return bytecode.ConstSubVec(chunk.targets, chunk.sources, chunk.constant, chunk.bitwidth)
-}
-
-// subChunkBitwidth is the width of a chunk's targets before any borrow line is
-// appended.
-func subChunkBitwidth[W word.Word[W]](alloc Allocator[W], targets []RegisterId) uint16 {
-	return util.Cast[uint16](descriptor.BitwidthOf(alloc, targets...).Unwrap())
 }

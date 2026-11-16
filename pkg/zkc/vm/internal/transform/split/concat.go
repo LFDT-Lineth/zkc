@@ -157,7 +157,7 @@ func initialiseConcatChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator
 		util.Assert(mapping.BandWidth() >= rhsBitwidth, "rhs overflow")
 		util.Assert(mapping.BandWidth() >= lhsBitwidth, "lhs overflow")
 		// allocate selected targets
-		chunks = append(chunks, partCat{targets: lhs, sources: rhs, bitwidth: catChunkBitwidth(alloc, lhs)})
+		chunks = append(chunks, partCat{targets: lhs, sources: rhs, bitwidth: chunkBitwidth(alloc, lhs)})
 		// update overhang
 		if rhsBitwidth > lhsBitwidth {
 			overhang = rhsBitwidth - lhsBitwidth
@@ -174,7 +174,7 @@ func initialiseConcatChunks[W word.Word[W]](mapping LimbsMap[W], alloc Allocator
 	for targetStack.Size() > 0 {
 		var limb = []RegisterId{targetStack.Pop()}
 		//
-		chunks = append(chunks, partCat{targets: limb, bitwidth: catChunkBitwidth(alloc, limb)})
+		chunks = append(chunks, partCat{targets: limb, bitwidth: chunkBitwidth(alloc, limb)})
 	}
 	// Handle cases where we have more sources than necessary (which can also
 	// arise under normal circumstances).  In this case, we assign each source
@@ -292,10 +292,4 @@ func concatAssignment[W word.Word[W]](chunk partCat, alloc Allocator[W]) (codes 
 	}
 	// Done
 	return append(codes, bytecode.AssignV[W](targets, chunk.bitwidth, chunk.sources...))
-}
-
-// catChunkBitwidth is the width of a chunk's targets before any carry or borrow
-// line is spliced in.
-func catChunkBitwidth[W word.Word[W]](alloc Allocator[W], targets []RegisterId) uint16 {
-	return util.Cast[uint16](descriptor.BitwidthOf(alloc, targets...).Unwrap())
 }
