@@ -82,15 +82,23 @@ func (p Config) WithCheckPointing(strategy descriptor.ShardingStrategy) Config {
 var DEFAULT_CONFIG = Config{}
 
 // Compile compiles a ZkC program into a GoGen program which can be
-// executed, or an error indicating some kind of compilation failure.
+// executed, or an error indicating some kind of compilation failure.  This
+// requires a Go toolchain on the PATH, and fails if none is found.
 func Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
-	// Generate native Go source for the word machine.
-	var (
-		src, err = Generate(program, config)
-		dir      string
-	)
+	// Locate the Go toolchain up front, so its absence is reported clearly
+	// (rather than as an obscure build failure).
+	goTool, err := exec.LookPath("go")
 	//
 	if err != nil {
+		return Binary{}, fmt.Errorf("gogen: Go toolchain not found (required to compile generated code): %w", err)
+	}
+	// Generate native Go source for the word machine.
+	var (
+		src string
+		dir string
+	)
+	//
+	if src, err = Generate(program, config); err != nil {
 		return Binary{}, err
 	}
 	// Construct temporary directory in which to build
@@ -114,7 +122,7 @@ func Compile(program descriptor.Program[word.Uint], config Config) (Binary, erro
 		return Binary{}, err
 	}
 	//
-	cmd := exec.Command("go", "build", "-o", programPath, ".")
+	cmd := exec.Command(goTool, "build", "-o", programPath, ".")
 	cmd.Dir = dir
 	//
 	if out, err := cmd.CombinedOutput(); err != nil {
