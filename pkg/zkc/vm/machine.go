@@ -65,31 +65,19 @@ type ProgramPoint = descriptor.ProgramPoint
 // internal machine failure which is not expected (and signals some kind of bug
 // somewhere).  The traceable flag holds when the given execution can be traced
 // (i.e. when no errors in the latter category arise).
-func BootAndExecute[W Word[W], M Core[W]](m M, input map[string]bit.Array, n uint64,
+func BootAndExecute[W Word[W]](m *Interpreter[W], input map[string]bit.Array, n uint64,
 ) (output map[string]bit.Array, traceable bool, errs []error) {
 	//
 	var (
-		steps  uint64
-		inputs map[string][]W
-		stats  = util.NewPerfStats()
+		stats = util.NewPerfStats()
+		steps uint64
 	)
-	// Execute machine in chunks of 1K steps
-	if inputs, errs = DecodeInputs(m, input); len(errs) != 0 {
-		return nil, false, errs
+	//
+	output, traceable, steps, errs = bootAndRun(m, input, n)
+	// Log stats (on success)
+	if len(errs) == 0 {
+		stats.Log(fmt.Sprintf("Machine execution (%d steps)", steps))
 	}
-	// Boot & execute
-	if err := m.Boot("main", inputs); err != nil {
-		errs = append(errs, err)
-	} else if steps, err = ExecuteAll(m, n); err != nil {
-		errs = append(errs, err)
-		// Recognised failures don't prevent tracing.
-		_, traceable = err.(*Failure)
-	} else {
-		output = EncodeOutputs(m)
-		traceable = true
-	}
-	// Log stats
-	stats.Log(fmt.Sprintf("Machine execution (%d steps)", steps))
 	//
 	return output, traceable, errs
 }
@@ -101,56 +89,43 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string]bit.Array, n uin
 func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strategy CheckPointer,
 ) (outputs map[string]bit.Array, traceable bool, errors []error) {
 	var (
-		err   error
-		fid   uint16
-		steps uint64
-		stats = util.NewPerfStats()
+		err           error
+		booting       = true
+		bootId, funId uint16
+		bootOK        bool
+		steps         uint64
+		stats         = util.NewPerfStats()
 		// record how many checkpoints
 		nCheckpoints uint
 		// specify how many steps each shard will be
 		clk = util.NewCounter(strategy.ShardSteps)
-		//
-		inputs map[string][]W
 	)
 	// Locate the function whose calls are to be checkpointed.
-	if fid, err = descriptor.CheckShardingStrategy(pr, strategy.ShardingStrategy); err != nil {
+	if bootId, bootOK = pr.HasModule("main"); !bootOK {
+		return nil, false, []error{fmt.Errorf("missing boot function \"main\"")}
+	} else if funId, err = descriptor.CheckShardingStrategy(pr, strategy.ShardingStrategy); err != nil {
 		return nil, false, []error{err}
 	}
 	// Register a breakpoint at fn's entry and build an interpreter for the
 	// result, so the breakpointer fires each time fn is entered.
-	bci := NewBytecodeInterpreter(pr.BreakPoint(fid, 0))
+	bci := NewBytecodeInterpreter(pr.BreakPoint(bootId, 0).BreakPoint(funId, 0))
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.
 	bci.BreakPointer(func(_ uint32) bool {
 		// Only record once every interval-th invocation of fn.
-		if clk.Tick() {
+		if booting || clk.Tick() {
 			// Apply next checkpoint
 			strategy.checkpoint(bci.CheckPoint())
 			// Increase count of checkpoints
 			nCheckpoints++
+			// Booting only holds for first breakpoint
+			booting = false
 		}
 		// Don't interrupt
 		return false
 	})
-	// Decode inputs and boot machine
-	if inputs, errors = DecodeInputs(bci, in); len(errors) != 0 {
-		return nil, false, errors
-	} else if err := bci.Boot("main", inputs); err != nil {
-		return nil, false, append(errors, err)
-	}
-	// Set initial checkpoint to from beginning of execution until the first
-	// time the target function is executed.
-	strategy.checkpoint(bci.CheckPoint())
-	// Execute machine to generate checkpoints
-	if steps, err = ExecuteAll(bci, math.MaxUint); err != nil {
-		errors = append(errors, err)
-		// Recognised failures don't prevent tracing.
-		_, traceable = err.(*Failure)
-	} else {
-		// Encode outputs
-		outputs = EncodeOutputs(bci)
-		traceable = true
-	}
+	// Run the program
+	outputs, traceable, steps, errors = bootAndRun(bci, in, math.MaxUint64)
 	// Log stats
 	stats.Log(fmt.Sprintf("Machine execution (%d steps, %d checkpoints)", steps, nCheckpoints))
 	// Done
@@ -404,6 +379,27 @@ func EncodeOutputs[W Word[W], M Core[W]](m M) map[string]bit.Array {
 // ======================================================================================
 // Helpers
 // ======================================================================================
+
+func bootAndRun[W Word[W]](bci *Interpreter[W], in map[string]bit.Array, n uint64,
+) (outputs map[string]bit.Array, traceable bool, steps uint64, errors []error) {
+	var inputs map[string][]W
+	// Decode inputs and boot machine
+	if inputs, errors = DecodeInputs(bci, in); len(errors) != 0 {
+		return nil, false, 0, errors
+	} else if err := bci.Boot("main", inputs); err != nil {
+		return nil, false, 0, append(errors, err)
+	} else if steps, err = ExecuteAll(bci, n); err != nil {
+		errors = append(errors, err)
+		// Recognised failures don't prevent tracing.
+		_, traceable = err.(*Failure)
+	} else {
+		// Encode outputs
+		outputs = EncodeOutputs(bci)
+		traceable = true
+	}
+	// Done
+	return outputs, traceable, steps, errors
+}
 
 func constructTracingInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], tracer T,
 ) *interpreter.Interpreter[W] {
