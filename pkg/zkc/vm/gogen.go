@@ -45,15 +45,6 @@ var GoGenMachineFailure = gogen.ErrMachineFailure
 // stdout, so the artefact can be compiled and run as a subprocess (see
 // GoGenCompile).
 func GoGenGenerate(program Program[Uint], cfg GoGenConfig) (string, error) {
-	if cfg.CheckPointing.HasValue() {
-		// Extract sharding strategy
-		strategy := cfg.CheckPointing.Unwrap()
-		// Sanity check sharding strategy
-		if _, err := checkShardingStrategy(program, strategy); err != nil {
-			return "", err
-		}
-	}
-	//
 	return gogen.Generate(program, cfg)
 }
 
@@ -112,10 +103,6 @@ func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Arra
 		err          error
 		nCheckPoints uint
 	)
-	// Locate the function whose calls are to be checkpointed.
-	if _, err = checkShardingStrategy(program, cp.ShardingStrategy); err != nil {
-		return nil, false, []error{err}
-	}
 	// Compile program into gogen executable.
 	binary, err = gogen.Compile(program, gogen.DEFAULT_CONFIG.WithCheckPointing(cp.ShardingStrategy))
 	// Check for errors

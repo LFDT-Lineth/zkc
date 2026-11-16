@@ -171,12 +171,12 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 				" is currently unsupported", info.name)
 		}
 	}
-	// Checkpointing requires a known shard function, and that every paged
+	// Checkpointing requires a valid sharding strategy, and that every paged
 	// memory's pages are row aligned, as checkpoint pages are addressed by row
 	// (see emitCheckpointWriter).
 	if g.config.CheckPointing.HasValue() {
-		if fn := g.config.CheckPointing.Unwrap().ShardFunction; !hasFunction(g.funcByID, fn) {
-			return "", fmt.Errorf("gogen: unknown shard function %q", fn)
+		if _, err := descriptor.CheckShardingStrategy(program, g.config.CheckPointing.Unwrap()); err != nil {
+			return "", err
 		}
 		//
 		for _, info := range g.prams {
@@ -276,17 +276,6 @@ type fnView struct {
 	isBoot   bool     // the boot frame ('main'); its outputs are discarded
 	outNames []string // output result names, limb-expanded (empty for boot)
 	tailLoop bool     // body contains a self tail call, needing the entry label
-}
-
-// hasFunction checks whether a function with the given name exists.
-func hasFunction(funcs map[uint]*descFunction, name string) bool {
-	for _, fn := range funcs {
-		if fn.Name() == name {
-			return true
-		}
-	}
-
-	return false
 }
 
 // reachableFunctions returns the ids of the functions reachable from the entry
