@@ -294,12 +294,31 @@ func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.LazyTrace[F]
 // steps at a time, producing any outputs arising.  Execution is faster than
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
-func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array) (output map[string]bit.Array, errs []error) {
-	var (
-		bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
-	)
-	// Boot and execute fast machine
-	output, _, errs = vm.BootAndExecute(bci, input, math.MaxUint)
+func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.ExecutionConfig,
+) (output map[string]bit.Array, errs []error) {
+	var checkpointing = config.Checkpointing()
+	// TODO: currently, for gogen execution it compiles (and deletes) the gogen
+	// binary every time, which is not optimal.  See #2331
+	if config.GoGen() && checkpointing.HasValue() {
+		// TODO: avoid using the RawProgram() here as this may not align exactly
+		// with the execution program.  See #2332.
+		//
+		// Fast-mode execution via gogen
+		output, _, errs = vm.BootAndCheckpointWithGogen(p.RawProgram(), input, checkpointing.Unwrap())
+	} else if config.GoGen() {
+		// Fast-mode execution via gogen
+		output, _, errs = vm.BootAndExecuteWithGogen(p.RawProgram(), input)
+	} else if checkpointing.HasValue() {
+		// Fast-mode execution via interpreter (with checkpointing)
+		// Boot and execute fast machine
+		output, _, errs = vm.BootAndCheckpoint(p.ExecutionProgram(), input, checkpointing.Unwrap())
+	} else {
+		// Fast-mode execution via interpreter
+		var bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
+		//
+		// Boot and execute fast machine
+		output, _, errs = vm.BootAndExecute(bci, input, math.MaxUint)
+	}
 	//
 	return output, errs
 }
@@ -327,7 +346,7 @@ func (p *BinaryFile[F, W]) Trace(input map[string]bit.Array, cfg vm.TraceConfig,
 	var (
 		// Initialise trace builder from configuration
 		builder = vm.NewTraceBuilder[W, F, Tracer[F, W]](cfg,
-			p.ExecutionProgram(), p.TracingProgram(), p.AirConstraints())
+			p.RawProgram(), p.ExecutionProgram(), p.TracingProgram(), p.AirConstraints())
 	)
 	// Execute machine
 	return builder.BootAndTrace(input)

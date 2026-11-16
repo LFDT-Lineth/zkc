@@ -108,8 +108,9 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
 		WithBatchSize(GetUint(cmd, "batch")).
-		WithParallelism(!GetFlag(cmd, "sequential"))
-		//
+		WithParallelism(!GetFlag(cmd, "sequential")).
+		WithGoGen(build.gogen)
+	//
 	if sharding != "" {
 		traceConfig = traceConfig.WithSharding(parseShardingConfig(sharding))
 	}
@@ -277,6 +278,8 @@ func init() {
 	traceCmd.Flags().Bool("inspect", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 	rootCmd.AddCommand(traceCmd)
+	// Enforce gogen only usable with sharding (for now).
+	traceFlags.Require("gogen", "sharding")
 }
 
 func parseShardingConfig(spec string) vm.ShardingStrategy {
@@ -430,7 +433,7 @@ func getShardStats[F field.Element[F]](shard trace.Shard[F]) shardStats {
 
 // humanCount formats a (potentially large) count using K/M/G suffixes, matching
 // the corset trace command's cell-count formatting.
-func humanCount(enable bool, total uint64) string {
+func humanCount[T uint64 | uint](enable bool, total T) string {
 	switch {
 	case enable && total > oneG:
 		return fmt.Sprintf("%.01fG", float64(total)/oneG)

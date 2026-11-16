@@ -48,11 +48,11 @@ type intervals struct {
 	changed bool
 }
 
-// newIntervals seeds the analysis for a function: the boot frame enters with
-// every register zero (its activation record is allocated without copying), a
-// callee enters with its inputs bounded by their declared widths (the call
-// checks them) and everything else zero.
-func newIntervals(fn *descFunction, isBoot, disabled bool) *intervals {
+// newIntervals seeds the analysis for a function: a function enters with its
+// inputs bounded by their declared widths (the call checks them) and everything
+// else zero; observe that the boot function is guaranteed to have no arguments
+// or returns.
+func newIntervals(fn *descFunction, disabled bool) *intervals {
 	regs := fn.Registers()
 	iv := &intervals{
 		disabled: disabled,
@@ -67,7 +67,7 @@ func newIntervals(fn *descFunction, isBoot, disabled bool) *intervals {
 		iv.caps[i] = widthMax(min(widthOf(r), 128))
 		iv.entry[i] = zero
 
-		if !isBoot && uint(i) < fn.NumInputs() {
+		if uint(i) < fn.NumInputs() {
 			iv.entry[i] = iv.caps[i]
 		}
 	}

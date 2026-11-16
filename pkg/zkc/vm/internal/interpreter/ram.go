@@ -23,8 +23,8 @@ import (
 )
 
 // RandomAccess is a memory implementation backed by a dynamically sizing slice
-// of timestamped cells; an out-of-bound read returns the zero cell.  Every
-// access re-stamps the touched cell with the current clock, and (when a
+// of timestamped cells; a cell which has never been written holds zero.  Every
+// access re-stamps the touched cells with the current clock, and (when a
 // recording Log is installed) is logged for trace generation.  The type
 // parameter W is the (machine) word type; the timestamp is internal bookkeeping.
 type RandomAccess[W word.Word[W]] struct {
@@ -43,65 +43,62 @@ type RandomAccess[W word.Word[W]] struct {
 // Read returns the value at the given address (the zero value for an address
 // never written), re-stamping the cell with the current clock as required by
 // the memory-consistency argument (see ram.md); a read leaves the stored value
-// unchanged.  Out-of-bounds reads are handled (they return the zero value).
+// unchanged.
+//
+// Precondition: Stamp must have been called for the access containing this
+// address (i.e. the first cell of its row), since that is what allocates the
+// cell.  Otherwise, this panics for an address beyond the allocated cells.
 func (ram *RandomAccess[W]) Read(address uint64) (W, error) {
-	value, readStamp := ram.valueAt(address)
+	var curr = ram.data[address]
 	// A read stores the value back unchanged, re-stamped with this access's time.
-	ram.restamp(address, value)
+	ram.data[address] = TimestampedCell[W]{timestamp: ram.timestamp, value: curr.value}
 	//
 	if ram.logging {
 		// Write-side only; the read-side is reconstructed at trace time by a
 		// state-tracking observer (see Log).
-		ram.accessLog.Read(address, readStamp, ram.timestamp, value)
+		ram.accessLog.Read(address, curr.timestamp, ram.timestamp, curr.value)
 	}
 	//
-	return value, nil
+	return curr.value, nil
 }
 
 // Write stores value at the given address, wrapping it in a timestamped cell
 // stamped with the current clock.
+//
+// Precondition: Stamp must have been called for the access containing this
+// address (i.e. the first cell of its row), since that is what allocates the
+// cell.  Otherwise, this panics for an address beyond the allocated cells.
 func (ram *RandomAccess[W]) Write(address uint64, newValue W) error {
-	oldValue, readStamp := ram.valueAt(address)
+	var curr = ram.data[address]
 	//
-	ram.restamp(address, newValue)
+	ram.data[address] = TimestampedCell[W]{timestamp: ram.timestamp, value: newValue}
 	//
 	if ram.logging {
-		ram.accessLog.Write(address, readStamp, ram.timestamp, oldValue, newValue)
+		ram.accessLog.Write(address, curr.timestamp, ram.timestamp, curr.value, newValue)
 	}
 	//
 	return nil
 }
 
-// Tick advances the access clock by one.  Called once per logical memory access
-// (one RD_RAM/WR_RAM instruction), BEFORE any of its data lanes are touched, so
-// all lanes of a single access share one timestamp -- matching the RAM
-// constraints, where TIMESTAMP_READ/TIMESTAMP_WRITTEN are single columns while
-// the address and value columns are lane-sliced (see ram.md).  Advancing before
-// the access also keeps every deliberately-touched cell at a nonzero timestamp,
-// so touched cells stay identifiable in the finalization phase.
-func (ram *RandomAccess[W]) Tick() {
+// Stamp begins a logical memory access (one RD_RAM/WR_RAM instruction) at the
+// given address, which is that of the first cell of the accessed row.  It
+// advances the access clock by one, and grows the backing slice as needed to
+// hold every cell of that row.  This must be called BEFORE any of the access's
+// data lanes are touched, so all lanes of a single access share one timestamp
+// -- matching the RAM constraints, where TIMESTAMP_READ/TIMESTAMP_WRITTEN are
+// single columns while the address and value columns are lane-sliced (see
+// ram.md).  Advancing before the access also keeps every deliberately-touched
+// cell at a nonzero timestamp, so touched cells stay identifiable in the
+// finalization phase.  Growing here, for reads as well as writes, is required
+// because a read of a never-written cell must still record its timestamp.
+func (ram *RandomAccess[W]) Stamp(address uint64) {
+	var (
+		width = uint64(len(ram.descriptor.DataRegisters()))
+	)
+	// increase master stamp
 	ram.timestamp++
-}
-
-// valueAt returns the value stored at address, or the zero value if the address
-// has never been written (including out-of-range addresses).
-func (ram *RandomAccess[W]) valueAt(address uint64) (W, uint64) {
-	var value W
-	//
-	if address < uint64(len(ram.data)) {
-		cell := ram.data[address]
-		//
-		return cell.value, cell.timestamp
-	}
-	//
-	return value, 0
-}
-
-// restamp stores value at address, stamped with the current clock, growing the
-// backing slice as needed.
-func (ram *RandomAccess[W]) restamp(address uint64, value W) {
-	ram.data = expand(ram.data, address+1)
-	ram.data[address] = TimestampedCell[W]{timestamp: ram.timestamp, value: value}
+	// Ensure enough cells
+	ram.data = expand(ram.data, address+width)
 }
 
 // log returns this memory's access log, lazily installing the no-op log if none

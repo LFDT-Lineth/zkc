@@ -11,24 +11,21 @@
 //
 // SPDX-License-Identifier: Apache-2.0
 // This test lives in an external package (gogen_test) rather than package gogen:
-// it drives the generator through the public vm.GenerateGo entry point, and
-// vm imports gogen — so an internal test would form an import cycle.
+// it relies on the public vm API (programs, words, encodings), and vm imports
+// gogen — so an internal test would form an import cycle.
 package gogen_test
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"go/format"
 	"io"
-	"os"
-	"os/exec"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
 
-	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc/gogen"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
@@ -36,6 +33,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/ast"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/codegen"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm"
+	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
 )
 
 // tutorialSrc mirrors pkg/zkc/tutorial: branchless u16 arithmetic with single
@@ -470,8 +468,8 @@ func compileUintProgram(t testing.TB, program ast.Program, fastMode bool) vm.Pro
 		t.Fatalf("codegen: %v", errs)
 		return p
 	} else if fastMode {
-		// NOTE: the program stays in the Uint representation (GenerateGo
-		// requires it), but its registers are split against a bounded word.
+		// NOTE: the program stays in the Uint representation (gogen requires
+		// it), but its registers are split against a bounded word.
 		return vm.TransformForExecutionRaw[vm.Uint, vm.Uint](p, vm.WORD_UINT128, vm.DEFAULT_TRANSFORMS)
 	} else {
 		return vm.TransformForTracing[vm.Uint, vm.Uint](p, vm.DEFAULT_TRANSFORMS)
@@ -514,9 +512,9 @@ func TestGenValidGo(t *testing.T) {
 	for name, src := range srcs {
 		for _, shape := range shapes {
 			t.Run(name+"/"+shape.name, func(t *testing.T) {
-				out, err := vm.GenerateGo(compileUint(t, src, shape.fastMode), vm.GoGenConfig{})
+				out, err := gogen.Generate(compileUint(t, src, shape.fastMode), gogen.Config{})
 				if err != nil {
-					t.Fatalf("GenerateGo: %v", err)
+					t.Fatalf("Generate: %v", err)
 				}
 
 				if _, err := format.Source([]byte(out)); err != nil {
@@ -813,27 +811,31 @@ func TestGenDifferential(t *testing.T) {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
 				p := compileUint(t, tc.src, shape.fastMode)
 
-				src, err := vm.GenerateGo(p, vm.GoGenConfig{})
+				binary, err := gogen.Compile(p, gogen.DEFAULT_CONFIG)
 				if err != nil {
-					t.Fatalf("GenerateGo: %v", err)
+					t.Fatalf("Compile: %v", err)
 				}
-
-				prog := buildProgram(t, src)
+				//
+				registerCleanUp(t, binary)
+				//
 				for _, in := range tc.vectors {
 					t.Run(inputName(in), func(t *testing.T) {
 						inBytes := encodeInputs(p, in)
-
-						refOut, refErr := referenceRun(t, compileUint(t, tc.src, shape.fastMode), inBytes)
-
-						genOut, genErr := runProgram(t, prog, inBytes)
-						if refErr != genErr {
-							t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refErr, genErr, in)
-						}
-
-						if refErr {
+						// Execute reference program
+						refOut, refFail := referenceRun(t, compileUint(t, tc.src, shape.fastMode), inBytes)
+						// Execute GoGen binary
+						genOut, genErr := binary.Run(inBytes, io.Discard)
+						// Determine whether we have a machine failure, or not
+						genFail := errors.Is(genErr, vm.GoGenMachineFailure)
+						//
+						if refFail != genFail {
+							t.Fatalf("error mismatch: reference err=%v, generated err=%v (in=%v)", refFail, genFail, in)
+						} else if genErr != nil && !genFail {
+							t.Fatalf("internal failure: %v", genErr)
+						} else if refFail {
 							return
 						}
-
+						//
 						if !reflect.DeepEqual(refOut, genOut) {
 							t.Fatalf("output mismatch (in=%v):\n  reference=%v\n  generated=%v", in, refOut, genOut)
 						}
@@ -846,15 +848,15 @@ func TestGenDifferential(t *testing.T) {
 
 func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 	var (
-		data     = bit.NewArray(nil, 0, bit.BigEndian)
-		src, err = vm.GenerateGo(compileUint(t, doubleSrc, false), vm.GoGenConfig{})
+		data        = bit.NewArray(nil, 0, bit.BigEndian)
+		binary, err = gogen.Compile(compileUint(t, doubleSrc, false), gogen.DEFAULT_CONFIG)
 	)
 	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
+		t.Fatalf("Compile: %v", err)
 	}
-
-	prog := buildProgram(t, src)
-
+	//
+	registerCleanUp(t, binary)
+	//
 	for _, tc := range []struct {
 		name string
 		in   map[string]bit.Array
@@ -864,17 +866,88 @@ func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 		{"unknown", map[string]bit.Array{"data": data, "extra": data}, `unknown input "extra"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, errored, err := gogen.Run(prog, tc.in, io.Discard)
-			if err == nil {
+			var stderr bytes.Buffer
+			//
+			if _, err := binary.Run(tc.in, &stderr); err == nil {
 				t.Fatal("expected harness error")
+			} else if !strings.Contains(stderr.String(), tc.want) {
+				t.Fatalf("expected error containing %q, got %v", tc.want, stderr.String())
 			}
+		})
+	}
+}
 
-			if errored {
-				t.Fatal("bad input names should not be execution errors")
+// TestGenFailureMessages checks that, for each kind of machine failure whose
+// message gogen reproduces, the message reaching the parent (within an error
+// still recognised as a machine failure) is identical to the interpreter's.
+func TestGenFailureMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name, src string
+		in        map[string][]uint64
+	}{
+		{"fail", `pub input args(address:u8) -> (byte:u8)
+fn main() {
+    fail
+}
+`, map[string][]uint64{"args": {7}}},
+		{"fail_formatted", `pub input args(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    fail "boom a=%d", a
+}
+`, map[string][]uint64{"args": {7}}},
+		{"rom_oob", `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    result[0] = args[3]
+    return
+}
+`, map[string][]uint64{"args": {7}}},
+		{"srom_oob", `static tbl(address:u8) -> (byte:u8) {
+    1,
+    2
+}
+pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    result[0] = tbl[args[0]]
+    return
+}
+`, map[string][]uint64{"args": {5}}},
+		{"wom_rewrite", `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    result[2] = a
+    result[2] = a + 1
+    return
+}
+`, map[string][]uint64{"args": {7}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				p           = compileUint(t, tc.src, false)
+				inBytes     = encodeInputs(p, tc.in)
+				binary, err = gogen.Compile(p, gogen.DEFAULT_CONFIG)
+				mf          *gogen.MachineFailure
+			)
+			//
+			if err != nil {
+				t.Fatalf("Compile: %v", err)
 			}
-
-			if !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("expected error containing %q, got %v", tc.want, err)
+			//
+			registerCleanUp(t, binary)
+			// Execute reference program
+			_, refErr := referenceExec(t, p, inBytes)
+			// Execute GoGen binary
+			_, err = binary.Run(inBytes, io.Discard)
+			//
+			if refErr == nil {
+				t.Fatal("expected reference failure")
+			} else if !errors.Is(err, vm.GoGenMachineFailure) || !errors.As(err, &mf) {
+				t.Fatalf("expected machine failure, got %v", err)
+			} else if mf.Message != refErr.Error() {
+				t.Fatalf("failure message mismatch:\n  reference=%q\n  generated=%q", refErr.Error(), mf.Message)
 			}
 		})
 	}
@@ -896,6 +969,15 @@ func inputName(in map[string][]uint64) string {
 // inputs — see encodeInputs.
 func referenceRun(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array) (map[string]bit.Array, bool) {
 	t.Helper()
+	//
+	out, err := referenceExec(t, p, in)
+	//
+	return out, err != nil
+}
+
+// referenceExec is as referenceRun, but returns the error arising (if any).
+func referenceExec(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array) (map[string]bit.Array, error) {
+	t.Helper()
 
 	var (
 		interpreter  = vm.NewBytecodeInterpreter(p)
@@ -906,68 +988,14 @@ func referenceRun(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array) 
 	}
 
 	if err := interpreter.Boot("main", inputs); err != nil {
-		return nil, true
+		return nil, err
 	}
 
 	if _, err := vm.ExecuteAll(interpreter, 1<<20); err != nil {
-		return nil, true
+		return nil, err
 	}
 
-	return vm.EncodeOutputs(interpreter), false
-}
-
-// buildProgram compiles generated source into a test-owned temporary directory.
-func buildProgram(t *testing.T, src string) string {
-	t.Helper()
-
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("go toolchain not available")
-	}
-
-	prog, err := buildGeneratedProgram(t, src)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return prog
-}
-
-func buildGeneratedProgram(t *testing.T, src string) (string, error) {
-	t.Helper()
-
-	dir := t.TempDir()
-	prog := filepath.Join(dir, "prog")
-
-	if err := os.WriteFile(filepath.Join(dir, "main.go"), []byte(src), 0o644); err != nil {
-		return "", err
-	}
-
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module zkcgen\n\ngo 1.24\n"), 0o644); err != nil {
-		return "", err
-	}
-
-	cmd := exec.Command("go", "build", "-o", prog, ".")
-	cmd.Dir = dir
-
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return "", fmt.Errorf("go build failed: %v\n%s\n--- source ---\n%s", err, out, src)
-	}
-
-	return prog, nil
-}
-
-// runProgram runs the compiled program on packed-byte inputs (see encodeInputs),
-// returning its output memories as bytes and whether it reported an execution
-// error.
-func runProgram(t *testing.T, prog string, in map[string]bit.Array) (map[string]bit.Array, bool) {
-	t.Helper()
-
-	out, errored, err := gogen.Run(prog, in, io.Discard)
-	if err != nil {
-		t.Fatalf("running generated program: %v", err)
-	}
-
-	return out, errored
+	return vm.EncodeOutputs(interpreter), nil
 }
 
 // encodeInputs packs cell-valued inputs into the byte form the harness reads,
@@ -1020,144 +1048,10 @@ func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string]bit.
 	return out
 }
 
-// ---------------------------------------------------------------------------
-// printf / fail messages (#1868): verbose builds emit printf to stderr and
-// surface fail messages, byte-compatible with the reference interpreter.
-// ---------------------------------------------------------------------------
-
-const printfSrc = `pub input args(address:u16) -> (word:u16)
-pub output result(address:u16) -> (word:u16)
-fn main() {
-    var a:u16 = args[0]
-    printf "dec=%d hex=%x bin=%b pad=%04x\n", a, a, a, a
-    result[0] = a
-    return
-}
-`
-
-// printfWideSrc prints a value wider than 64 bits, exercising the big.Int
-// printf path (the lo/hi pair folds into a *big.Int via the u128 helper).
-const printfWideSrc = `pub input args(address:u8) -> (w:u64)
-pub output result(address:u8) -> (w:u64)
-fn main() {
-    var a:u64 = args[0]
-    var b:u64 = args[1]
-    var p:u128 = (a as u128) * (b as u128)
-    printf "p=%d\n", p
-    result[0] = a
-    return
-}
-`
-
-const printfCharSrc = `pub input args(address:u8) -> (byte:u8)
-pub output result(address:u8) -> (byte:u8)
-fn main() {
-    var a:u8 = args[0]
-    printf "%c%c!", a, a
-    result[0] = a
-    return
-}
-`
-
-const failMsgSrc = `pub input args(address:u8) -> (byte:u8)
-pub output result(address:u8) -> (byte:u8)
-fn main() {
-    var a:u8 = args[0]
-    fail "boom a=%d", a
-}
-`
-
-// compileUintVerbose compiles with printf retained (Verbose(true)), unlike the
-// default helper which strips it.
-func compileUintVerbose(t testing.TB, src string) vm.Program[vm.Uint] {
-	t.Helper()
-
-	var (
-		cfg = codegen.DEFAULT_CONFIG.Field(field.KOALABEAR_16).Verbose(true)
-		// Compile source file into an AST
-		program = compileProgram(t, src)
-		// Compile AST into a bytecode program
-		p, errs = ast.Compile(program, cfg)
-	)
-	if len(errs) > 0 {
-		t.Fatalf("codegen: %v", errs)
-	}
-
-	return p
-}
-
-// runStderr builds and runs a generated program, returning its stderr and exit
-// status.  Unlike runProgram it captures stderr on success (where printf lands).
-func runStderr(t *testing.T, p vm.Program[vm.Uint], in map[string][]uint64) (stderr string, exitErr bool) {
-	t.Helper()
-
-	src, err := vm.GenerateGo(p, vm.GoGenConfig{})
-	if err != nil {
-		t.Fatalf("GenerateGo: %v", err)
-	}
-
-	prog := buildProgram(t, src)
-
-	inJSON, err := gogen.MarshalInputs(encodeInputs(p, in))
-	if err != nil {
-		t.Fatalf("marshal inputs: %v", err)
-	}
-
-	var out, errBuf bytes.Buffer
-
-	cmd := exec.Command(prog)
-	cmd.Stdin = bytes.NewReader(inJSON)
-	cmd.Stdout = &out
-	cmd.Stderr = &errBuf
-
-	if err := cmd.Run(); err != nil {
-		if ee, ok := err.(*exec.ExitError); ok {
-			return errBuf.String(), ee.ExitCode() != 0
+func registerCleanUp(t *testing.T, binary vm.GoGenBinary) {
+	t.Cleanup(func() {
+		if err := binary.Free(); err != nil {
+			t.Error(err)
 		}
-
-		t.Fatalf("running generated program: %v", err)
-	}
-
-	return errBuf.String(), false
-}
-
-func TestGenPrintf(t *testing.T) {
-	cases := []struct {
-		name, src string
-		in        map[string][]uint64
-		want      string
-	}{
-		{"verbs", printfSrc, map[string][]uint64{"args": {255}}, "dec=255 hex=ff bin=11111111 pad=00ff\n"},
-		{"char", printfCharSrc, map[string][]uint64{"args": {65}}, "AA!"},
-		// 2^33 * 2^33 = 2^66 = 73786976294838206464 (wider than u64).
-		{"wide", printfWideSrc, map[string][]uint64{"args": {1 << 33, 1 << 33}}, "p=73786976294838206464\n"},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			m := compileUintVerbose(t, tc.src)
-
-			got, exitErr := runStderr(t, m, tc.in)
-			if exitErr {
-				t.Fatalf("unexpected non-zero exit; stderr=%q", got)
-			}
-
-			if got != tc.want {
-				t.Fatalf("printf output mismatch:\n  got  %q\n  want %q", got, tc.want)
-			}
-		})
-	}
-}
-
-func TestGenFailMessage(t *testing.T) {
-	m := compileUintVerbose(t, failMsgSrc)
-
-	got, exitErr := runStderr(t, m, map[string][]uint64{"args": {7}})
-	if !exitErr {
-		t.Fatalf("expected non-zero exit on fail")
-	}
-
-	if want := "machine panic: boom a=7"; !bytes.Contains([]byte(got), []byte(want)) {
-		t.Fatalf("fail message missing: got %q, want substring %q", got, want)
-	}
+	})
 }

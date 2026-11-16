@@ -136,12 +136,12 @@ func formatBase(f util.Format) int {
 	}
 }
 
-// emitFail renders a FAIL instruction.  With no message chunks it panics with
-// the bare "machine panic" the interpreter reports; otherwise it formats the
-// message exactly as the interpreter does and panics with "machine panic:
-// <msg>".  The Run entry point recovers the failure into its error result,
-// which the harness relays on stderr.  FAIL is always compiled (non-verbose
-// mode only strips printf), so the message path is live in both modes.
+// emitFail renders a FAIL instruction, matching the interpreter's executeFail.
+// With no message chunks it panics with the bare "machine panic"; otherwise it
+// panics with the formatted message alone.  The harness's failureHandler
+// recovers the failure and reports it (see reportFailure).  FAIL is always
+// compiled (non-verbose mode only strips printf), so the message path is live
+// in both modes.
 func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Uint]) error {
 	if len(x.Chunks) == 0 {
 		c.line(`panic(failure("machine panic"))`)
@@ -154,7 +154,7 @@ func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Ui
 	}
 
 	if len(args) == 0 {
-		c.linef("panic(failure(%s))", strconv.Quote("machine panic: "+plain))
+		c.linef("panic(failure(%s))", strconv.Quote(plain))
 		return nil
 	}
 
@@ -163,7 +163,7 @@ func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Ui
 	// the hot DEBUG path.
 	g.useHelper(helperFmtSprintf)
 
-	c.linef("panic(failure(fmt.Sprintf(%s, %s)))", strconv.Quote("machine panic: "+format), strings.Join(args, ", "))
+	c.linef("panic(failure(fmt.Sprintf(%s, %s)))", strconv.Quote(format), strings.Join(args, ", "))
 
 	return nil
 }
@@ -279,13 +279,13 @@ func (g *generator) multiLimbBig(fn *descFunction, regs []regId) (string, error)
 }
 
 // emitPrintfHelpers writes the printf support helpers actually referenced by
-// the generated code: the buffered stderr writer (flushed by Run), the
+// the generated code: the buffered stderr writer (flushed by main), the
 // width-padding writer dbgPad, the narrow-integer (dbgU) and big.Int (dbgB)
 // formatters for the hot DEBUG path, the big.Int limb folders (u128/catU64) and
 // chr (%c in a formatted FAIL).
 func (g *generator) emitPrintfHelpers(c *code) {
 	if g.usesHelper(helperDbgWriter) {
-		c.line("// dbgw buffers printf output; Run flushes it. Per-instruction printf is")
+		c.line("// dbgw buffers printf output; main flushes it. Per-instruction printf is")
 		c.line("// the hot path of a verbose run, so an unbuffered os.Stderr write (a")
 		c.line("// syscall each) would dominate; one bufio.Writer amortises that.")
 		c.line("var dbgw = bufio.NewWriter(os.Stderr)")
