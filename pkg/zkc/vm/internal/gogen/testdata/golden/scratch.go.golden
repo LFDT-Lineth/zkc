@@ -49,7 +49,7 @@ func zkc_main() {
 	// [0.2] read $1 = data[$2]
 	{
 		start := r2
-		r1 = romRead(zkc_data, start+0)
+		r1 = romRead(zkc_data, start+0, "data")
 		if r1 >= 1<<8 {
 			fail("bit overflow (value exceeds u8)")
 		}
@@ -68,7 +68,7 @@ func zkc_main() {
 	// [0.6] read $4 = data[$5]
 	{
 		start := r5
-		r4 = romRead(zkc_data, start+0)
+		r4 = romRead(zkc_data, start+0, "data")
 		if r4 >= 1<<8 {
 			fail("bit overflow (value exceeds u8)")
 		}
@@ -94,7 +94,7 @@ func zkc_main() {
 	// [0.11] write result[$6] = $7
 	{
 		start := r6
-		zkc_result = womWrite(zkc_result, start+0, r7)
+		zkc_result = womWrite(zkc_result, start+0, r7, "result")
 	}
 	// [0.12] ldc $9 = 0x1
 	r9 = 1
@@ -110,7 +110,7 @@ func zkc_main() {
 	// [0.15] write result[$9] = $10
 	{
 		start := r9
-		zkc_result = womWrite(zkc_result, start+0, r10)
+		zkc_result = womWrite(zkc_result, start+0, r10, "result")
 	}
 	// [0.16] ldc $12 = 0x2
 	r12 = 2
@@ -126,7 +126,7 @@ func zkc_main() {
 	// [0.19] write result[$12] = $13
 	{
 		start := r12
-		zkc_result = womWrite(zkc_result, start+0, r13)
+		zkc_result = womWrite(zkc_result, start+0, r13, "result")
 	}
 	// [0.20] ret
 	return
@@ -147,11 +147,21 @@ func failureHandler() {
 	switch r := recover(); f := r.(type) {
 	case nil:
 	case failure:
-		fmt.Fprintln(os.Stderr, "exec error:", f)
-		os.Exit(1)
+		reportFailure(string(f))
+	case oobFailure:
+		reportFailure(fmt.Sprintf("address %x out-of-bounds for memory %s", f.addr, f.name))
+	case womFailure:
+		reportFailure(fmt.Sprintf("address %x already written for write-only memory %s", f.addr, f.name))
 	default:
 		panic(r)
 	}
+}
+
+// reportFailure reports a failure message and exits with code 1.
+func reportFailure(msg string) {
+	// report failure message to parent
+	writePacket(append([]byte{2, 0, 0, 0, 0}, msg...))
+	os.Exit(1)
 }
 
 func readInputs() {
@@ -322,16 +332,28 @@ type RamPage struct {
 	stamps []uint64
 }
 
-func romRead(data []uint64, addr uint64) uint64 {
+// oobFailure signals an out-of-bounds read of a read-only memory.
+type oobFailure struct {
+	addr uint64
+	name string
+}
+
+func romRead(data []uint64, addr uint64, name string) uint64 {
 	if addr >= uint64(len(data)) {
-		fail("out-of-bounds read of read-only memory")
+		panic(oobFailure{addr, name})
 	}
 	return data[addr]
 }
 
-func womWrite(data []uint64, addr uint64, v uint64) []uint64 {
+// womFailure signals a conflicting write to a write-once memory.
+type womFailure struct {
+	addr uint64
+	name string
+}
+
+func womWrite(data []uint64, addr uint64, v uint64, name string) []uint64 {
 	if addr < uint64(len(data)) && data[addr] != v {
-		fail("address already written for write-once memory")
+		panic(womFailure{addr, name})
 	} else if n := addr + 1; uint64(len(data)) < n {
 		data = expand(data, n)
 	}

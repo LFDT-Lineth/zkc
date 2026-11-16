@@ -13,6 +13,7 @@
 package vm
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -86,13 +87,10 @@ func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) 
 		}
 	}()
 	// Run the compiled program, passing only the machine's declared inputs (the
-	// generated harness rejects unknown keys).  Forward its debug/printf and
-	// fail output to our stderr so those statements are surfaced to the user.
-	if output, err = binary.Run(input, os.Stderr); err == gogen.ErrMachineFailure {
-		// NOTE: convert gogen failure into generic vm failure
-		return output, true, []error{&Failure{Message: err.Error()}}
-	} else if err != nil {
-		return output, false, []error{err}
+	// generated harness rejects unknown keys).  Forward its debug/printf
+	// output to our stderr so those statements are surfaced to the user.
+	if output, err = binary.Run(input, os.Stderr); err != nil {
+		return fromGoGenError(output, err)
 	}
 	// Log stats
 	stats.Log("Machine execution")
@@ -133,16 +131,26 @@ func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Arra
 		}
 	}()
 	// Run the compiled program, passing only the machine's declared inputs (the
-	// generated harness rejects unknown keys).  Forward its debug/printf and
-	// fail output to our stderr so those statements are surfaced to the user.
-	if output, nCheckPoints, err = binary.CheckPoint(input, cp.checkpoint, os.Stderr); err == gogen.ErrMachineFailure {
-		// NOTE: convert gogen failure into generic vm failure
-		return output, true, []error{&Failure{Message: err.Error()}}
-	} else if err != nil {
-		return output, false, []error{err}
+	// generated harness rejects unknown keys).  Forward its debug/printf
+	// output to our stderr so those statements are surfaced to the user.
+	if output, nCheckPoints, err = binary.CheckPoint(input, cp.checkpoint, os.Stderr); err != nil {
+		return fromGoGenError(output, err)
 	}
 	// Log stats
 	stats.Log(fmt.Sprintf("Machine execution (%d checkpoints)", nCheckPoints))
 	// success
 	return output, true, nil
+}
+
+// fromGoGenError converts a gogen machine failure into a generic vm failure
+// (preserving its message) which, as for the interpreter, does not prevent
+// tracing.  Any other error is returned unchanged, and prevents tracing.
+func fromGoGenError(output map[string]bit.Array, err error) (map[string]bit.Array, bool, []error) {
+	var mf *gogen.MachineFailure
+	//
+	if errors.As(err, &mf) {
+		return output, true, []error{&Failure{Message: mf.Message}}
+	}
+	//
+	return output, false, []error{err}
 }

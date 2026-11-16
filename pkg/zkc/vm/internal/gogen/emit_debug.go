@@ -136,12 +136,12 @@ func formatBase(f util.Format) int {
 	}
 }
 
-// emitFail renders a FAIL instruction.  With no message chunks it panics with
-// the bare "machine panic" the interpreter reports; otherwise it formats the
-// message exactly as the interpreter does and panics with "machine panic:
-// <msg>".  The harness's failureHandler recovers the failure and relays it on
-// stderr (exiting with code 1).  FAIL is always compiled (non-verbose
-// mode only strips printf), so the message path is live in both modes.
+// emitFail renders a FAIL instruction, matching the interpreter's executeFail.
+// With no message chunks it panics with the bare "machine panic"; otherwise it
+// panics with the formatted message alone.  The harness's failureHandler
+// recovers the failure and reports it (see reportFailure).  FAIL is always
+// compiled (non-verbose mode only strips printf), so the message path is live
+// in both modes.
 func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Uint]) error {
 	if len(x.Chunks) == 0 {
 		c.line(`panic(failure("machine panic"))`)
@@ -154,7 +154,7 @@ func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Ui
 	}
 
 	if len(args) == 0 {
-		c.linef("panic(failure(%s))", strconv.Quote("machine panic: "+plain))
+		c.linef("panic(failure(%s))", strconv.Quote(plain))
 		return nil
 	}
 
@@ -163,7 +163,7 @@ func (g *generator) emitFail(c *code, fn *descFunction, x *bytecode.Fail[word.Ui
 	// the hot DEBUG path.
 	g.useHelper(helperFmtSprintf)
 
-	c.linef("panic(failure(fmt.Sprintf(%s, %s)))", strconv.Quote("machine panic: "+format), strings.Join(args, ", "))
+	c.linef("panic(failure(fmt.Sprintf(%s, %s)))", strconv.Quote(format), strings.Join(args, ", "))
 
 	return nil
 }

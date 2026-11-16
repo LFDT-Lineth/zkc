@@ -494,12 +494,22 @@ func (g *generator) emitMemHelpers(c *code) {
 			c.commentf("RamPage encapsulates a page of read/write memory")
 			c.line("type RamPage struct { data []uint64; stamps []uint64 }")
 		}
+		// Out-of-bounds reads (of roms / sroms) panic with an oobFailure,
+		// rather than calling fail with a formatted message: this keeps the
+		// read helpers cheap enough to inline even into large functions
+		// (where the inlining budget is much smaller), with the message only
+		// being formatted by failureHandler.
+		if len(g.sroms) > 0 || len(g.inputs) > 0 {
+			c.line("")
+			c.commentf("oobFailure signals an out-of-bounds read of a read-only memory.")
+			c.line("type oobFailure struct { addr uint64; name string }")
+		}
 		// sroms
 		if len(g.sroms) > 0 {
 			c.line("")
-			c.line("func sromRead[T uint8|uint16|uint32|uint64](data []T, addr uint64) T {")
+			c.line("func sromRead[T uint8|uint16|uint32|uint64](data []T, addr uint64, name string) T {")
 			c.line("if addr >= uint64(len(data)) {")
-			c.line(`fail("out-of-bounds read of static read-only memory")`)
+			c.line("panic(oobFailure{addr, name})")
 			c.line("}")
 			c.line("return data[addr]")
 			c.line("}")
@@ -507,9 +517,9 @@ func (g *generator) emitMemHelpers(c *code) {
 		// roms
 		if len(g.inputs) > 0 {
 			c.line("")
-			c.line("func romRead(data []uint64, addr uint64) uint64 {")
+			c.line("func romRead(data []uint64, addr uint64, name string) uint64 {")
 			c.line("if addr >= uint64(len(data)) {")
-			c.line(`fail("out-of-bounds read of read-only memory")`)
+			c.line("panic(oobFailure{addr, name})")
 			c.line("}")
 			c.line("return data[addr]")
 			c.line("}")
@@ -517,9 +527,12 @@ func (g *generator) emitMemHelpers(c *code) {
 		// woms
 		if len(g.outputs) > 0 {
 			c.line("")
-			c.line("func womWrite(data []uint64, addr uint64, v uint64) []uint64 {")
+			c.commentf("womFailure signals a conflicting write to a write-once memory.")
+			c.line("type womFailure struct { addr uint64; name string }")
+			c.line("")
+			c.line("func womWrite(data []uint64, addr uint64, v uint64, name string) []uint64 {")
 			c.line("if addr < uint64(len(data)) && data[addr] != v {")
-			c.line("fail(\"address already written for write-once memory\")")
+			c.line("panic(womFailure{addr, name})")
 			c.line("} else if n := addr + 1; uint64(len(data)) < n {")
 			c.line("data = expand(data, n)")
 			c.line("}")
@@ -800,20 +813,31 @@ func (g *generator) emitMainHarness(c *code) error {
 }
 
 // emitFailureHandler emits the deferred handler which turns a ZkC failure into
-// exit code 1 (the reference error path) and a DONE into normal, successful
-// termination.  Since a DONE unwinds via panic from arbitrarily deep in the
-// call stack, output collection for that path happens here rather than in
-// main.  recover() must be called directly by the deferred function (and not,
-// for example, be evaluated as an argument at the defer statement) for the
-// panic to be caught.
+// exit code 1 (the reference error path), having first reported its message
+// (see reportFailure), and a DONE into normal, successful termination.  Memory
+// failures (oobFailure / womFailure) carry their details unformatted, so their
+// messages (which match the interpreter's) are formatted here.  Since a DONE
+// unwinds via panic from arbitrarily deep in the call stack, output collection
+// for that path happens here rather than in main.  recover() must be called
+// directly by the deferred function (and not, for example, be evaluated as an
+// argument at the defer statement) for the panic to be caught.
 func (g *generator) emitFailureHandler(c *code) {
 	c.line("")
 	c.line("func failureHandler() {")
 	c.line("switch r := recover(); f := r.(type) {")
 	c.line("case nil:")
 	c.line("case failure:")
-	c.line(`fmt.Fprintln(os.Stderr, "exec error:", f)`)
-	c.line("os.Exit(1)")
+	c.line("reportFailure(string(f))")
+	//
+	if len(g.sroms) > 0 || len(g.inputs) > 0 {
+		c.line("case oobFailure:")
+		c.line(`reportFailure(fmt.Sprintf("address %x out-of-bounds for memory %s", f.addr, f.name))`)
+	}
+	//
+	if len(g.outputs) > 0 {
+		c.line("case womFailure:")
+		c.line(`reportFailure(fmt.Sprintf("address %x already written for write-only memory %s", f.addr, f.name))`)
+	}
 	//
 	if g.usesHelper(helperDone) {
 		c.line("case doneSignal:")
@@ -823,6 +847,20 @@ func (g *generator) emitFailureHandler(c *code) {
 	c.line("default:")
 	c.line("panic(r)")
 	c.line("}")
+	c.line("}")
+	// reportFailure
+	c.line("")
+	c.commentf("reportFailure reports a failure message and exits with code 1.")
+	c.line("func reportFailure(msg string) {")
+	//
+	if g.config.Json {
+		c.line(`fmt.Fprintln(os.Stderr, "exec error:", msg)`)
+	} else {
+		c.commentf("report failure message to parent")
+		c.linef("writePacket(append([]byte{%s}, msg...))", packetHeaderLiteral(packetFailure))
+	}
+	//
+	c.line("os.Exit(1)")
 	c.line("}")
 }
 

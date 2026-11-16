@@ -877,6 +877,82 @@ func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 	}
 }
 
+// TestGenFailureMessages checks that, for each kind of machine failure whose
+// message gogen reproduces, the message reaching the parent (within an error
+// still recognised as a machine failure) is identical to the interpreter's.
+func TestGenFailureMessages(t *testing.T) {
+	for _, tc := range []struct {
+		name, src string
+		in        map[string][]uint64
+	}{
+		{"fail", `pub input args(address:u8) -> (byte:u8)
+fn main() {
+    fail
+}
+`, map[string][]uint64{"args": {7}}},
+		{"fail_formatted", `pub input args(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    fail "boom a=%d", a
+}
+`, map[string][]uint64{"args": {7}}},
+		{"rom_oob", `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    result[0] = args[3]
+    return
+}
+`, map[string][]uint64{"args": {7}}},
+		{"srom_oob", `static tbl(address:u8) -> (byte:u8) {
+    1,
+    2
+}
+pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    result[0] = tbl[args[0]]
+    return
+}
+`, map[string][]uint64{"args": {5}}},
+		{"wom_rewrite", `pub input args(address:u8) -> (byte:u8)
+pub output result(address:u8) -> (byte:u8)
+fn main() {
+    var a:u8 = args[0]
+    result[2] = a
+    result[2] = a + 1
+    return
+}
+`, map[string][]uint64{"args": {7}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				p           = compileUint(t, tc.src, false)
+				inBytes     = encodeInputs(p, tc.in)
+				binary, err = gogen.Compile(p, gogen.DEFAULT_CONFIG)
+				mf          *gogen.MachineFailure
+			)
+			//
+			if err != nil {
+				t.Fatalf("Compile: %v", err)
+			}
+			//
+			registerCleanUp(t, binary)
+			// Execute reference program
+			_, refErr := referenceExec(t, p, inBytes)
+			// Execute GoGen binary
+			_, err = binary.Run(inBytes, io.Discard)
+			//
+			if refErr == nil {
+				t.Fatal("expected reference failure")
+			} else if !errors.Is(err, vm.GoGenMachineFailure) || !errors.As(err, &mf) {
+				t.Fatalf("expected machine failure, got %v", err)
+			} else if mf.Message != refErr.Error() {
+				t.Fatalf("failure message mismatch:\n  reference=%q\n  generated=%q", refErr.Error(), mf.Message)
+			}
+		})
+	}
+}
+
 func inputName(in map[string][]uint64) string {
 	b, err := json.Marshal(in)
 	if err != nil {
@@ -893,6 +969,15 @@ func inputName(in map[string][]uint64) string {
 // inputs — see encodeInputs.
 func referenceRun(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array) (map[string]bit.Array, bool) {
 	t.Helper()
+	//
+	out, err := referenceExec(t, p, in)
+	//
+	return out, err != nil
+}
+
+// referenceExec is as referenceRun, but returns the error arising (if any).
+func referenceExec(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array) (map[string]bit.Array, error) {
+	t.Helper()
 
 	var (
 		interpreter  = vm.NewBytecodeInterpreter(p)
@@ -903,14 +988,14 @@ func referenceRun(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array) 
 	}
 
 	if err := interpreter.Boot("main", inputs); err != nil {
-		return nil, true
+		return nil, err
 	}
 
 	if _, err := vm.ExecuteAll(interpreter, 1<<20); err != nil {
-		return nil, true
+		return nil, err
 	}
 
-	return vm.EncodeOutputs(interpreter), false
+	return vm.EncodeOutputs(interpreter), nil
 }
 
 // encodeInputs packs cell-valued inputs into the byte form the harness reads,

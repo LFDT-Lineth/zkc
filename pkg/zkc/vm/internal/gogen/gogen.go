@@ -35,7 +35,8 @@ import (
 // Binary interchange between a generated harness and its parent (i.e. Binary):
 // the harness writes stdout as a sequence of packets, each a header of one byte
 // (the packet kind) followed by a big endian uint32 (the payload length) and
-// then the payload itself.  Checkpoints precede the (single, final) output.
+// then the payload itself.  Checkpoints precede the (single, final) output or
+// failure.
 const (
 	packetHeaderSize = 5
 	// packetCheckpoint carries a checkpoint as encoded by checkpoint.Marshal.
@@ -43,11 +44,31 @@ const (
 	// packetOutput carries the output memories as a JSON object mapping each
 	// memory to its hex string (as per hexString in the generated code).
 	packetOutput byte = 1
+	// packetFailure carries the message of a machine failure (as raw text),
+	// immediately before the harness exits with code 1.
+	packetFailure byte = 2
 )
 
 // ErrMachineFailure is used to indicate when a gogen binary leads to a machine
-// failure, as opposed to any other kind of internal error.
+// failure, as opposed to any other kind of internal error.  Every
+// MachineFailure matches this (via errors.Is).
 var ErrMachineFailure = errors.New("machine failure")
+
+// MachineFailure is the error returned when a gogen binary leads to a machine
+// failure, carrying the failure message reported by the harness.
+type MachineFailure struct {
+	Message string
+}
+
+// Error implementation for error interface.
+func (e *MachineFailure) Error() string {
+	return e.Message
+}
+
+// Is allows errors.Is(err, ErrMachineFailure) to identify a MachineFailure.
+func (e *MachineFailure) Is(target error) bool {
+	return target == ErrMachineFailure
+}
 
 // Config controls the shape of the generated artefact.
 type Config struct {
@@ -161,29 +182,47 @@ func (p *Binary) Path() string {
 }
 
 // Run executes the compiled gogen binary on the given input, returning the
-// output, and any errors arising.  Finally, any output from the program (e.g.
-// from debug/print statements) is written to the given stderr writer.
+// output, and any errors arising.  A machine failure is reported as a
+// *MachineFailure. Finally, any output from the program (e.g. from debug/print
+// statements) is written to the given stderr writer.
 func (p *Binary) Run(in map[string]bit.Array, stderr io.Writer) (output map[string]bit.Array, err error) {
 	//
-	output, _, err = p.CheckPoint(in, func(checkpoint.CheckPoint) {
-		panic("checkpoint received")
+	output, _, err = p.execute(in, func(checkpoint.CheckPoint) error {
+		return errors.New("gogen internal failure (unexpected checkpoint during execution)")
 	}, stderr)
 	//
 	return output, err
 }
 
 // CheckPoint executes the compiled gogen binary on the given input, returning
-// the output, and any errors arising.  Furthermore, the consumer function is
-// called for any checkpoints generated during the process.  Finally, any output
-// from the program (e.g. from debug/print statements) is written to the given
-// stderr writer.
+// the output, and any errors arising.  A machine failure is reported as a
+// *MachineFailure.  Furthermore, the consumer function is called for any
+// checkpoints generated during the process.  Finally, any output from the
+// program (e.g. from debug/print statements) is written to the given stderr
+// writer.
 func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.CheckPoint), stderr io.Writer,
+) (output map[string]bit.Array, nCheckpoints uint, err error) {
+	//
+	return p.execute(in, func(cp checkpoint.CheckPoint) error {
+		consumer(cp)
+		//
+		return nil
+	}, stderr)
+}
+
+// execute runs the compiled gogen binary on the given input, as for
+// CheckPoint, except that the consumer can reject a checkpoint by returning an
+// error.  In such case, the binary is terminated and that error returned.
+func (p *Binary) execute(in map[string]bit.Array, consumer func(checkpoint.CheckPoint) error, stderr io.Writer,
 ) (output map[string]bit.Array, nCheckpoints uint, err error) {
 	//
 	var (
 		input []byte
+		// failure message reported by the harness (if any)
+		failure *MachineFailure
 		// packetConsumer decodes each packet written by the harness, passing
-		// checkpoints on to the checkpoint consumer and retaining the output.
+		// checkpoints on to the checkpoint consumer and retaining the output
+		// (or failure).
 		packetConsumer = func(kind byte, payload []byte) error {
 			switch kind {
 			case packetCheckpoint:
@@ -196,15 +235,17 @@ func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.Ch
 				//
 				nCheckpoints++
 				// pass on checkpoint
-				consumer(cp)
-				//
-				return nil
+				return consumer(cp)
 			case packetOutput:
 				var err error
 				//
 				output, err = unmarshalOutput(payload)
 				//
 				return err
+			case packetFailure:
+				failure = &MachineFailure{string(payload)}
+				//
+				return nil
 			default:
 				return fmt.Errorf("decoding generated output: unknown packet kind %d", kind)
 			}
@@ -213,8 +254,17 @@ func (p *Binary) CheckPoint(in map[string]bit.Array, consumer func(checkpoint.Ch
 	// Marshal input data into bytes
 	if input, err = marshalInputs(in); err != nil {
 		return nil, nCheckpoints, err
-	} else if err = runRaw(p.path, input, packetConsumer, stderr); err != nil {
+	}
+	// Run harness, checking its exit status agrees with any failure reported.
+	switch err = runRaw(p.path, input, packetConsumer, stderr); {
+	case errors.Is(err, ErrMachineFailure) && failure != nil:
+		return nil, nCheckpoints, failure
+	case errors.Is(err, ErrMachineFailure):
 		return nil, nCheckpoints, err
+	case err != nil:
+		return nil, nCheckpoints, err
+	case failure != nil:
+		return nil, nCheckpoints, fmt.Errorf("gogen child reported failure %q, but exited normally", failure.Message)
 	}
 	// Decode final output
 	return output, nCheckpoints, nil

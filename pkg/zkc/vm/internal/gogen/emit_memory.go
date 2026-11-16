@@ -78,14 +78,14 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 
 			switch mi.role {
 			case sromStatic:
-				expr = fmt.Sprintf("sromRead(%s[:], start + %d)", mi.varName, i)
+				expr = fmt.Sprintf("sromRead(%s[:], start + %d, %q)", mi.varName, i, mi.name)
 				if mi.elemType != "uint64" {
 					expr = "uint64(" + expr + ")"
 				}
 				//
 				bound = maxContents(mi.contents)
 			case romInput:
-				expr = fmt.Sprintf("romRead(%s, start + %d)", mi.varName, i)
+				expr = fmt.Sprintf("romRead(%s, start + %d, %q)", mi.varName, i, mi.name)
 				bound = widthMax(64)
 			case ramScratch:
 				expr = fmt.Sprintf("%s.data[start+%d]", mi.varName, i)
@@ -148,7 +148,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 
 			switch mi.role {
 			case womOutput:
-				c.linef("%s = womWrite(%s, start+%d, %s)", mi.varName, mi.varName, i, src.expr)
+				c.linef("%s = womWrite(%s, start+%d, %s, %q)", mi.varName, mi.varName, i, src.expr, mi.name)
 			case ramScratch:
 				c.linef("%s.data[start+%d] = %s", mi.varName, i, src.expr)
 			default:
