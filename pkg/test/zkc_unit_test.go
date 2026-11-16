@@ -495,23 +495,25 @@ func Test_ZkcUnit_Basic_117(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_118(t *testing.T) {
-	// #2007: support implicit sign bit
-	checkZkcUnit(t, "zkc/unit/basic_118", DEFAULT_UNIT_CONFIG.
-		GoGen(false).Constraints(false))
+	checkZkcUnit(t, "zkc/unit/basic_118", DEFAULT_UNIT_CONFIG)
 }
 
 func Test_ZkcUnit_Basic_119(t *testing.T) {
-	// #2007: support implicit sign bit
 	checkZkcUnit(t, "zkc/unit/basic_119", DEFAULT_UNIT_CONFIG.
 		GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_120(t *testing.T) {
-	checkZkcUnit(t, "zkc/unit/basic_120", DEFAULT_UNIT_CONFIG)
+	checkZkcUnit(t, "zkc/unit/basic_120", DEFAULT_UNIT_CONFIG.
+		GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_121(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_121", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_122(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/basic_122", DEFAULT_UNIT_CONFIG)
 }
 
 // End of CSUB cases

@@ -1,17 +1,10 @@
-pub input data(address:u8) -> (word:u8)
+pub input inp(addr:u8) -> (w:u8)
+pub output out(addr:u8) -> (w:u16)
 
-// Subtract-with-borrow whose top limb is the sign bit,
-// ==> the constraints use the signed form.
+// Constant subtraction into a wider register
+// Operation bitwidth is u8
 fn main() {
-    var a:u8 = data[0]
-    var lo:u8
-    var sign:u1
-    //
-    sign::lo = (3 - a) as u9
-    //
-    if lo != data[1] {
-        fail
-    } else if (sign as u8) != data[2] {
-        fail
-    }
+    var a:u8 = inp[0]
+    var r:u16 = (3 - a) as u16
+    out[0] = r
 }

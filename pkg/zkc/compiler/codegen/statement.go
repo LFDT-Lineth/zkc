@@ -1023,17 +1023,19 @@ func (p *StmtCompiler) compileCSub(folded vm.Uint, nargs []Expr, bw util.Option[
 }
 
 // compileSubWithRegZero compiles a negative constant subtraction as
-// 0 - x0 - x1 - ... - xn - folded, with register 0 as the leading source.
+// 0 - x0 - x1 - ... - xn - folded. The leading source is a register of the
+// operation width holding zero.
 func (p *StmtCompiler) compileSubWithRegZero(folded vm.Uint, nargs []Expr, bw util.Option[uint], mapping []uint,
 	target RegisterPacket,
 ) []Bytecode {
 	sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
-	regZero := p.allocate(util.Some[uint](0))
+
+	// Add a register of the operation width holding zero as the leading source
+	regZero := p.allocate(bw)
+	insns = append(insns, vm.LoadConst(regZero, vm.Uint{}, util.Cast[uint16](bw.Unwrap())))
 	sources = append([]vm.RegisterId{regZero}, sources...)
 
-	var zero vm.Uint
-
-	positiveFolded, _ := zero.Sub(folded)
+	positiveFolded, _ := vm.Uint{}.Sub(folded)
 
 	return append(insns, vm.SubVec(target, sources, positiveFolded, util.Cast[uint16](bw.Unwrap())))
 }
