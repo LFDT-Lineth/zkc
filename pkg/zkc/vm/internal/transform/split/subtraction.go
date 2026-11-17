@@ -65,9 +65,13 @@ func Subtraction[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *
 
 // Check whether this subtraction actually requires splitting or not.  This is
 // important since, if it doesn't need splitting, then it doesn't need to be
-// broken up.  A subtraction only requires splitting if it contains a source
-// register or constant which must be split, or its right-hand side exceeds the
-// target bandwidth.
+// broken up.
+// A subtraction requires splitting
+// - when a source register must be
+// - a constant is split only when it exceeds the register width and the target
+// is narrower than the bandwidth.
+// A constant subtraction immediate is split whenever it exceeds the register
+// width.
 func requiresSplitting[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith[W]) bool {
 	var bitwidth = descriptor.BitwidthOf(mapping, insn.Target...).Unwrap()
 	//
@@ -76,7 +80,11 @@ func requiresSplitting[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith
 			return true
 		}
 	}
-	// Check whether constant must be split (or not)
+	// A CSUB immediate is the minuend, so it is split into register-width limbs
+	// whenever it does not fit.
+	if insn.Op == bytecode.OP_CSUB {
+		return !insn.Constant.FitsWithin(mapping.RegisterWidth())
+	}
 	return !insn.Constant.FitsWithin(mapping.RegisterWidth()) && bitwidth < mapping.BandWidth()
 }
 
