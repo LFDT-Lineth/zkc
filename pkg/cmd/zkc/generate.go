@@ -116,6 +116,4 @@ func init() {
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
 	generateCmd.Flags().String("sharding", "", "specify sharding strategy")
 	generateCmd.Flags().Bool("json", true, "specify json interchange format")
-	// Gogen does not currently support splitting (for now)
-	generateFlags.Exclude("gogen", "split")
 }
