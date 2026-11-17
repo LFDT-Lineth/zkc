@@ -196,9 +196,6 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 
 	for _, id := range order {
 		fn := g.funcByID[id]
-		if fn.IsNative() {
-			return "", fmt.Errorf("gogen: native function %q unsupported", fn.Name())
-		}
 
 		var b code
 		if err := g.emitFunction(&b, id, fn, cfg); err != nil {
