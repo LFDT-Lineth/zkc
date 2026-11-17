@@ -1192,6 +1192,12 @@ func (p *StmtCompiler) asConstant(e Expr) (vm.Uint, bool) {
 // do not cross the 𝔽/uint boundary.  A representation-changing cast is not
 // transparent — it must materialise a field-cast instruction — so it blocks
 // the peel.
+//
+// A narrowing cast is checked on a fresh copy of the local, which is accessed
+// in its place.  For example, "x = f(x as u8)" becomes "t = x; check t:u8; x =
+// f(t)".  Unlike the local, the copy cannot be overwritten later in the same
+// vector (here, by the call's return) and, hence, its column holds the value
+// actually cast on the row executing the cast.
 func (p *StmtCompiler) asLocalAccess(e Expr) (util.Option[vm.RegisterId], []Bytecode) {
 	if c, ok := e.(*expr.LocalAccess[symbol.Resolved]); ok {
 		return util.Some(util.Cast[RegisterId](c.Variable)), nil
@@ -1203,10 +1209,20 @@ func (p *StmtCompiler) asLocalAccess(e Expr) (util.Option[vm.RegisterId], []Byte
 		//
 		if outer.IsEmpty() == inner.IsEmpty() {
 			if o, bs := p.asLocalAccess(c.Expr); o.HasValue() {
-				// Determine appropriate check casts
-				casts := p.checkCast([]RegisterId{o.Unwrap()}, outer, inner)
+				var (
+					reg = o.Unwrap()
+					// Determine appropriate check casts
+					casts = p.checkCast([]RegisterId{reg}, outer, inner)
+				)
+				// Copy the local before its first narrowing cast.  Any bytecodes
+				// from inner casts start with this copy (i.e. reg is the copy).
+				if len(casts) > 0 && len(bs) == 0 {
+					tmp := p.allocate(p.registers[reg].Bitwidth())
+					bs = []Bytecode{vm.Assign[vm.Uint](tmp, reg)}
+					reg, casts = tmp, p.checkCast([]RegisterId{tmp}, outer, inner)
+				}
 				// Done
-				return o, append(bs, casts...)
+				return util.Some(reg), append(bs, casts...)
 			}
 		}
 	}
