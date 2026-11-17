@@ -85,6 +85,7 @@ func requiresSplitting[W word.Word[W]](mapping LimbsMap[W], insn *bytecode.Arith
 	if insn.Op == bytecode.OP_CSUB {
 		return !insn.Constant.FitsWithin(mapping.RegisterWidth())
 	}
+	//
 	return !insn.Constant.FitsWithin(mapping.RegisterWidth()) && bitwidth < mapping.BandWidth()
 }
 

@@ -442,7 +442,7 @@ func buildEntryVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
 // the copies here (rather than at each return site within the body) ensures they
 // are emitted exactly once.
 func buildExitVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
-	mapping  descriptor.RegisterMap[W]) BytecodeVector[W] {
+	mapping descriptor.RegisterMap[W]) BytecodeVector[W] {
 	var ncodes []Bytecode[W]
 	//
 	for _, c := range copies {
