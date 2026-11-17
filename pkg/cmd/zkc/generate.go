@@ -77,7 +77,7 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 	// Build the word machine from the source files.
 	_, binfile := Build[F, W](build, args...)
 	// Translate bytecode => word machine
-	src, err := vm.GoGenGenerate(binfile.RawProgram(), vm.GoGenConfig{
+	src, err := vm.GoGenGenerate(binfile.GoGenProgram(), vm.GoGenConfig{
 		Source:        sourceProvenance(args),
 		CheckPointing: strategy,
 		Json:          json,
@@ -116,6 +116,4 @@ func init() {
 	generateCmd.Flags().StringP("output", "o", "", "specify output file for generated Go source (default stdout)")
 	generateCmd.Flags().String("sharding", "", "specify sharding strategy")
 	generateCmd.Flags().Bool("json", true, "specify json interchange format")
-	// Gogen does not currently support splitting (for now)
-	generateFlags.Exclude("gogen", "split")
 }
