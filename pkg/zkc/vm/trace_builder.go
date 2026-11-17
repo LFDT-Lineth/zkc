@@ -49,18 +49,19 @@ type Tracer[W Word[W], F Element[F], T any] interface {
 // abstracts the myriad different ways this can be done (e.g. sharding,
 // parallelism, etc).
 type TraceBuilder[W Word[W], F field.Element[F], T Tracer[W, F, T], E Word[E]] struct {
-	config      TraceConfig
-	builder     ir.TraceBuilder[F]
-	original    Program[Uint]
-	execution   Program[E]
-	tracing     Program[W]
-	constraints air.Schema[F]
+	config           TraceConfig
+	builder          ir.TraceBuilder[F]
+	executionProgram Program[E]
+	tracingProgram   Program[W]
+	gogenProgram     Program[Uint]
+	constraints      air.Schema[F]
 }
 
 // NewTraceBuilder constructs a default tracer builder which, most likely,
 // should be further configured before use.
 func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](config TraceConfig,
-	original Program[Uint], execution Program[E], tracing Program[W], constraints air.Schema[F]) TraceBuilder[W, F, T, E] {
+	executionProgram Program[E], tracingProgram Program[W], gogenProgram Program[Uint],
+	constraints air.Schema[F]) TraceBuilder[W, F, T, E] {
 	//
 	builder := ir.NewTraceBuilder[F]().
 		// NOTE: never use validation, as it hides constraint failures.
@@ -69,7 +70,7 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](conf
 		WithExpansion(true).
 		WithPadding(config.PaddingStrategy())
 		//
-	return TraceBuilder[W, F, T, E]{config, builder, original, execution, tracing, constraints}
+	return TraceBuilder[W, F, T, E]{config, builder, executionProgram, tracingProgram, gogenProgram, constraints}
 }
 
 // BootAndTrace generates a suitable trace from the given inputs for the contraints
@@ -93,7 +94,7 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceUnsharded(inputs map[string]bit.Ar
 		shard util.Option[trace.Shard[F]]
 	)
 	// No strategy, therefore trace sequentially
-	shard, outputs, errors = BootAndTrace[W, F, T](p.tracing, inputs)
+	shard, outputs, errors = BootAndTrace[W, F, T](p.tracingProgram, inputs)
 	// Sanity check whether can continue or not
 	if shard.IsEmpty() {
 		// No, have an unrecoverable error
@@ -126,17 +127,18 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string]bit.Array
 	)
 	// fast mode execution to generate checkpoints
 	if p.config.gogen {
-		// TODO: drop original program and use execution program instead.  See #2332
-		outputs, traceable, errors = BootAndCheckpointWithGogen(p.original, inputs, strategy)
+		// TODO: drop gogen program and use execution program directly.  See
+		// #2332
+		outputs, traceable, errors = BootAndCheckpointWithGogen(p.gogenProgram, inputs, strategy)
 	} else {
-		outputs, traceable, errors = BootAndCheckpoint(p.execution, inputs, strategy)
+		outputs, traceable, errors = BootAndCheckpoint(p.executionProgram, inputs, strategy)
 	}
 	// Sanity check
 	if !traceable {
 		return outputs, util.None[trace.LazyTrace[F]](), errors
 	}
 	// Perform tracing in parallel (or sequentially)
-	futures = p.traceCheckPoints(checkpoints, indexOutputs(p.tracing, outputs))
+	futures = p.traceCheckPoints(checkpoints, indexOutputs(p.tracingProgram, outputs))
 	// Done
 	return outputs, util.Some(trace.NewLazyTrace(futures...)), errors
 }
@@ -162,7 +164,7 @@ func (p TraceBuilder[W, F, T, E]) traceCheckPoints(checkpoints []CheckPoint, out
 			// Replicate outputs
 			replicateOutputs(cp, outputs)
 			// Trace ith shard
-			steps, oshard, errs1 := RestoreAndTraceFor[W, F, T](p.tracing, cp, strategy.ShardFunction, steps)
+			steps, oshard, errs1 := RestoreAndTraceFor[W, F, T](p.tracingProgram, cp, strategy.ShardFunction, steps)
 			// Sanity check what happened
 			if oshard.IsEmpty() {
 				// Log failure

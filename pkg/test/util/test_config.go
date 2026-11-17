@@ -222,10 +222,8 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 func applyGoGen(t *testing.T, test string, program vm.Program[vm.Uint], tests []TestCase) []TestCase {
 	// Attempt to extend tests to include gogen
 	var (
-		// Lower through the execution pipeline before handing to gogen.  GoGenCompile
-		// requires Program[Uint] with registers no wider than 64 bits, so we split
-		// against a bounded word whilst staying in the Uint representation.
-		pG = vm.TransformForExecutionRaw[vm.Uint, vm.Uint](program, vm.WORD_UINT128, vm.DEFAULT_TRANSFORMS)
+		// Construct gogen execution program
+		pG = vm.TransformForGoGenExecution(program, vm.DEFAULT_TRANSFORMS)
 		// Build bin program
 		bin, err = vm.GoGenCompile(pG)
 	)

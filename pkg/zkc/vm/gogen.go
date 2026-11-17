@@ -36,9 +36,8 @@ var GoGenMachineFailure = gogen.ErrMachineFailure
 // GoGenGenerate compiles a bytecode program into native Go source: the "fast
 // execution mode" alternative to interpreting the program.  Where the bytecode
 // interpreter builds a decode-dispatch loop, this emits plain Go the compiler
-// can optimise — and it consumes the program over Uint (the same program the
-// reference executor interprets), so the generated semantics mirror the
-// reference executor, with no register splitting or word narrowing in the way.
+// can optimise — and it consumes the program over Uint and mirrors the
+// semantics of the reference (i.e. bytecode) interpreter.
 //
 // The result is a standalone package main whose harness reads the input
 // memories from stdin and writes the output memories (and any checkpoints) to
