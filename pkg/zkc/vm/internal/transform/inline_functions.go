@@ -418,12 +418,12 @@ func sameShape[W Word[W]](a, b Register[W]) bool {
 // be in order to execute --- which matters when the call was the sole code of
 // its vector and no argument copies were needed.
 func buildEntryVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
-	bodyPC uint, alloc split.Allocator[W]) BytecodeVector[W] {
+	bodyPC uint, mapping descriptor.RegisterMap[W]) BytecodeVector[W] {
 	//
 	var ncodes = slices.Clone(codes)
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Copy[W](c.target, c.source, alloc.Register(c.target).Bitwidth()))
+		ncodes = append(ncodes, bytecode.Copy[W](c.target, c.source, mapping.Register(c.target).Bitwidth()))
 	}
 	// Fall through into the callee body, which immediately follows.  Observe
 	// that appending here cannot disturb any skip within codes, since skip
@@ -442,11 +442,11 @@ func buildEntryVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
 // the copies here (rather than at each return site within the body) ensures they
 // are emitted exactly once.
 func buildExitVector[W Word[W]](codes []Bytecode[W], copies []registerCopy,
-	alloc split.Allocator[W]) BytecodeVector[W] {
+	mapping  descriptor.RegisterMap[W]) BytecodeVector[W] {
 	var ncodes []Bytecode[W]
 	//
 	for _, c := range copies {
-		ncodes = append(ncodes, bytecode.Copy[W](c.target, c.source, alloc.Register(c.target).Bitwidth()))
+		ncodes = append(ncodes, bytecode.Copy[W](c.target, c.source, mapping.Register(c.target).Bitwidth()))
 	}
 	//
 	ncodes = append(ncodes, codes...)
