@@ -69,9 +69,11 @@ func NewPreFlightRecorder[W Word[W]](program Program[W]) PreFlightRecorder[W] {
 		pfr = PreFlightRecorder[W]{program, bci, data}
 	)
 	// Register breakpoint handler
-	bci.BreakPointer(func(_ uint32) bool {
-		// Record interaction
-		pfr.recordFunctionCall()
+	bci.WithBreakpointHandler(func(_ uint32, entry bool) bool {
+		if entry {
+			// Record interaction
+			pfr.recordFunctionCall()
+		}
 		// Don't interrupt
 		return false
 	})
@@ -175,6 +177,13 @@ func splitColumnDescriptor(field field.Config, desc trace.ColumnDescriptor) []tr
 	// Apply splitting algorithm
 	limbWidths = descriptor.LimbWidths(field.RegisterWidth, desc.Bitwidth.Unwrap())
 	// Reconstruct descriptors
+	if len(limbWidths) <= 1 {
+		// NOTE: to be consistent with register splitting elsewhere, naming of
+		// limbs only uses the extended notation (e.g. "X'1") when there is more
+		// than one limb.  This includes zero-width columns, which have no limbs.
+		return []trace.ColumnDescriptor{desc}
+	}
+	//
 	return array.Map(limbWidths, func(i uint, bitwidth uint) trace.ColumnDescriptor {
 		var name = fmt.Sprintf("%s'%d", desc.Name, i)
 		//

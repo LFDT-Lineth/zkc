@@ -36,7 +36,7 @@ import (
 func ExtractExecutingState[W word.Word[W]](p *Interpreter[W]) (fid uint16, pc uint32, st []W) {
 	lab := p.program.FunctionAt(p.pc)
 	//
-	return lab.ModuleId, uint32(lab.Point.Macro), p.dataStack.SliceEnd(uint(p.fp))
+	return lab.ModuleId, uint32(lab.Point.Macro), p.dataStack.SliceEnd(uint(p.framePointer))
 }
 
 // Failure indicates a machine failure, such as executing a fail instruction.
@@ -61,17 +61,12 @@ func failure(msg string, values ...any) error {
 }
 
 // failure records the current machine state and then constructs a suitable
-// machine failure.  Recording is done by triggering the breakpoint handler
-// which, outside of tracing, is a no-op (see New).  Routing every recognised
-// runtime failure through here ensures the row which triggered the failure is
-// committed to the trace being generated, so the constraints can reject it
-// (e.g. a u32 addition which overflows leaves a wrapped result in the frame
-// that violates the corresponding arithmetic / range constraint).
+// machine failure.  Recording is done by triggering the registered failure
+// handler (which, by default, is a no-op).
 func (p *Interpreter[W]) failure(msg string, values ...any) error {
-	// Snapshot the current (failing) state.  A failing row is never a normal
-	// return, so the opcode passed to the handler is irrelevant (0 ≠ RET).
-	p.breakpoint(0)
-	//
+	// Trigger failure handler
+	p.failureHandler()
+	// Done
 	return failure(msg, values...)
 }
 
@@ -114,11 +109,15 @@ type Interpreter[W word.Word[W]] struct {
 	// Program counter: offset into program.bytecodes of the next bytecode to
 	// decode and execute.
 	pc uint32
+	// Function entry flag.  This is true for the first instruction executed in
+	// the current function, and is useful for distinguishing breakpoints which
+	// capture the function entry and a given function execution.
+	funEntry bool
 	// Frame pointer: base offset within dataStack of the current function's
 	// activation record.  Registers are addressed relative to this.
-	fp uint32
+	framePointer uint32
 	// return pointer / width (used for function call returns).
-	rp, rw uint32
+	returnPointer, returnWidth uint32
 	// Data stack holding the activation records (registers) of active function
 	// calls.  The current frame begins at fp.
 	dataStack heap.Heap[W]
@@ -144,13 +143,13 @@ type Interpreter[W word.Word[W]] struct {
 	cache FunctionCallCache[W]
 	// Optional callback invoked whenever a breakpoint is reached, i.e. an
 	// instruction flagged with the BREAKPOINT modifier bit (see BreakPoint) is
-	// about to execute.  The callback typically snapshots the current machine
-	// state itself (see CheckPoint) and is responsible for governing how
-	// frequently it actually acts.  Configured via the BreakPointer builder
-	// method; defaults to a panicking stub until one has been set.  Finally,
-	// the breakpoint function may "interrupt" the interpreter's execution by
-	// returning true.
-	breakpoint func(uint32) (interrupt bool)
+	// about to execute.  This can be used, for example, to  snapshot the
+	// current machine state, etc.  Finally, the breakpointHandler function may
+	// "interrupt" the interpreter's execution by returning true.
+	breakpointHandler func(uint32, bool) (interrupt bool)
+	// Optional callback invoked whenever a machine failure arises.  This is
+	// typically used to allow some additional processing in this case.
+	failureHandler func()
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -230,24 +229,26 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 	}
 	//
 	return &Interpreter[W]{
-		program: compiled,
-		modulus: prime,
-		field:   program.Field(),
-		pc:      0,
-		fp:      0,
-		rp:      0,
-		rw:      0,
-		sroms:   sroms,
-		roms:    roms,
-		woms:    woms,
-		rams:    rams,
-		prams:   prams,
-		cache:   cache,
-		// Default breakpointer: a no-op.  A real handler is installed via
-		// BreakPointer when tracing / debugging (see BootAndTrace, BootAndDebug).
-		// Note that failures route through this handler too (see failure), so it
-		// must be safe to invoke even when no explicit handler is configured.
-		breakpoint: func(uint32) bool { return false },
+		program:       compiled,
+		modulus:       prime,
+		field:         program.Field(),
+		pc:            0,
+		funEntry:      true,
+		framePointer:  0,
+		returnPointer: 0,
+		returnWidth:   0,
+		sroms:         sroms,
+		roms:          roms,
+		woms:          woms,
+		rams:          rams,
+		prams:         prams,
+		cache:         cache,
+		// Default breakpoint handler is a no-op.  A real handler can be installed via
+		// WithBreakpointHandler.
+		breakpointHandler: func(uint32, bool) bool { return false },
+		// Default failure handler is a no-op.  A real handler can be installed
+		// via WithFailureHandler.
+		failureHandler: func() {},
 	}
 }
 
@@ -273,15 +274,26 @@ func (p *Interpreter[W]) WithAccessLog() *Interpreter[W] {
 	return p
 }
 
-// BreakPointer configures the callback invoked whenever a breakpoint is
-// reached, i.e. an instruction flagged with the BREAKPOINT modifier bit (see
-// BreakPoint) is about to execute.  The callback typically snapshots the
-// current machine state itself (see CheckPoint) and is responsible for
-// governing how frequently it actually acts.  It returns the interpreter to
-// allow method chaining.
-func (p *Interpreter[W]) BreakPointer(breakpointer func(uint32) bool) *Interpreter[W] {
+// WithBreakpointHandler configures the callback invoked whenever a breakpoint
+// is reached, i.e. an instruction flagged with the BREAKPOINT modifier bit (see
+// BreakPoint) is about to execute.   The callback is triggered with two
+// parameters: (i) the opcode of the instruction which triggered the breakpoint;
+// (ii) the entry flag which signals that this is the first instruction executed
+// on entry to the enclosing function.  The latter is used to distinguish
+// function entry from repeated execution of the first instruction.  Finally,
+// the handler returns a flag indicating whether or not to interrupt execution
+// and return from the enclosing excution instance.
+func (p *Interpreter[W]) WithBreakpointHandler(handler func(uint32, bool) bool) *Interpreter[W] {
 	//
-	p.breakpoint = breakpointer
+	p.breakpointHandler = handler
+	//
+	return p
+}
+
+// WithFailureHandler configures a handler to be triggered upon machine failure.
+func (p *Interpreter[W]) WithFailureHandler(handler func()) *Interpreter[W] {
+	//
+	p.failureHandler = handler
 	//
 	return p
 }
@@ -317,9 +329,10 @@ func (p *Interpreter[W]) Reset(fid uint16) {
 	//
 	p.pc = sym.Offset
 	p.fid = fid
-	p.fp = 0
-	p.rp = 0
-	p.rw = 0
+	p.funEntry = true
+	p.framePointer = 0
+	p.returnPointer = 0
+	p.returnWidth = 0
 	p.callStack.Clear()
 	p.dataStack.Clear()
 	// allocate space for the given function
@@ -362,7 +375,7 @@ func (p *Interpreter[W]) Outputs() iter.Iterator[InputOutput[W]] {
 // restore (see Restore).
 func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint {
 	var (
-		fp = uint(p.fp)
+		fp = uint(p.framePointer)
 		// Extract checkpointed function
 		fun = p.program.Module(p.fid).(*descriptor.Function[W])
 		// Extract arguments (excluding stamps)
@@ -505,9 +518,10 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 	var (
 		nsteps    = uint64(0)
 		err       error
-		frame     []W = p.dataStack.SliceEnd(uint(p.fp))
+		frame     []W = p.dataStack.SliceEnd(uint(p.framePointer))
 		bytecodes     = p.program.Bytecodes()
 		pool          = p.program.Constants()
+		funEntry      = p.funEntry
 	)
 	//
 	for nsteps < steps && err == nil {
@@ -526,11 +540,13 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 				cbop |= bytecodes[p.pc] & 0xff00
 			}
 			// Apply breakpoint and interrupt if requested
-			if p.breakpoint(cbop) {
+			if p.breakpointHandler(cbop, funEntry) {
 				// fire interrupt
 				break
 			}
 		}
+		//
+		funEntry = false
 		// increase step counter
 		nsteps++
 		//
@@ -547,7 +563,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			}
 			// refresh the register window, since wide instructions include
 			// those (ENTER/LEAVE/RET) which change the enclosing frame.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
+			funEntry = p.funEntry
 		case encoding.CHECKCAST:
 			p.pc, err = p.executeCheckCast(p.pc, bytecodes, frame)
 		case encoding.DEBUG:
@@ -561,27 +578,31 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 		case encoding.ENTER_n:
 			err = p.executeEnter_n(p.pc, bytecodes, frame)
 			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
+			funEntry = p.funEntry
 		case encoding.ENTER_2:
 			err = p.executeEnter_2(p.pc, bytecodes, frame)
 			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
+			funEntry = p.funEntry
 		case encoding.TAILCALL_n:
 			err = p.executeTailCall_n(p.pc, bytecodes, frame)
 			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
+			funEntry = p.funEntry
 		case encoding.TAILCALL_2:
 			err = p.executeTailCall_2(p.pc, bytecodes, frame)
 			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
+			funEntry = p.funEntry
 		case encoding.LEAVE_n:
 			p.pc = p.executeLeave_n(p.pc, bytecodes, frame)
 			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
 		case encoding.LEAVE_2:
 			p.pc = p.executeLeave_2(p.pc, bytecodes, frame)
 			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
 		case encoding.RET:
 			// check for termination
 			if p.callStack.Size() == 0 {
@@ -590,7 +611,7 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			// normal reutrn
 			p.pc, err = p.executeReturn(p.pc, bytecodes)
 			// refresh the register window.
-			frame = p.dataStack.SliceEnd(uint(p.fp))
+			frame = p.dataStack.SliceEnd(uint(p.framePointer))
 		case encoding.DONE:
 			// Termination
 			return nsteps, nil
@@ -714,6 +735,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			err = fmt.Errorf("unknown bytecode encountered (0x%x)", opcode)
 		}
 	}
+	// Reset function entry flag
+	p.funEntry = funEntry
 	//
 	return nsteps, err
 }
@@ -730,6 +753,8 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		wopcode = (codes[pc] >> 8) & 0xff
 		err     error
 	)
+	// Reset function entry flag (i.e. because it is refreshed after this).
+	p.funEntry = false
 	//
 	switch wopcode {
 	case encoding.WIDE_FAIL:
@@ -903,7 +928,7 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 		// Cache number of arguments
 		numArgs = uint32(args.Count())
 		// determine callee frame pointer
-		calleeFp = p.fp + uint32(len(stack))
+		calleeFp = p.framePointer + uint32(len(stack))
 		//
 		fid = p.program.FunctionAt(target).ModuleId
 	)
@@ -917,12 +942,15 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	if p.tryCachedCall(fid, calleeFp, width, numArgs) {
 		// Skip to next instruction
 		p.pc = pc + n
+		// Clear flag because it is reloaded after this call.
+		p.funEntry = false
 	} else {
 		// save function pointer and return address
-		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
+		p.callStack.Push(NewStackFrame(p.fid, p.framePointer, pc+n))
 		//
 		p.fid = fid
-		p.fp = calleeFp
+		p.framePointer = calleeFp
+		p.funEntry = true
 		p.pc = target
 	}
 	//
@@ -936,7 +964,7 @@ func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) er
 	var (
 		width, target, arg, n = encoding.DecodeEnter_2(pc, codes)
 		// determine callee frame pointer
-		calleeFp = p.fp + uint32(len(stack))
+		calleeFp = p.framePointer + uint32(len(stack))
 		//
 		fid = p.program.FunctionAt(target).ModuleId
 	)
@@ -948,12 +976,15 @@ func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) er
 	if p.tryCachedCall(fid, calleeFp, width, 1) {
 		// Skip to next instruction
 		p.pc = pc + n
+		// Clear flag because it is reloaded after this call.
+		p.funEntry = false
 	} else {
 		// save function pointer and return address
-		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
+		p.callStack.Push(NewStackFrame(p.fid, p.framePointer, pc+n))
 		//
 		p.fid = fid
-		p.fp = calleeFp
+		p.framePointer = calleeFp
+		p.funEntry = true
 		p.pc = target
 	}
 	//
@@ -969,8 +1000,8 @@ func (p *Interpreter[W]) tryCachedCall(fid uint16, fp uint32, width uint16, nArg
 			offset  = uint(fp + nArgs)
 		)
 		// Configure return pointer / width
-		p.rp = fp + nArgs
-		p.rw = uint32(width)
+		p.returnPointer = fp + nArgs
+		p.returnWidth = uint32(width)
 		// copy returns into callee frame
 		for i, r := range returns {
 			p.dataStack.Set(offset+uint(i), r)
@@ -1000,12 +1031,13 @@ func (p *Interpreter[W]) executeTailCall_n(pc uint32, codes []uint32, stack []W)
 	p.dataStack.Alloc(uint(width))
 	// assign from scratch into frame
 	for i := uint(0); i < p.scratch.Size(); i++ {
-		p.dataStack.Set(i+uint(p.fp), p.scratch.Get(i))
+		p.dataStack.Set(i+uint(p.framePointer), p.scratch.Get(i))
 	}
 	// clear scratch
 	p.scratch.Clear()
 	//
 	p.fid = p.program.FunctionAt(target).ModuleId
+	p.funEntry = true
 	p.pc = target
 	//
 	return nil
@@ -1024,9 +1056,10 @@ func (p *Interpreter[W]) executeTailCall_2(pc uint32, codes []uint32, stack []W)
 	p.dataStack.Free(uint(len(stack)))
 	p.dataStack.Alloc(uint(width))
 	// copy the one argument into the callee frame
-	p.dataStack.Set(uint(p.fp), tmp)
+	p.dataStack.Set(uint(p.framePointer), tmp)
 	//
 	p.fid = p.program.FunctionAt(target).ModuleId
+	p.funEntry = true
 	p.pc = target
 	//
 	return nil
@@ -1037,11 +1070,11 @@ func (p *Interpreter[W]) executeLeave_n(pc uint32, codes []uint32, stack []W) ui
 		rets, n = encoding.DecodeLeave_n(pc, codes)
 	)
 	// copy returns from callee frame
-	for i := uint(p.rp); rets.HasNext(); i++ {
+	for i := uint(p.returnPointer); rets.HasNext(); i++ {
 		stack[rets.Next()] = p.dataStack.Get(i)
 	}
 	// drop callee frame
-	p.dataStack.Free(uint(p.rw))
+	p.dataStack.Free(uint(p.returnWidth))
 	//
 	return pc + n
 }
@@ -1054,9 +1087,9 @@ func (p *Interpreter[W]) executeLeave_2(pc uint32, codes []uint32, stack []W) ui
 		ret, n = encoding.DecodeLeave_2(pc, codes)
 	)
 	// copy the one return from the callee frame
-	stack[ret] = p.dataStack.Get(uint(p.rp))
+	stack[ret] = p.dataStack.Get(uint(p.returnPointer))
 	// drop callee frame
-	p.dataStack.Free(uint(p.rw))
+	p.dataStack.Free(uint(p.returnWidth))
 	//
 	return pc + n
 }
@@ -1067,12 +1100,12 @@ func (p *Interpreter[W]) executeReturn(pc uint32, codes []uint32) (uint32, error
 		width, roffset, _ = encoding.DecodeRet1(pc, codes)
 	)
 	// Update cache
-	p.cache.Insert(p.fid, p.fp, p.dataStack)
+	p.cache.Insert(p.fid, p.framePointer, p.dataStack)
 	//
 	p.fid = frame.FunctionId
-	p.rp = p.fp + roffset
-	p.rw = uint32(width)
-	p.fp = frame.FramePointer
+	p.returnPointer = p.framePointer + roffset
+	p.returnWidth = uint32(width)
+	p.framePointer = frame.FramePointer
 	//
 	return frame.ProgramCounter, nil
 }

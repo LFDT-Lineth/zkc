@@ -139,14 +139,14 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 	} else if funId, err = descriptor.CheckShardingStrategy(pr, strategy.ShardingStrategy); err != nil {
 		return nil, false, []error{err}
 	}
-	// Register a breakpoint at fn's entry and build an interpreter for the
-	// result, so the breakpointer fires each time fn is entered.
+	// Register a breakpoint at both the boot and shard function's entry, and
+	// build an interpreter around this.
 	bci := NewBytecodeInterpreter(pr.BreakPoint(bootId, 0).BreakPoint(funId, 0))
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.
-	bci.BreakPointer(func(_ uint32) bool {
+	bci.WithBreakpointHandler(func(_ uint32, entry bool) bool {
 		// Only record once every interval-th invocation of fn.
-		if booting || clk.Tick() {
+		if entry && (booting || clk.Tick()) {
 			// Apply next checkpoint
 			strategy.checkpoint(bci.CheckPoint())
 			// Increase count of checkpoints
@@ -437,18 +437,28 @@ func bootAndRun[W Word[W]](bci *Interpreter[W], in map[string]bit.Array, n uint6
 func constructTracingInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr Program[W], tracer T,
 ) *interpreter.Interpreter[W] {
 	//
-	var bci = interpreter.New(pr, true).WithAccessLog()
+	var (
+		bci = interpreter.New(pr, true).WithAccessLog()
+		//
+		handler = func(opcode uint32, _ bool) bool {
+			// Extract state from the interpreter
+			fid, pc, frame := interpreter.ExtractExecutingState(bci)
+			// NOTE: don't clone the frame here (for now) since it is always
+			// converted into a slice of field elements F.
+			tracer.TraceFunctionLine(State[W]{fid, pc, isTerminalOpcode(opcode), frame})
+			// don't interrupt
+			return false
+		}
+	)
 	// Register breakpoint handler to record all states generated during
 	// tracing.
-	bci = bci.BreakPointer(func(opcode uint32) bool {
-		// Extract state from the interpreter
-		fid, pc, frame := interpreter.ExtractExecutingState(bci)
-		// NOTE: don't clone the frame here (for now) since it is always
-		// converted into a slice of field elements F.
-		tracer.TraceFunctionLine(State[W]{fid, pc, isTerminalOpcode(opcode), frame})
-		// don't interrupt
-		return false
-	})
+	bci = bci.
+		// Register breakpoint handler to capture executing function's state.
+		WithBreakpointHandler(handler).
+		// Register failure handler to ensure failing traces can still be
+		// checked against constraints (i.e. to ensure they are indeed
+		// rejected).
+		WithFailureHandler(func() { handler(encoding.FAIL, false) })
 	//
 	return bci
 }
@@ -472,6 +482,21 @@ func constructTraceForInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr
 		bci = interpreter.New(pr, true).WithAccessLog()
 		// Identify pc of break point in binary encoding
 		bp, bp_ok = bci.Binary().AddressOf(funId)
+		// Construct trace handler
+		handler = func(opcode uint32, _ bool) bool {
+			// Check whether break point for step count (or not).
+			if bci.ProgramCounter() == bp.Offset {
+				// interrupt when counter finished
+				return clk.Tick()
+			}
+			// Extract state from the interpreter
+			fid, pc, frame := interpreter.ExtractExecutingState(bci)
+			// NOTE: don't clone the frame here (for now) since it is always
+			// converted into a slice of field elements F.
+			tracer.TraceFunctionLine(State[W]{fid, pc, isTerminalOpcode(opcode), frame})
+			// don't interrupt
+			return false
+		}
 	)
 	// Sanity check
 	if !bp_ok {
@@ -479,20 +504,13 @@ func constructTraceForInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr
 	}
 	// Register breakpoint handler to record all states generated during
 	// tracing.
-	bci = bci.BreakPointer(func(opcode uint32) bool {
-		// Check whether break point for step count (or not).
-		if bci.ProgramCounter() == bp.Offset {
-			// interrupt when counter finished
-			return clk.Tick()
-		}
-		// Extract state from the interpreter
-		fid, pc, frame := interpreter.ExtractExecutingState(bci)
-		// NOTE: don't clone the frame here (for now) since it is always
-		// converted into a slice of field elements F.
-		tracer.TraceFunctionLine(State[W]{fid, pc, isTerminalOpcode(opcode), frame})
-		// don't interrupt
-		return false
-	})
+	bci = bci.
+		// Register breakpoint handler to capture executing function's state.
+		WithBreakpointHandler(handler).
+		// Register failure handler to ensure failing traces can still be
+		// checked against constraints (i.e. to ensure they are indeed
+		// rejected).
+		WithFailureHandler(func() { handler(encoding.FAIL, false) })
 	//
 	return bci
 }
