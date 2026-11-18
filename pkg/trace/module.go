@@ -18,7 +18,6 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
 // Module describes a module within the trace.  Every module is a collection of
@@ -26,7 +25,7 @@ import (
 // number of such columns it contains.  Every column in the module has a
 // "descriptor" which provides metadata about the columns, such as its name and
 // declared bitwidth, etc.
-type Module[F field.Element[F]] struct {
+type Module[F any] struct {
 	// Recorded height of module
 	height uint
 	// Holds the descriptor for this module.
@@ -37,7 +36,7 @@ type Module[F field.Element[F]] struct {
 }
 
 // NewModule constructs a module with the given name, descriptors and rows.
-func NewModule[F field.Element[F]](descriptor ModuleDescriptor, data ...array.Array[F]) Module[F] {
+func NewModule[F any](descriptor ModuleDescriptor, data ...array.Array[F]) Module[F] {
 	var height uint
 	// Sanity check
 	if uint(len(data)) != descriptor.Width() {

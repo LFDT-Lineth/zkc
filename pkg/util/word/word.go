@@ -38,9 +38,8 @@ type Word[T any] interface {
 	// Returns the raw bytes of this word.  Observe that, if the word is encoded
 	// (e.g. in Montgomerry form), then the *encoded* bytes are returned.
 	Bytes() []byte
-	// Check whether this word is zero, or not.
-	IsZero() bool
-	// Initialise this word from a set of raw bytes.
+	// Initialise this word from a set of raw bytes.  This will panic if the
+	// value overflows the maximum representable in this word.
 	SetBytes([]byte) T
 	// Set this word to a uint64 value
 	SetUint64(uint64) T

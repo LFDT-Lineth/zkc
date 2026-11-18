@@ -81,7 +81,7 @@ func (p *Constant[F, T]) EvalAt(k uint, _ trace.Module[F], _ register.Map[F]) (F
 func (p *Constant[F, T]) Lisp(global bool, mapping register.Map[F]) sexp.SExp {
 	var val big.Int
 	//
-	val.SetBytes(p.Value.Bytes())
+	val.Set(p.Value.BigInt())
 	// // Check if power of 2
 	// if n, ok := IsPowerOf2(val); ok && n > 8 {
 	// 	// Not power of 2
@@ -116,7 +116,7 @@ func (p *Constant[F, T]) Simplify() T {
 func (p *Constant[F, T]) ValueRange() util_math.Interval {
 	var c big.Int
 	// Extract big integer from field element
-	c.SetBytes(p.Value.Bytes())
+	c.Set(p.Value.BigInt())
 	// Return as interval
 	return util_math.NewInterval(c, c)
 }

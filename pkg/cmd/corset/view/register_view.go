@@ -40,7 +40,7 @@ func (p *registerView[F]) Get(row uint) util.Option[big.Int] {
 	// Sanity check something is there
 	if data != nil {
 		// Construct value from field element
-		val.SetBytes(data.Get(row).Bytes())
+		val.Set(data.Get(row).BigInt())
 		//
 		return util.Some(val)
 	}
