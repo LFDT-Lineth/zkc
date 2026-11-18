@@ -206,6 +206,10 @@ func Test_ZkcUtil_Sharding_07(t *testing.T) {
 	checkZkcUtil(t, "zkc/util/sharding_07", DEFAULT_UTIL_CONFIG.Sharding("count", 1))
 }
 
+func Test_ZkcUtil_Sharding_08(t *testing.T) {
+	checkZkcUtil(t, "zkc/util/sharding_08", DEFAULT_UTIL_CONFIG.Sharding("step", 1))
+}
+
 // ===================================================================
 // Test Helpers
 // ===================================================================

@@ -222,7 +222,7 @@ func encodeVectors[W word.Word[W]](fid ModuleId, vectors []bytecode.Vector[W], o
 				codes = encoding.Encode(b, offset, env)
 			)
 			// Insert breakpoint if tracing
-			if tracing && isVectorTerminal[W](b) {
+			if tracing && IsVectorTerminal[W](b) {
 				codes[0] |= encoding.BREAKPOINT
 			}
 			//
@@ -252,7 +252,7 @@ func checkMemoryCount(count uint32, name string) {
 	}
 }
 
-// isVectorTerminal determines whether a breakpoint should be placed on the
+// IsVectorTerminal determines whether a breakpoint should be placed on the
 // given bytecode, so that the executing state is recorded into the trace just
 // before it runs.  This is done for the (normal) control-flow terminators of a
 // vector, i.e. jumps and returns.
@@ -261,7 +261,7 @@ func checkMemoryCount(count uint32, name string) {
 // its row via the failure path instead (see Interpreter.failure), which also
 // covers non-terminal failures such as arithmetic overflow.  Flagging `fail`
 // here as well would record its row twice.
-func isVectorTerminal[W word.Word[W]](b bytecode.Bytecode[W]) bool {
+func IsVectorTerminal[W word.Word[W]](b bytecode.Bytecode[W]) bool {
 	switch b := b.(type) {
 	case *bytecode.Jmp[W]:
 		return true
