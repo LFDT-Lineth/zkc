@@ -170,6 +170,10 @@ func (g *generator) emitModPHelpers(c *code) {
 		return
 	}
 
+	c.commentf("===============================================================================")
+	c.commentf("Field Arithmetic Helpers")
+	c.commentf("===============================================================================")
+
 	c.linef("const modP = %s // the machine's prime modulus", bigLit(g.modulus))
 	c.line("")
 
@@ -218,6 +222,10 @@ func (g *generator) emitWideIntHelper(c *code) {
 		return
 	}
 
+	c.commentf("===============================================================================")
+	c.commentf("Wide Int Helpers")
+	c.commentf("===============================================================================")
+	//
 	c.line("func wideInt(words []uint64) (out big.Int) {")
 	c.line("if bits.UintSize == 64 {")
 	c.line("limbs := make([]big.Word, len(words))")

@@ -114,7 +114,9 @@ func (p TestConfig) Padding(strategies []util.Pair[string, ir.PaddingStrategy]) 
 // GenerateTests applies this configuration to a given zkc test program, and
 // reads in all available test vectors.
 func (p TestConfig) GenerateTests(t *testing.T, test string) (tests []TestCase) {
-	var testvecs map[field.Config][]TestVector = readTestVectors(t, test, p.sampling)
+	var (
+		testvecs map[field.Config][]TestVector = readTestVectors(t, test, p.sampling)
+	)
 	// Check for each field requested
 	for _, f := range p.fields {
 		// Check whether field is active
@@ -179,6 +181,7 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 		if err != nil {
 			t.Error(err)
 		} else {
+			var localTests []TestCase
 			// Iterate all vectors
 			for _, vector := range vecs {
 				// Construct base test
@@ -186,12 +189,27 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 				// Only test different padding for default static height.
 				if height == codegen.DEFAULT_MAX_STATIC_HEIGHT {
 					for _, padding := range cfg.paddingStrategies {
-						tests = append(tests, t.Padding(padding))
+						localTests = append(localTests, t.Padding(padding))
 					}
 				} else {
-					tests = append(tests, t)
+					localTests = append(localTests, t)
 				}
 			}
+			// TODO: fully support gogen tracing.  Currently, using gogen for
+			// tracing only covers checkpointing during the initial fast-mode
+			// execution run.  As such, it only makes sense to run the test when
+			// sharding is active.  Issue #2336 will add full tracing support;
+			// whilst #2331 will eliminate the redundancy of rebuilding the
+			// gogen file within BinaryFile.Trace().  For now, overhead from the
+			// latter is tolerable because relatively few tests cover sharding
+			// anyway.
+			//
+			// Apply GoGen (if requested)
+			if cfg.gogen && cfg.sharding.HasValue() {
+				localTests = applyGoGen(t, test, pU, localTests)
+			}
+			//
+			tests = append(tests, localTests...)
 		}
 	}
 	//
@@ -204,23 +222,27 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 func applyGoGen(t *testing.T, test string, program vm.Program[vm.Uint], tests []TestCase) []TestCase {
 	// Attempt to extend tests to include gogen
 	var (
-		// Lower through the execution pipeline before handing to gogen.  GenerateGo
-		// requires Program[Uint] with registers no wider than 64 bits, so we split
-		// against a bounded word whilst staying in the Uint representation.
-		pG = vm.TransformForExecutionRaw[vm.Uint, vm.Uint](program, vm.WORD_UINT128, vm.DEFAULT_TRANSFORMS)
-		// Build gogen program
-		gogen, gerr = buildGogenProgram(t, pG)
+		// Construct gogen execution program
+		pG = vm.TransformForGoGenExecution(program, vm.DEFAULT_TRANSFORMS)
+		// Build bin program
+		bin, err = vm.GoGenCompile(pG)
 	)
 	// Check for any gogen errors
-	if gerr != nil {
-		t.Errorf("[gogen] %s: %v", test, gerr)
+	if err != nil {
+		t.Errorf("[gogen] %s: %v", test, err)
 		// gogen cannot represent this program --- fail.
 		return tests
 	}
 	// Apply gogen to each test
 	for i := range tests {
-		tests[i] = tests[i].GoGen(gogen)
+		tests[i] = tests[i].GoGen(bin)
 	}
+	// Register clean up of compiled binaries
+	t.Cleanup(func() {
+		if err := bin.Free(); err != nil {
+			t.Error(err)
+		}
+	})
 	// Done
 	return tests
 }

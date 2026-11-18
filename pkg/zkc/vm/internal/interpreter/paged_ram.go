@@ -27,11 +27,13 @@ import (
 const PAGE_SIZE uint64 = 1 << 20
 
 // PagedRandomAccess provides a read/write implementation of Memory which
-// represents memory as a single array of pages (each of PAGE_SIZE timestamped
-// cells).  The page table grows on demand as higher addresses are written,
-// whilst individual pages are only allocated on their first write.  Reads of
-// locations which have never been written simply return zero and, to preserve
-// sparsity, never allocate a page.  We can view memory as follows:
+// represents memory as a single array of pages (each of at most PAGE_SIZE
+// timestamped cells).  The page table grows on demand as higher addresses are
+// accessed, whilst an individual page is allocated on its first access and
+// grows only as far as the highest row accessed within it.  This applies to
+// reads as well as writes: reading a location which has never been written
+// returns zero, but must still record its timestamp.  We can view memory as
+// follows:
 //
 // +--------+--------+ ................. +
 // | page 0 | page 1 |  (unallocated)
@@ -121,48 +123,46 @@ func (p *PagedRandomAccess[W]) Initialise(contents []W) {
 }
 
 // Read returns the value at the given address (the zero value for an address
-// whose page has never been allocated).  A read re-stamps an already-allocated
-// cell with the current clock but never allocates a page, preserving sparsity.
+// never written), re-stamping the cell with the current clock; a read leaves
+// the stored value unchanged.
+//
+// Precondition: Stamp must have been called for the access containing this
+// address (i.e. the first cell of its row), since that is what allocates the
+// enclosing page and cell.  Otherwise, this panics for an address beyond the
+// allocated cells.
 func (p *PagedRandomAccess[W]) Read(address uint64) (W, error) {
 	var (
-		page      = address / PAGE_SIZE
-		offset    = address % PAGE_SIZE
-		allocated = page < uint64(len(p.pages)) && p.pages[page] != nil
-		cell      TimestampedCell[W]
+		pageNum    = address / PAGE_SIZE
+		pageOffset = address % PAGE_SIZE
+		curr       = p.pages[pageNum][pageOffset]
 	)
-	//
-	if allocated {
-		cell = p.pages[page][offset]
-		// Re-stamp the existing cell (value unchanged); never allocate on a read.
-		p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: cell.value}
-	}
+	// Re-stamp the cell (value unchanged).
+	p.pages[pageNum][pageOffset] = TimestampedCell[W]{timestamp: p.timestamp, value: curr.value}
 	//
 	if p.logging {
 		// Write-side only; the read-side is reconstructed at trace time by a
 		// state-tracking observer (see Log).
-		p.accessLog.Read(address, cell.timestamp, p.timestamp, cell.value)
+		p.accessLog.Read(address, curr.timestamp, p.timestamp, curr.value)
 	}
 	//
-	return cell.value, nil
+	return curr.value, nil
 }
 
-// Write stores value at the given address, allocating the enclosing page if
-// needed, and stamps the cell with the current clock.
+// Write stores value at the given address, and stamps the cell with the current
+// clock.
+//
+// Precondition: Stamp must have been called for the access containing this
+// address (i.e. the first cell of its row), since that is what allocates the
+// enclosing page and cell.  Otherwise, this panics for an address beyond the
+// allocated cells.
 func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
 	var (
-		page   = address / PAGE_SIZE
-		offset = address % PAGE_SIZE
+		pageNum    = address / PAGE_SIZE
+		pageOffset = address % PAGE_SIZE
+		curr       = p.pages[pageNum][pageOffset]
 	)
-	// Materialise the page if needed, then re-stamp the cell.
-	p.pages = expand(p.pages, page+1)
 	//
-	if p.pages[page] == nil {
-		p.pages[page] = make([]TimestampedCell[W], PAGE_SIZE)
-	}
-	// read out current contents of call
-	curr := p.pages[page][offset]
-	//
-	p.pages[page][offset] = TimestampedCell[W]{timestamp: p.timestamp, value: value}
+	p.pages[pageNum][pageOffset] = TimestampedCell[W]{timestamp: p.timestamp, value: value}
 	//
 	if p.logging {
 		p.accessLog.Write(address, curr.timestamp, p.timestamp, curr.value, value)
@@ -171,11 +171,24 @@ func (p *PagedRandomAccess[W]) Write(address uint64, value W) error {
 	return nil
 }
 
-// Tick advances the access clock by one.  Called once per logical memory access
-// (one RD_PRAM/WR_PRAM instruction), before any of its data lanes are touched,
-// so all lanes share one timestamp.  See RandomAccess.Tick for the rationale.
-func (p *PagedRandomAccess[W]) Tick() {
+// Stamp begins a logical memory access (one RD_PRAM/WR_PRAM instruction) at the
+// given address, which is that of the first cell of the accessed row.  It
+// advances the access clock by one, and grows the page table and the enclosing
+// page as needed to hold every cell of that row.  This must be called before
+// any of the access's data lanes are touched, so all lanes share one timestamp.
+// See RandomAccess.Stamp for the rationale.
+func (p *PagedRandomAccess[W]) Stamp(address uint64) {
+	var (
+		pageNum    = address / PAGE_SIZE
+		pageOffset = address % PAGE_SIZE
+		width      = uint64(len(p.descriptor.DataRegisters()))
+	)
+	// increase master stamp
 	p.timestamp++
+	// Ensure enough pages
+	p.pages = expand(p.pages, pageNum+1)
+	// Ensure enough cells in target page
+	p.pages[pageNum] = expand(p.pages[pageNum], pageOffset+width)
 }
 
 // Contents implementation for Memory interface.

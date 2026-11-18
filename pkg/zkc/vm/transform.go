@@ -39,17 +39,27 @@ func TransformForExecution[W1 Word[W1], W2 Word[W2]](p Program[W1], config trans
 	// Use target word to determine config
 	var targetWord W2
 	// Done
-	return TransformForExecutionRaw[W1, W2](p, targetWord.Config(), config)
+	return transformForExecutionRaw[W1, W2](p, targetWord.Config(), config)
 }
 
-// TransformForExecutionRaw applies a transformation pipeline suitable for (fast
+// TransformForGoGenExecution applies a transformation pipeline suitable for
+// (fast mode) execution under gogen, whilst applying the given transformation
+// configuration (e.g. to ignore any pipeline stages requested for debugging,
+// etc).  Registers are split against WORD_UINT128, whilst the program stays in
+// the Uint representation required by gogen.
+func TransformForGoGenExecution(p Program[Uint], config transform.Config) Program[Uint] {
+	// Done
+	return transformForExecutionRaw[Uint, Uint](p, WORD_UINT128, config)
+}
+
+// transformForExecutionRaw applies a transformation pipeline suitable for (fast
 // mode) execution, whilst applying the given transformation configuration (e.g.
 // to ignore any pipeline stages requested for debugging, etc).  Here, the
 // target word configuration determines the register width to split against,
 // which is distinct from the word type W2 the program is finally concretized
 // into.  Observe that W2 must be large enough to hold all values of the target
 // word, otherwise this will panic.
-func TransformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word WordConfig,
+func transformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word WordConfig,
 	config transform.Config) Program[W2] {
 	//
 	var (

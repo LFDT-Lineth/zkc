@@ -120,7 +120,7 @@ func Pack[W word.Word[W]](field word.Config, regs []descriptor.Register[W], data
 // for Pack, whilst the timestamps are returned separately with one per logical
 // row (i.e. group of len(regs) cells).  Timestamps are per-row rather than
 // per-cell because all cells of a row are stamped together (a single access
-// covers every lane of its row --- see RandomAccess.Tick) and, unlike cells,
+// covers every lane of its row --- see RandomAccess.Stamp) and, unlike cells,
 // rows are geometry independent.  Hence, a checkpoint taken on a machine of one
 // word width (e.g. fast mode) can be restored on a machine of another (e.g.
 // tracing), where the same rows divide into a different number of cells.

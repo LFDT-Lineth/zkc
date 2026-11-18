@@ -86,6 +86,8 @@ type BinaryFile[F field.Element[F], W vm.Word[W]] struct {
 	cachedExecutionProgram util.Option[vm.Program[vm.Uint128]]
 	// cache tracing program
 	cachedTracingProgram util.Option[vm.Program[W]]
+	// cache (fast mode) gogen execution program
+	cachedGoGenProgram util.Option[vm.Program[vm.Uint]]
 	// cached mir constraints
 	cachedMirConstraints util.Option[mir.Schema[F]]
 	// cached air constraints
@@ -119,6 +121,7 @@ func NewBinaryFile[F field.Element[F], W vm.Word[W]](metadata []byte, attributes
 		transformConfig:        vm.DEFAULT_TRANSFORMS,
 		cachedExecutionProgram: util.None[vm.Program[vm.Uint128]](),
 		cachedTracingProgram:   util.None[vm.Program[W]](),
+		cachedGoGenProgram:     util.None[vm.Program[vm.Uint]](),
 		cachedMirConstraints:   util.None[mir.Schema[F]](),
 		cachedAirConstraints:   util.None[air.Schema[F]](),
 	}
@@ -168,6 +171,28 @@ func (p *BinaryFile[F, W]) MaxStaticHeight() uint {
 // suitable form for most use cases.
 func (p *BinaryFile[F, W]) RawProgram() vm.Program[vm.Uint] {
 	return p.program
+}
+
+// GoGenProgram returns a gogen-compatible version of the program encoded in
+// this file, suitable for fast-mode execution.  This corresponds to the raw
+// program after lowering and register splitting as appropriate for fast-mode
+// execution.  This will be constructed by compiling it from the raw program
+// upon first call, and subsequently cached.
+func (p *BinaryFile[F, W]) GoGenProgram() vm.Program[vm.Uint] {
+	// Check cache
+	if !p.cachedGoGenProgram.HasValue() {
+		var (
+			stats = util.NewPerfStats()
+			// Construct gogen execution program
+			program = vm.TransformForGoGenExecution(p.program, p.transformConfig)
+		)
+		// Cache lowered program
+		p.cachedGoGenProgram = util.Some(program)
+		// Log stats
+		stats.Log("Compiling gogen program")
+	}
+	//
+	return p.cachedGoGenProgram.Unwrap()
 }
 
 // TracingProgram returns the program used for tracing.  This corresponds to the
@@ -267,6 +292,7 @@ func (p *BinaryFile[F, W]) AirConstraints() air.Schema[F] {
 func (p *BinaryFile[F, W]) clearCachedArtifacts() {
 	p.cachedExecutionProgram = util.None[vm.Program[vm.Uint128]]()
 	p.cachedTracingProgram = util.None[vm.Program[W]]()
+	p.cachedGoGenProgram = util.None[vm.Program[vm.Uint]]()
 	p.cachedMirConstraints = util.None[mir.Schema[F]]()
 	p.cachedAirConstraints = util.None[air.Schema[F]]()
 }
@@ -294,12 +320,31 @@ func (p *BinaryFile[F, W]) Check(config vm.TraceConfig, trace trace.LazyTrace[F]
 // steps at a time, producing any outputs arising.  Execution is faster than
 // trace because it does not record any internal information about the trace ---
 // it simply extracts the outputs at the end.
-func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array) (output map[string]bit.Array, errs []error) {
-	var (
-		bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
-	)
-	// Boot and execute fast machine
-	output, _, errs = vm.BootAndExecute(bci, input, math.MaxUint)
+func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.ExecutionConfig,
+) (output map[string]bit.Array, errs []error) {
+	var checkpointing = config.Checkpointing()
+	// TODO: currently, for gogen execution it compiles (and deletes) the gogen
+	// binary every time, which is not optimal.  See #2331
+	if config.GoGen() && checkpointing.HasValue() {
+		// TODO: drop gogen program and use execution program directly.  See
+		// #2332
+		//
+		// Fast-mode execution via gogen
+		output, _, errs = vm.BootAndCheckpointWithGogen(p.GoGenProgram(), input, checkpointing.Unwrap())
+	} else if config.GoGen() {
+		// Fast-mode execution via gogen
+		output, _, errs = vm.BootAndExecuteWithGogen(p.GoGenProgram(), input)
+	} else if checkpointing.HasValue() {
+		// Fast-mode execution via interpreter (with checkpointing)
+		// Boot and execute fast machine
+		output, _, errs = vm.BootAndCheckpoint(p.ExecutionProgram(), input, checkpointing.Unwrap())
+	} else {
+		// Fast-mode execution via interpreter
+		var bci = vm.NewBytecodeInterpreter(p.ExecutionProgram())
+		//
+		// Boot and execute fast machine
+		output, _, errs = vm.BootAndExecute(bci, input, math.MaxUint)
+	}
 	//
 	return output, errs
 }
@@ -327,7 +372,7 @@ func (p *BinaryFile[F, W]) Trace(input map[string]bit.Array, cfg vm.TraceConfig,
 	var (
 		// Initialise trace builder from configuration
 		builder = vm.NewTraceBuilder[W, F, Tracer[F, W]](cfg,
-			p.ExecutionProgram(), p.TracingProgram(), p.AirConstraints())
+			p.ExecutionProgram(), p.TracingProgram(), p.GoGenProgram(), p.AirConstraints())
 	)
 	// Execute machine
 	return builder.BootAndTrace(input)
