@@ -879,7 +879,7 @@ func (t *threader[W]) timestampWidth(e descriptor.ModuleId) uint {
 // stampName returns the name of the stamp-in register threaded for the given
 // memory.
 func stampName[W Word[W]](mods []descriptor.Module[W], id descriptor.ModuleId) string {
-	return mods[id].Name() + "$stamp"
+	return descriptor.StampName(mods[id].Name())
 }
 
 // stampOutName returns the name of the stamp-out register threaded for the

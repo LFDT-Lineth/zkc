@@ -16,10 +16,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
+	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/interpreter/encoding"
@@ -82,6 +84,37 @@ func BootAndExecute[W Word[W]](m *Interpreter[W], input map[string]bit.Array, n 
 	return output, traceable, errs
 }
 
+// BootAndPreFlight boots the given machine from the inputs, executes it whilst
+// recording the necessary preflight data, and finally extracts any outputs
+// arising.  Two kinds of error can arise during this: (i) a recognised machine
+// failure which is expected under the right circumstances (e.g. executing a
+// fail instruction); (ii) an internal machine failure which is not expected
+// (and signals some kind of bug somewhere).  The preflight data is always
+// returned unless the latter holds.
+func BootAndPreFlight[W Word[W], F field.Element[F]](pr Program[W], in map[string]bit.Array,
+) (outputs map[string]bit.Array, data util.Option[trace.Shard[F]], errors []error) {
+	var (
+		steps     uint64
+		stats     = util.NewPerfStats()
+		traceable bool
+	)
+	// Construct recorded, and register appropriate breakpoints.
+	recorder := NewPreFlightRecorder[W](pr)
+	// Run the bytecode interpreter
+	outputs, traceable, steps, errors = bootAndRun(recorder.Interpreter(), in, math.MaxUint64)
+	// Calculate total number of interactions
+	nInteractions := recorder.CountInteractions()
+	// Log stats
+	stats.Log(fmt.Sprintf("Machine execution (%d steps, %d interactions)", steps, nInteractions))
+	//
+	if traceable {
+		// Convert preflight data into appropriate form.
+		data = recorder.Convert[F]()
+	}
+	// Done
+	return outputs, data, errors
+}
+
 // BootAndCheckpoint boots a given program from a given set of inputs and
 // checkpoints it according to a given strategy.  This produces some number of
 // checkpoints, the final outputs, an indication as to whether this execution can
@@ -106,8 +139,8 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 	} else if funId, err = descriptor.CheckShardingStrategy(pr, strategy.ShardingStrategy); err != nil {
 		return nil, false, []error{err}
 	}
-	// Register a breakpoint at fn's entry and build an interpreter for the
-	// result, so the breakpointer fires each time fn is entered.
+	// Register a breakpoint at both the boot and shard function's entry, and
+	// build an interpreter around this.
 	bci := NewBytecodeInterpreter(pr.BreakPoint(bootId, 0).BreakPoint(funId, 0))
 	// Write a checkpoint as a hex string, one per line.  The counter governs how
 	// frequently this actually fires: it triggers every interval entries of fn.
@@ -490,7 +523,11 @@ func constructTraceForInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr
 		// Register failure handler to ensure failing traces can still be
 		// checked against constraints (i.e. to ensure they are indeed
 		// rejected).
+<<<<<<< HEAD
 		WithFailureHandler(func() { traceLine(encoding.FAIL) })
+=======
+		WithFailureHandler(func() { handler(encoding.FAIL, false) })
+>>>>>>> cfd2f45a1 (fix: separate failure and breakpoint handlers)
 	//
 	return bci
 }
