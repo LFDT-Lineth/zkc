@@ -29,7 +29,7 @@ func (*Const[F]) isExpr() {}
 func (c *Const[F]) Lisp() sexp.SExp {
 	var bi big.Int
 	// Interpret field element bytes as big-endian integer for S-expression printing.
-	return sexp.NewSymbol(bi.SetBytes(c.Val.Bytes()).String())
+	return sexp.NewSymbol(bi.Set(c.Val.BigInt()).String())
 }
 
 // Var is a named variable (independent of field type).

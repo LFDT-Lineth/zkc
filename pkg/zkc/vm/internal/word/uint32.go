@@ -19,6 +19,8 @@ import (
 	"math/big"
 	"math/bits"
 	"strconv"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Uint32 represents an unsigned integer backed by a native uint32.  Operations
@@ -65,6 +67,20 @@ func (p Uint32) Bandwidth() uint {
 // BigInt implementation for Word interface.
 func (p Uint32) BigInt() *big.Int {
 	return new(big.Int).SetUint64(uint64(p.value))
+}
+
+// Bytes implementation for word.Word interface.  This returns the minimal
+// big-endian encoding of this word (i.e. without leading zeros), such that
+// zero is encoded as the empty slice.
+func (p Uint32) Bytes() []byte {
+	var (
+		buf [4]byte
+		// number of significant bytes
+		nBytes = (p.BitLen() + 7) / 8
+	)
+	binary.BigEndian.PutUint32(buf[:], p.value)
+	//
+	return buf[uint(len(buf))-nBytes:]
 }
 
 // BitLen implementation for Word interface.
@@ -260,6 +276,27 @@ func (p Uint32) Xor(w Uint32) Uint32 {
 // Text implementation for Word interface.
 func (p Uint32) Text(base int) string {
 	return strconv.FormatUint(uint64(p.value), base)
+}
+
+// SetBytes implementation for word.Word interface.  This accepts a big-endian
+// encoding of any length, and panics if the value does not fit within 32 bits.
+func (p Uint32) SetBytes(bytes []byte) Uint32 {
+	var buf [4]byte
+	//
+	bytes = word.TrimLeadingZeros(bytes)
+	//
+	if len(bytes) > len(buf) {
+		panic(fmt.Sprintf("value 0x%x exceeds uint32 bandwidth", bytes))
+	}
+	//
+	copy(buf[len(buf)-len(bytes):], bytes)
+	//
+	return Uint32{binary.BigEndian.Uint32(buf[:])}
+}
+
+// String implementation for stringer interface
+func (p Uint32) String() string {
+	return p.Text(10)
 }
 
 // ============================================================================

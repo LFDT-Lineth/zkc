@@ -60,11 +60,6 @@ func (p Uint) AddMod(w, m Uint) Uint {
 	return Uint{res}
 }
 
-// Config implementation for Word interface.
-func (p Uint) Config() Config {
-	return WORD_UINT
-}
-
 // Bandwidth implementation for Word interface.
 func (p Uint) Bandwidth() uint {
 	return math.MaxUint
@@ -73,6 +68,16 @@ func (p Uint) Bandwidth() uint {
 // BigInt implementation for Word interface.
 func (p Uint) BigInt() *big.Int {
 	return &p.value
+}
+
+// Bytes implementation for word.Word interface.
+func (p Uint) Bytes() []byte {
+	return p.value.Bytes()
+}
+
+// Config implementation for Word interface.
+func (p Uint) Config() Config {
+	return WORD_UINT
 }
 
 // Cmp implementation for Word interface.
@@ -321,6 +326,20 @@ func (p Uint) Xor(w Uint) Uint {
 	res.Xor(&p.value, &w.value)
 	//
 	return Uint{res}
+}
+
+// SetBytes implementation for word.Word interface.
+func (p Uint) SetBytes(bytes []byte) Uint {
+	var val big.Int
+	//
+	val.SetBytes(bytes)
+	//
+	return Uint{val}
+}
+
+// String implementation for stringer interface.
+func (p Uint) String() string {
+	return p.Text(10)
 }
 
 // Text implementation for Word interface

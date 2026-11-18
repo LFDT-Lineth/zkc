@@ -33,7 +33,7 @@ var (
 func IsConstant64[F field.Element[F], T Expr[F, T]](term T) (constant uint64, ok bool) {
 	var t Expr[F, T] = term
 	//
-	if t, ok := t.(*Constant[F, T]); ok && len(t.Value.Bytes()) <= 8 {
+	if t, ok := t.(*Constant[F, T]); ok && t.Value.FitsWithin(64) {
 		return t.Value.Uint64(), true
 	}
 	//

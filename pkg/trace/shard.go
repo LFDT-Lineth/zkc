@@ -23,7 +23,7 @@ import (
 
 // Shard describes an immutable set of named modules whose data is organised by
 // columns.
-type Shard[F field.Element[F]] struct {
+type Shard[F any] struct {
 	// Holds the set of modules in this trace.  The index of each module in this
 	// array uniquely identifies it, and is referred to as the "module index".
 	modules []Module[F]

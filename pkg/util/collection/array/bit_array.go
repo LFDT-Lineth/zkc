@@ -21,9 +21,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
-// bitOne is the byte-level binary representation of 1.
-var bitOne = []byte{1}
-
 // NewBitArray constructs a new word array with a given capacity.
 func NewBitArray[T word.Word[T]](height uint, value bool) *BitArray[T] {
 	var (
@@ -75,7 +72,7 @@ func (p BitArray[T]) Get(index uint) T {
 	var b T
 	//
 	if bit.LittleEndianRead(p.data, index) {
-		return b.SetBytes(bitOne)
+		return b.SetUint64(1)
 	}
 	// Default is zero
 	return b
@@ -113,7 +110,7 @@ func (p BitArray[T]) String() string {
 func (p *BitArray[T]) Append(val T) MutArray[T] {
 	var (
 		// if byte length is 0, the word represents 0.  otherwise, it must be 1.
-		v = !val.IsZero()
+		v = val.Cmp64(0) != 0
 		// determin expected height
 		bytewidth = word.ByteWidth(p.height + 1)
 	)
@@ -161,7 +158,7 @@ func (p *BitArray[T]) Height() uint {
 // original value.
 func (p *BitArray[T]) Set(index uint, word T) {
 	// if byte length is 0, the word represents 0.  otherwise, it must be 1.
-	var val = !word.IsZero()
+	var val = word.Cmp64(0) != 0
 	//
 	bit.LittleEndianWrite(val, p.data, index)
 }

@@ -17,12 +17,12 @@ import (
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // ModuleBuilder describes an individual module within a trace, and represents
 // each column within that module using an appropriate (compact) encoding.
-type ModuleBuilder[F field.Element[F]] struct {
+type ModuleBuilder[F any] struct {
 	// Recorded height of module
 	height uint
 	// Holds the descriptor for this module.
@@ -34,19 +34,19 @@ type ModuleBuilder[F field.Element[F]] struct {
 
 // InitModuleBuilder constructs a new empty module with appropriately allocated
 // (but zero-height) columns for each descriptor.
-func InitModuleBuilder[F field.Element[F]](descriptor ModuleDescriptor) *ModuleBuilder[F] {
+func InitModuleBuilder[W word.Word[W]](descriptor ModuleDescriptor) *ModuleBuilder[W] {
 	var (
 		width   = descriptor.Width()
-		columns = make([]array.MutArray[F], width)
+		columns = make([]array.MutArray[W], width)
 	)
 	//
 	for rid := range descriptor.Columns {
 		var bitwidth = descriptor.Columns[rid].Bitwidth.UnwrapOr(math.MaxUint)
 		// Allocate compact representation
-		columns[rid] = array.Alloc[F](bitwidth)
+		columns[rid] = array.Alloc[W](bitwidth)
 	}
 	//
-	return &ModuleBuilder[F]{0, descriptor, columns}
+	return &ModuleBuilder[W]{0, descriptor, columns}
 }
 
 // Build constructs a module from this builder.
