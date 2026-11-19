@@ -90,6 +90,10 @@ func (p *MemoryKind) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
+	if err := gobEncoder.Encode(p.paged); err != nil {
+		return nil, err
+	}
+	//
 	return buffer.Bytes(), nil
 }
 
@@ -116,7 +120,7 @@ func (p *MemoryKind) GobDecode(data []byte) error {
 		return err
 	}
 	//
-	return nil
+	return gobDecoder.Decode(&p.paged)
 }
 
 var (
