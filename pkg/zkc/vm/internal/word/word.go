@@ -17,6 +17,7 @@ import (
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Config is (for now) simply an alias for field config.
@@ -43,6 +44,7 @@ var WORD_UINT = Config{Name: "Uint", BandWidth: math.MaxUint, RegisterWidth: mat
 // (e.g. because our target field configuration has a maximum register size of
 // 16bits).
 type Word[W any] interface {
+	word.Word[W]
 	// Add two words together, producing another (along with an overflow bit).
 	Add(W) (W, bool)
 	// Add two words together, producing another (along with an overflow bit).
@@ -56,18 +58,8 @@ type Word[W any] interface {
 	// Returns the maximum number of bits of information a word this type can
 	// hold.
 	Bandwidth() uint
-	// Return the value of this word as a big integer.
-	BigInt() *big.Int
 	// Determine number of bits of this value
 	BitLen() uint
-	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
-	Cmp(y W) int
-	// Cmp returns 1 if x > y, 0 if x = y, and -1 if x < y.
-	Cmp64(y uint64) int
-	// Equals implementation of Hasher interface.
-	Equals(y W) bool
-	// Hash implementation of Hasher interface.
-	Hash() uint64
 	// Div divides this word by another.  Panics on division by zero.
 	Div(W) W
 	// DwDiv divides the double word formed from this word (as the most
@@ -82,8 +74,6 @@ type Word[W any] interface {
 	// DwDiv, it does not panic on quotient overflow (the remainder always fits
 	// within a single word).
 	DwRem(lo W, d W) W
-	// Check whether this value fits within the given bitwidth.
-	FitsWithin(uint) bool
 	// Multiply two words together, producing a double word.
 	Mul(W) (hi W, lo W)
 	// MulMod multiplies two words together modulus a third.
@@ -107,18 +97,12 @@ type Word[W any] interface {
 	Slice(uint) W
 	// Initialise this word from a given big integer (which cannot be negative).
 	SetBigInt(*big.Int) W
-	// Construct a fresh word with the given uint64 value, or panic (if the
-	// value does not fit).
-	SetUint64(uint64) W
 	// Sub two words together, producing another (along with an underflow bit).
 	Sub(W) (W, bool)
 	// Sub two words together, producing another (along with an underflow bit).
 	Sub64(uint64) (W, bool)
 	// SubMod subtracts two words together modulus a third.
 	SubMod(W, W) W
-	// Returns value of word as an unsigned integer and will panic if the value
-	// does not fit.
-	Uint64() uint64
 	// Bitwise XOR of two words.
 	Xor(W) W
 	// Text returns the given word formated in the given base

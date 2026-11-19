@@ -13,7 +13,6 @@
 package field
 
 import (
-	"fmt"
 	"math/big"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/word"
@@ -21,7 +20,6 @@ import (
 
 // An Element of a prime-order field.
 type Element[Operand any] interface {
-	fmt.Stringer
 	word.Word[Operand]
 	// Add x+y
 	Add(y Operand) Operand

@@ -349,6 +349,21 @@ func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.Executi
 	return output, errs
 }
 
+// PreFlight computes necessary preflight execution data in order to determine
+// the shared randomness necessary for inter-shard bus interactions in the final
+// trace.  The computation produces a "partial shard" which only contains: (i)
+// modules that interact with the bus; (ii) columns in those modules which are
+// used for message sends / receives.
+//
+// NOTE: at this time, only the sharded function results in bus messages.
+// Therefore, this always generates the full trace of that function --- and
+// nothing else.
+func (p *BinaryFile[F, W]) PreFlight(input map[string]bit.Array,
+) (output map[string]bit.Array, data util.Option[trace.Shard[F]], errs []error) {
+	// Execute preflight
+	return vm.BootAndPreFlight[vm.Uint128, F](p.ExecutionProgram(), input)
+}
+
 // Trace generates a (lazy)) trace from the given inputs for the contraints
 // embodied in this file.  Inputs are given as byte arrays which are decoded via
 // vm.DecodeInputs() based on the register types of the corresponding memory.

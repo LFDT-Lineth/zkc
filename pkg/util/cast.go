@@ -17,7 +17,7 @@ import "fmt"
 // Cast provides a safe cast from a value of one type to a value of another
 // (typically smaller) type.  In particular, if the value does not fit in the
 // given type then this will panic.
-func Cast[S uint8 | uint16 | uint32, T uint8 | uint16 | uint32 | uint](val T) S {
+func Cast[S uint8 | uint16 | uint32, T int | uint8 | uint16 | uint32 | uint](val T) S {
 	var bound = uint64(S(0) - 1)
 	//
 	if uint64(val) > bound {

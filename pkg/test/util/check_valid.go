@@ -21,6 +21,8 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -120,17 +122,20 @@ func checkValidInternal(t *testing.T, test TestCase) {
 			field = test.build.GetField()
 			// Sequential tracing
 			traceConfig = vm.DEFAULT_TRACE_CONFIG.WithPadding(test.padding.Right)
+			// Preflight can only be done when there is at least one global
+			// function, and there is no padding.
+			preflight bool = test.padding.Left == "none" && preflightEnabled(p)
 		)
 		// Apply sharding (if applicable)
 		if test.sharding.HasValue() {
 			traceConfig = traceConfig.WithSharding(test.sharding.Unwrap())
 		}
 		// Run the test (without gogen)
-		runConstraintTest(t, p, test.vector, field, traceConfig)
+		runConstraintTest(t, p, test.vector, field, traceConfig, preflight)
 		//
 		if test.gogen.HasValue() {
 			// Rerun test (with gogen)
-			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true))
+			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true), preflight)
 		}
 	}
 }
@@ -187,20 +192,7 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 	// Check what happened
 	if accepted {
 		// Check outputs line up
-		for name, actual := range actuals {
-			if expected, ok := test.data[name]; ok {
-				//
-				if !expected.Equals(actual) {
-					t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
-						test.filename, test.line, expected.String(), actual.String())
-				}
-			}
-		}
-		// Sanity check enough outputs
-		if uint(len(actuals)) != p.Outputs().Count() {
-			t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
-				test.filename, test.line, p.Outputs().Count(), len(actuals))
-		}
+		checkMatchingOutputs(t, p, actuals, test)
 	}
 	// Process what happened versus what was supposed to happen.
 	if !accepted && test.expected {
@@ -211,21 +203,22 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 	}
 }
 
-func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestVector, f field.Config, traceCfg vm.TraceConfig) {
+func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestVector, f field.Config, traceCfg vm.TraceConfig,
+	preflight bool) {
 	// Dispatch based on field config
 	switch f {
 	case field.GF_251:
-		testConstraintsWithField[gf251.Element, vm.Uint32](t, p, test, traceCfg)
+		testConstraintsWithField[gf251.Element, vm.Uint32](t, p, test, traceCfg, preflight)
 	case field.GF_8209:
-		testConstraintsWithField[gf8209.Element, vm.Uint32](t, p, test, traceCfg)
+		testConstraintsWithField[gf8209.Element, vm.Uint32](t, p, test, traceCfg, preflight)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
-		testConstraintsWithField[koalabear.Element, vm.Uint32](t, p, test, traceCfg)
+		testConstraintsWithField[koalabear.Element, vm.Uint32](t, p, test, traceCfg, preflight)
 	case field.GOLDILOCKS_32:
-		testConstraintsWithField[goldilocks.Element, vm.Uint64](t, p, test, traceCfg)
+		testConstraintsWithField[goldilocks.Element, vm.Uint64](t, p, test, traceCfg, preflight)
 	case field.MAMABEAR_32:
-		testConstraintsWithField[mamabear.Element, vm.Uint64](t, p, test, traceCfg)
+		testConstraintsWithField[mamabear.Element, vm.Uint64](t, p, test, traceCfg, preflight)
 	case field.MAMABEAR2_32:
-		testConstraintsWithField[mamabear2.Element, vm.Uint64](t, p, test, traceCfg)
+		testConstraintsWithField[mamabear2.Element, vm.Uint64](t, p, test, traceCfg, preflight)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for tracing")
@@ -235,7 +228,7 @@ func runConstraintTest(t *testing.T, p vm.Program[vm.Uint], test TestVector, f f
 }
 
 func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Program[vm.Uint], test TestVector,
-	traceCfg vm.TraceConfig) {
+	traceCfg vm.TraceConfig, preflight bool) {
 	//
 	var (
 		// construct binary file
@@ -243,7 +236,7 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 		// decode inputs / outputs
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// generate trace
-		_, tr, traceErrors = binf.Trace(inputs, traceCfg)
+		traceOutputs, tr, traceErrors = binf.Trace(inputs, traceCfg)
 	)
 	// Check whether a trace was actually generated.
 	if tr.IsEmpty() {
@@ -265,10 +258,97 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 			test.line, failures, traceErrors, checkErrors)
 	} else if !test.expected && (traceAccepted || constraintsAccepted) {
 		t.Errorf("Trace accepted incorrectly (%s:%d)", test.filename, test.line)
+	} else if test.expected {
+		// Check matching outputs
+		checkMatchingOutputs(t, p, traceOutputs, test)
+	}
+	// Run preflight check (if applicable)
+	if len(traceErrors) == 0 {
+		t.Run("preflight", func(t *testing.T) {
+			runPreFlightTest(t, inputs, binf, test, tr.Unwrap())
+		})
 	}
 	// Run duplication check
-	if len(traceErrors) == 0 {
+	if len(traceErrors) == 0 && preflight {
 		runTraceDedupTest(t, binf.TracingProgram(), test, tr.Unwrap())
+	}
+}
+
+func runPreFlightTest[F field.Element[F], W vm.Word[W]](t *testing.T, inputs map[string]bit.Array,
+	binf *constraints.BinaryFile[F, W], test TestVector, ltr trace.LazyTrace[F]) {
+	//
+	var (
+		program                          = binf.RawProgram()
+		out, optPreflight, errsPreFlight = binf.PreFlight(inputs)
+		optTrace, errsTrace              = trace.Collect(ltr)
+		errs                             = append(errsPreFlight, errsTrace...)
+	)
+	// Check successful run
+	if len(errs) != 0 {
+		failNow(t, errs...)
+	} else if optPreflight.IsEmpty() {
+		t.Errorf("Preflight missing data")
+		return
+	}
+	//
+	var (
+		preflight = optPreflight.Unwrap()
+		trace     = optTrace.Unwrap()
+	)
+	// Check matching outputs for preflight.
+	checkMatchingOutputs(t, program, out, test)
+	// Iterate each module in the collected preflight data
+	for i, m := range program.Modules() {
+		if m.IsFunction() {
+			var f = m.(*vm.Function[vm.Uint])
+			// Check sharded function
+			if f.Kind().IsGlobal() {
+				var (
+					fPreflight = preflight.Module(uint(i))
+					fTrace     = trace.Module(uint(i))
+				)
+				checkPreFlightModule(t, f, fPreflight, fTrace)
+			}
+		}
+	}
+}
+
+// Check that the relevant portions of the preflight module trace match those of the full trace exactly.
+func checkPreFlightModule[F field.Element[F], W vm.Word[W]](t *testing.T, m vm.Module[W], pf trace.Module[F],
+	tr trace.Module[F]) {
+	// Sanity check heights
+	if pf.Height() != tr.Height() {
+		t.Errorf("mismatched height for module %s (was %d, expected %d)", m.Name(), pf.Height(), tr.Height())
+	} else if pf.Width() != tr.Width() {
+		t.Errorf("mismatched width for module %s (was %d, expected %d)", m.Name(), pf.Width(), tr.Width())
+	} else {
+		for i := range pf.Width() {
+			var (
+				pfName = pf.Descriptor().Columns[i].Name
+				trName = tr.Descriptor().Columns[i].Name
+			)
+			//
+			if pfName != trName {
+				t.Errorf("mismatched column %d for module %s (was %s, expected %s)", i, m.Name(), pfName, trName)
+			} else {
+				checkPreFlightColumn(t, m, pfName, pf.Column(i), tr.Column(i))
+			}
+		}
+	}
+}
+
+func checkPreFlightColumn[F field.Element[F], W vm.Word[W]](t *testing.T, m vm.Module[W], column string,
+	pf array.Array[F], tr array.Array[F]) {
+	for i := range pf.Len() {
+		var (
+			pth = pf.Get(i)
+			tth = tr.Get(i)
+		)
+		//
+		if pth.Cmp(tth) != 0 {
+			t.Errorf("mismatched value for column %s in module %s (was 0x%s, expected 0x%s)",
+				column, m.Name(), pth.Text(16), tth.Text(16))
+		}
 	}
 }
 
@@ -315,6 +395,24 @@ func runFunctionDedupTest[F field.Element[F], W vm.Word[W]](t *testing.T, fn *vm
 	}
 }
 
+func checkMatchingOutputs(t *testing.T, p vm.Program[vm.Uint], actuals map[string]bit.Array, test TestVector) {
+	// Check outputs line up
+	for name, actual := range actuals {
+		if expected, ok := test.data[name]; ok {
+			//
+			if !expected.Equals(actual) {
+				t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
+					test.filename, test.line, expected.String(), actual.String())
+			}
+		}
+	}
+	// Sanity check enough outputs
+	if uint(len(actuals)) != p.Outputs().Count() {
+		t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
+			test.filename, test.line, p.Outputs().Count(), len(actuals))
+	}
+}
+
 // Determine the instance (i.e. input arguments) for this row.  For a padding
 // row, this returns nil.  For a one-line function, it returns set of input
 // arguments.  For a multi-line function, on the last row it returns the set of
@@ -335,4 +433,18 @@ func determineFunctionInstance[F field.Element[F], W vm.Word[W]](row, retLine ui
 	}
 	//
 	return buffer
+}
+
+func preflightEnabled(p vm.Program[vm.Uint]) bool {
+	for _, m := range p.Modules() {
+		if m.IsFunction() {
+			var f = m.(*vm.Function[vm.Uint])
+			//
+			if f.Kind().IsGlobal() {
+				return true
+			}
+		}
+	}
+	//
+	return false
 }
