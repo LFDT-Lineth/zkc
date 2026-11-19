@@ -523,11 +523,7 @@ func constructTraceForInterpreter[W Word[W], F Element[F], T Tracer[W, F, T]](pr
 		// Register failure handler to ensure failing traces can still be
 		// checked against constraints (i.e. to ensure they are indeed
 		// rejected).
-<<<<<<< HEAD
 		WithFailureHandler(func() { traceLine(encoding.FAIL) })
-=======
-		WithFailureHandler(func() { handler(encoding.FAIL, false) })
->>>>>>> cfd2f45a1 (fix: separate failure and breakpoint handlers)
 	//
 	return bci
 }

@@ -39,9 +39,6 @@ type PreFlightRecorder[W Word[W]] struct {
 	bci *Interpreter[W]
 	// Accumulated preflight data
 	data []trace.ModuleBuilder[W]
-	// Read-write memories whose timestamps prefix each row recorded for a given
-	// global function (i.e. those memories in its effects).
-	stamps [][]interpreter.ReadWriteMemory[W]
 	// Scratch buffer for constructing rows (sized for the widest module).
 	row []W
 }
@@ -54,7 +51,6 @@ func NewPreFlightRecorder[W Word[W]](program Program[W]) PreFlightRecorder[W] {
 	var (
 		modules = program.Modules()
 		data    = make([]trace.ModuleBuilder[W], uint(len(modules)))
-		stamps  = make([][]interpreter.ReadWriteMemory[W], uint(len(modules)))
 		width   uint
 	)
 	// Configure breakpoints for all global functions (since only these have bus
@@ -67,24 +63,15 @@ func NewPreFlightRecorder[W Word[W]](program Program[W]) PreFlightRecorder[W] {
 			// Mark global function
 			program = program.BreakPoint(fid, 0)
 			//
-			data[fid] = *trace.InitModuleBuilder[W](toModuleDescriptor(modules, f))
+			data[fid] = *trace.InitModuleBuilder[W](toModuleDescriptor(f))
 			width = max(width, data[fid].Width())
 		}
 	}
 	// Construct interpreter which triggers the breakpoint function on every
 	// invocation of any global function, and records the relevant interaction.
 	var bci = NewBytecodeInterpreter(program)
-	// Resolve the memories whose timestamps are recorded for each global
-	// function.
-	for mid, m := range modules {
-		if f, ok := m.(*descriptor.Function[W]); ok && f.Kind().IsGlobal() {
-			stamps[mid] = array.Map(f.Effects(), func(_ uint, e descriptor.ModuleId) interpreter.ReadWriteMemory[W] {
-				return bci.Memory(e).(interpreter.ReadWriteMemory[W])
-			})
-		}
-	}
 	//
-	var pfr = PreFlightRecorder[W]{program, bci, data, stamps, make([]W, width)}
+	var pfr = PreFlightRecorder[W]{program, bci, data, make([]W, width)}
 	// Register breakpoint handler
 	bci.WithBreakpointHandler(func(_ uint32, entry bool) bool {
 		if entry {
@@ -141,18 +128,10 @@ func (p *PreFlightRecorder[W]) recordFunctionCall() {
 	var (
 		// Extract state from the interpreter
 		fid, _, frame = interpreter.ExtractExecutingState(p.bci)
-		stamps        = p.stamps[fid]
 		row           = p.row[:p.data[fid].Width()]
-		n             = len(stamps)
 	)
-	// The stamp on entry to a function is one past the memory's current clock
-	// (since timestamp zero is reserved for the initial state of an untouched
-	// cell).
-	for i, mem := range stamps {
-		row[i] = word.Const64[W](mem.Clock() + 1)
-	}
-	// Arguments follow the stamps
-	copy(row[n:], frame)
+	//
+	copy(row, frame)
 	// Append data row
 	p.data[fid].Append(row...)
 }
@@ -160,16 +139,9 @@ func (p *PreFlightRecorder[W]) recordFunctionCall() {
 // Construct the module descriptor for a given global function, consisting of
 // a stamp column for each memory in its effects followed by its signature.
 // This matches the layout of the function's inputs after timestamp threading.
-func toModuleDescriptor[W word.Word[W]](modules []descriptor.Module[W], f *descriptor.Function[W],
-) trace.ModuleDescriptor {
+func toModuleDescriptor[W word.Word[W]](f *descriptor.Function[W]) trace.ModuleDescriptor {
 	var (
 		signatureWidth = f.NumInputs() + f.NumOutputs()
-		// Construct stamp columns for each memory effect
-		stamps = array.Map(f.Effects(), func(_ uint, e descriptor.ModuleId) trace.ColumnDescriptor {
-			var mem = modules[e].(*descriptor.Memory[W])
-			//
-			return trace.NewColumnDescriptor(descriptor.StampName(mem.Name()), mem.StampWidth())
-		})
 		// Convert registers which make up the signature of this function into
 		// column descriptors.
 		columns = array.Map(f.Registers()[:signatureWidth], func(_ uint, r Register[W]) trace.ColumnDescriptor {
@@ -177,7 +149,7 @@ func toModuleDescriptor[W word.Word[W]](modules []descriptor.Module[W], f *descr
 		})
 	)
 	//
-	return trace.NewModuleDescriptor(f.Name(), append(stamps, columns...))
+	return trace.NewModuleDescriptor(f.Name(), columns)
 }
 
 func convertModule[W Word[W], F Element[F]](field field.Config, mod trace.Module[W]) trace.Module[F] {
