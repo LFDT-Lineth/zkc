@@ -100,6 +100,12 @@ func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[ui
 	return bytecode.NewRegister(bytecode.OUTPUT_REGISTER.WithRangeCheck(checked).WithStamp(true), name, bitwidth, padding)
 }
 
+// StampName returns the name of the stamp (input) register threaded through a
+// function for the given read-write memory.
+func StampName(memory string) string {
+	return memory + "$stamp"
+}
+
 // NewComputedRegister constructs a new computed (i.e. internal) register descriptor.
 func NewComputedRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
 	var checked = bitwidth.HasValue()
