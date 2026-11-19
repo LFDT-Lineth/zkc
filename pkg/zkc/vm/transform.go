@@ -68,6 +68,7 @@ func transformForExecutionRaw[W1 Word[W1], W2 Word[W2]](p Program[W1], word Word
 		pipeline = NewTransformationPipeline("(fast mode) execution",
 			InlineFunctions[W1](),
 			Vectorize[W1](),
+			ThreadTimestamps[W1](),
 			SplitRegisters[W1](word),
 			AllocateRegisters[W1](),
 		)
