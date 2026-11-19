@@ -1,0 +1,4 @@
+{ "data": "0x0100", "result": "0x" }
+{ "data": "0x1000", "result": "0x" }
+{ "data": "0xabcd", "result": "0x" }
+{ "data": "0xfffe", "result": "0x" }

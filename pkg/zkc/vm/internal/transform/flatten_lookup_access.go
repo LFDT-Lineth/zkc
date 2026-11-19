@@ -39,6 +39,10 @@ import (
 // A write lying on a path mutually exclusive with the call does not require a
 // snapshot, since the row which executes that write does not execute the call.
 //
+// The target of a cast ("check r:uN") is treated likewise, since a cast is
+// lowered into a (conditional) range lookup reading that target's column (see
+// flattenCasts).
+//
 // We could avoid the temporary, but it would imply a lookup with a row shift,
 // which makes the prover's life harder.  This pass is therefore only meaningful
 // when generating arithmetic constraints (it is not required by the vm) and
@@ -64,6 +68,10 @@ func flattenLookupAccessFunction[W Word[W]](fn *Function[W]) *Function[W] {
 	)
 
 	for i, vec := range vectors {
+		// Snapshot the target of each cast which may be written later on the
+		// same row.  This comes first, since it redirects subsequent reads of
+		// that target (e.g. by a call) to the snapshot.
+		vec = flattenCasts(vec, alloc)
 		// Decide, for each call in this vector, which arguments must be
 		// snapshotted.  This needs the whole vector body (to know which registers
 		// are written on paths through each call), which the Map closure cannot
@@ -112,16 +120,9 @@ func flattenableArgs[W Word[W]](vec BytecodeVector[W], registers RegisterMap[W])
 			flagged = false
 		)
 		//
-		for j := i; j < len(codes); j++ {
-			// Ignore bytecodes not on any path through this lookup.
-			if !isReachableFrom(reaches, uint(i), uint(j)) {
-				continue
-			}
-			//
-			for k, use := range uses {
-				if isDefinedIn(use, codes[j], registers) {
-					args[k], flagged = true, true
-				}
+		for k, use := range uses {
+			if isWrittenFrom(codes, reaches, uint(i), use, registers) {
+				args[k], flagged = true, true
 			}
 		}
 		//
@@ -131,6 +132,20 @@ func flattenableArgs[W Word[W]](vec BytecodeVector[W], registers RegisterMap[W])
 	}
 	//
 	return snapshot
+}
+
+// isWrittenFrom determines whether the given register may be written by the
+// bytecode at offset "from", or by any later bytecode on some path through it.
+func isWrittenFrom[W Word[W]](codes []Bytecode[W], reaches dfa.Result[dfa.Reaches], from uint,
+	reg bytecode.RegisterId, registers RegisterMap[W]) bool {
+	//
+	for j := from; j < uint(len(codes)); j++ {
+		if isReachableFrom(reaches, from, j) && isDefinedIn(reg, codes[j], registers) {
+			return true
+		}
+	}
+	//
+	return false
 }
 
 // isReachableFrom determines whether the bytecode at offset "to" lies on some
@@ -192,6 +207,125 @@ func snapshotUses[W Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 	}
 	//
 	return insns, ids
+}
+
+// flattenCasts snapshots the target of each cast ("check r:uN") which may be
+// written at or after the cast on some path through it within the given vector.
+// For example, in "check x:u8; x = f(x)" the column for x holds the value
+// returned (rather than the value cast) on the row executing the cast.  Hence,
+// this is rewritten as "tmp = x; check tmp:u8; x = f(tmp)".
+//
+// Observe the call now reads the snapshot.  This is necessary since a cast also
+// narrows the bitwidth of its target for subsequent bytecodes (e.g. a call
+// passing it to a narrower parameter), which now applies to the snapshot
+// instead.  As such, subsequent reads of the target are redirected to the
+// snapshot wherever both hold the same value (see flattenCast).
+func flattenCasts[W Word[W]](vec BytecodeVector[W], registers split.Allocator[W]) BytecodeVector[W] {
+	for {
+		index, ok := flattenableCast(vec, registers)
+		//
+		if !ok {
+			return vec
+		}
+		// Observe this cannot be flagged again, since its target is now a
+		// snapshot (which is never written again).
+		vec = flattenCast(vec, index, registers)
+	}
+}
+
+// flattenableCast returns the offset of the first cast in the vector whose
+// target may be written at or after the cast on some path through it (if any).
+// As for a call argument, a write lying on a mutually exclusive path does not
+// count, and neither does a zero-width register (see flattenableArgs).
+func flattenableCast[W Word[W]](vec BytecodeVector[W], registers RegisterMap[W]) (uint, bool) {
+	var (
+		codes   = vec.Bytecodes
+		hasCast = slices.ContainsFunc(codes, func(code Bytecode[W]) bool {
+			_, ok := code.(*bytecode.CheckCast[W])
+			return ok
+		})
+	)
+	// Avoid constructing the reach map unless it is actually needed.
+	if !hasCast {
+		return 0, false
+	}
+	//
+	var reaches = vec.ReachMap()
+	//
+	for i, code := range codes {
+		if cast, ok := code.(*bytecode.CheckCast[W]); ok &&
+			isWrittenFrom(codes, reaches, uint(i), cast.Target, registers) {
+			return uint(i), true
+		}
+	}
+	//
+	return 0, false
+}
+
+// flattenCast replaces the cast at the given offset with a snapshot of its
+// target ("tmp = r") followed by a cast of that snapshot ("check tmp:uN").
+// Subsequent reads of the target are then redirected to the snapshot, provided:
+// (1) the snapshot has definitely been taken at that point; and (2) the target
+// has not been written (in this vector) at that point.  Together, these ensure
+// the snapshot holds exactly the value which would otherwise have been read.
+//
+// A read forming part of a multi-register vector is left alone, since such
+// vectors must remain consecutive.  This is safe as, again, both registers hold
+// the same value and such reads place no (narrowed) bitwidth expectation on the
+// registers they read.
+func flattenCast[W Word[W]](vec BytecodeVector[W], index uint, registers split.Allocator[W]) BytecodeVector[W] {
+	var (
+		cast   = vec.Bytecodes[index].(*bytecode.CheckCast[W])
+		target = cast.Target
+		tmp    = registers.Allocate("fla", registers.Register(target).Bitwidth())
+	)
+	// Cast the snapshot in place of the target.
+	vec = vec.Map(func(i uint, ith Bytecode[W]) []Bytecode[W] {
+		if i == index {
+			return []Bytecode[W]{bytecode.Assign[W](tmp, target), bytecode.NewCheckCast[W](tmp, cast.Bitwidth)}
+		}
+		//
+		return []Bytecode[W]{ith}
+	})
+	//
+	var (
+		codes  = slices.Clone(vec.Bytecodes)
+		writes = vec.WriteMap()
+		defs   = make([]bytecode.RegisterId, len(registers.Registers()))
+	)
+	//
+	for i := range defs {
+		defs[i] = bytecode.RegisterId(i)
+	}
+	//
+	uses := slices.Clone(defs)
+	uses[target] = tmp
+	// Redirect reads of the target to the snapshot.
+	for i, code := range codes {
+		var st = writes.StateOf(uint(i))
+		//
+		if st.DefinitelyAssigned(tmp) && !st.MaybeAssigned(target) && isRedirectable(code, target) {
+			codes[i] = substituteOperands(code, defs, uses)
+		}
+	}
+	//
+	return bytecode.NewVector(codes...)
+}
+
+// isRedirectable determines whether the given bytecode reads the given
+// register, and does not refer to it as part of a multi-register vector.
+func isRedirectable[W Word[W]](code Bytecode[W], reg bytecode.RegisterId) bool {
+	if !slices.Contains(code.Uses(), reg) {
+		return false
+	}
+	//
+	for _, rv := range extractRegisterVectors(code) {
+		if rv.Len > 1 && rv.Base <= reg && uint(reg) < uint(rv.Base)+uint(rv.Len) {
+			return false
+		}
+	}
+	//
+	return true
 }
 
 func lookupUses[W Word[W]](code Bytecode[W]) []bytecode.RegisterId {

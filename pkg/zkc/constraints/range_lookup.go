@@ -157,10 +157,10 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 //     lowered into a call lookup gated likewise.
 //
 // In all cases, r is read on the cast's row, where its column holds the value
-// cast.  This is because r is not the local being cast, but a copy of it (see
-// asLocalAccess in codegen) which, unlike the local, is never written later on
-// that row (e.g. by the call in "x = f(x as u8)").  This applies equally to the
-// call "$range_uN(r)" following a wide cast, which reads the same column.
+// cast.  This is because r is never written at or after the cast on that row:
+// where it would be (e.g. by the call in "x = f(x as u8)"), FlattenLookupAccess
+// has already replaced it with a snapshot.  This applies equally to the call
+// "$range_uN(r)" following a wide cast, which reads the same column.
 func (p *constraintTranslator[W, F]) emitCastCheck(mod *schema.Table[F], ctx schema.ModuleId, pc, cc uint,
 	vec vm.BytecodeVector[W], cast *vm.BytecodeCheckCast[W], srcSelector register.Id) {
 	var (

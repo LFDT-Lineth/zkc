@@ -369,9 +369,9 @@ func Vectorize[W word.Word[W]]() Transform[W] {
 }
 
 // FlattenLookupAccess adjusts the program (where necessary) to enforce an
-// invariant that call (or memory access) arguments refer to registers on the
-// current vector.  To do this the transform introduces temporary registers (as
-// required) to hold call (or memory access) arguments.  For example:
+// invariant that call (or memory access) arguments, and cast targets, refer to
+// registers on the current vector.  To do this the transform introduces
+// temporary registers (as required) to hold them.  For example:
 //
 // > x = f(x)
 // > y = f(x); x = x + 1

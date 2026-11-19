@@ -488,46 +488,53 @@ func buildInlinedBody[W Word[W]](callee *Function[W], shadows []bytecode.Registe
 
 // substituteRegisters reconstructs a given bytecode with every register
 // substituted according to a given mapping.
+func substituteRegisters[W Word[W]](insn Bytecode[W], sub []bytecode.RegisterId) Bytecode[W] {
+	return substituteOperands(insn, sub, sub)
+}
+
+// substituteOperands reconstructs a given bytecode with the registers it writes
+// substituted according to one mapping (defs), and those it reads according to
+// another (uses).
 //
 //nolint:gocyclo
-func substituteRegisters[W Word[W]](insn Bytecode[W], sub []bytecode.RegisterId) Bytecode[W] {
+func substituteOperands[W Word[W]](insn Bytecode[W], defs, uses []bytecode.RegisterId) Bytecode[W] {
 	switch insn := insn.(type) {
 	case *bytecode.Arith[W]:
-		return bytecode.NewArith(insn.Op, substituteIds(insn.Target, sub), substituteIds(insn.Source, sub), insn.Constant)
+		return bytecode.NewArith(insn.Op, substituteIds(insn.Target, defs), substituteIds(insn.Source, uses), insn.Constant)
 	case *bytecode.Bitwise[W]:
-		return bytecode.NewBitwise(insn.Op, substituteId(insn.Target, sub), substituteId(insn.Left, sub),
-			substituteOperandVector(insn.Right, sub), insn.Bitwidth)
+		return bytecode.NewBitwise(insn.Op, substituteId(insn.Target, defs), substituteId(insn.Left, uses),
+			substituteOperandVector(insn.Right, uses), insn.Bitwidth)
 	case *bytecode.FieldArith[W]:
-		return bytecode.NewFieldArith(insn.Op, substituteId(insn.Target, sub), substituteIds(insn.Sources, sub),
+		return bytecode.NewFieldArith(insn.Op, substituteId(insn.Target, defs), substituteIds(insn.Sources, uses),
 			insn.Constant)
 	case *bytecode.Cat[W]:
-		return bytecode.AssignV[W](substituteIds(insn.Targets, sub), substituteIds(insn.Sources, sub)...)
+		return bytecode.AssignV[W](substituteIds(insn.Targets, defs), substituteIds(insn.Sources, uses)...)
 	case *bytecode.UintToField[W]:
-		return &bytecode.UintToField[W]{Target: substituteId(insn.Target, sub), Source: substituteIds(insn.Source, sub)}
+		return &bytecode.UintToField[W]{Target: substituteId(insn.Target, defs), Source: substituteIds(insn.Source, uses)}
 	case *bytecode.FieldToUint[W]:
-		return &bytecode.FieldToUint[W]{Target: substituteIds(insn.Target, sub), Source: substituteId(insn.Source, sub)}
+		return &bytecode.FieldToUint[W]{Target: substituteIds(insn.Target, defs), Source: substituteId(insn.Source, uses)}
 	case *bytecode.Call[W]:
-		return bytecode.NeverCallFun[W](insn.Target, substituteIds(insn.Arguments, sub),
-			substituteIds(insn.Returns, sub), insn.Never)
+		return bytecode.NeverCallFun[W](insn.Target, substituteIds(insn.Arguments, uses),
+			substituteIds(insn.Returns, defs), insn.Never)
 	case *bytecode.ReadWrite[W]:
 		if insn.Write {
-			return bytecode.NewMemWrite[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub),
-				substituteIds(insn.Stamp, sub))
+			return bytecode.NewMemWrite[W](insn.Id, substituteIds(insn.Address, uses), substituteIds(insn.Data, uses),
+				substituteIds(insn.Stamp, uses))
 		}
 		//
-		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, sub), substituteIds(insn.Data, sub),
-			substituteIds(insn.Stamp, sub))
+		return bytecode.NewMemRead[W](insn.Id, substituteIds(insn.Address, uses), substituteIds(insn.Data, defs),
+			substituteIds(insn.Stamp, uses))
 	case *bytecode.DivMod[W]:
 		return &bytecode.DivMod[W]{
-			Quotient:  substituteId(insn.Quotient, sub),
-			Remainder: substituteId(insn.Remainder, sub),
-			Dividend:  substituteId(insn.Dividend, sub),
-			Divisor:   substituteOperandVector(insn.Divisor, sub)}
+			Quotient:  substituteId(insn.Quotient, defs),
+			Remainder: substituteId(insn.Remainder, defs),
+			Dividend:  substituteId(insn.Dividend, uses),
+			Divisor:   substituteOperandVector(insn.Divisor, uses)}
 	case *bytecode.Intrinsic[W]:
-		return bytecode.NewIntrinsic[W](insn.Op, substituteRegisterVectors(insn.Targets, sub),
-			substituteOperandVectors(insn.Sources, sub))
+		return bytecode.NewIntrinsic[W](insn.Op, substituteRegisterVectors(insn.Targets, defs),
+			substituteOperandVectors(insn.Sources, uses))
 	case *bytecode.CheckCast[W]:
-		return bytecode.NewCheckCast[W](substituteId(insn.Target, sub), insn.Bitwidth)
+		return bytecode.NewCheckCast[W](substituteId(insn.Target, uses), insn.Bitwidth)
 	case *bytecode.Skip[W]:
 		return insn
 	case *bytecode.Jmp[W], *bytecode.Ret[W]:
@@ -535,21 +542,21 @@ func substituteRegisters[W Word[W]](insn Bytecode[W], sub []bytecode.RegisterId)
 		return insn
 	case *bytecode.SkipIf[W]:
 		return &bytecode.SkipIf[W]{Op: insn.Op, Skip: insn.Skip,
-			Left: substituteRegisterVector(insn.Left, sub), Right: substituteOperandVector(insn.Right, sub)}
+			Left: substituteRegisterVector(insn.Left, uses), Right: substituteOperandVector(insn.Right, uses)}
 	case *bytecode.Switch[W]:
-		return bytecode.MultiwaySkip(substituteId(insn.Source, sub), insn.Cases)
+		return bytecode.MultiwaySkip(substituteId(insn.Source, uses), insn.Cases)
 	case *bytecode.Dispatch[W]:
 		cases := make([]bytecode.DispatchCase, len(insn.Cases))
 		//
 		for i, c := range insn.Cases {
-			cases[i] = bytecode.DispatchCase{Bit: substituteId(c.Bit, sub), Skip: c.Skip}
+			cases[i] = bytecode.DispatchCase{Bit: substituteId(c.Bit, uses), Skip: c.Skip}
 		}
 		//
-		return bytecode.NewDispatch[W](cases, substituteId(insn.Default, sub))
+		return bytecode.NewDispatch[W](cases, substituteId(insn.Default, uses))
 	case *bytecode.Debug[W]:
-		return &bytecode.Debug[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
+		return &bytecode.Debug[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, uses)}
 	case *bytecode.Fail[W]:
-		return &bytecode.Fail[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, sub)}
+		return &bytecode.Fail[W]{Chunks: insn.Chunks, Sources: substituteRegisterVectors(insn.Sources, uses)}
 	default:
 		panic(fmt.Sprintf("unexpected instruction in inlined body (%T)", insn))
 	}

@@ -1,0 +1,29 @@
+pub input data(address:u16) -> (word:u16)
+pub output result(address:u16) -> (word:u16)
+
+// As for cast_09, but the cast's target is overwritten on only one of the
+// paths following the cast.  On the other, the target is read after the cast
+// on the same row.
+fn main() {
+    var x:u16 = data[0]
+    var s:u16 = data[1]
+    result[0] = f(x, s)
+    return
+}
+
+fn f(x:u16, s:u16) -> (r:u16) {
+    var v:u16 = x
+    var w:u16 = x
+    v = v + 1
+    var y:u16 = inc((w as u8) as u16)
+    if s == 0 {
+        w = 0x1000
+    }
+    r = y + v + w
+    return
+}
+
+fn inc(a:u16) -> (r:u16) {
+    r = a + 0x100
+    return
+}
