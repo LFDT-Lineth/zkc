@@ -107,7 +107,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// mirrors the bytecode→word decompiler, which drops casts entirely.
 			continue
 		case *vm.BytecodeFail[W]:
-			assignments = joinAssignments(assignments, localWrites)
+			// Failing paths are rejected, so they impose no constancy obligations.
 			local = mirc.False[F]()
 		case *vm.BytecodeJmp[W]:
 			assignments = joinAssignments(assignments, localWrites)
@@ -196,7 +196,7 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 		constraint = constraint.And(local)
 	}
 	// Apply constancies constraints (for all except first instruction)
-	if p.pc > 0 {
+	if p.pc > 0 && assignments.HasValue() {
 		constraint = p.WithConstancyConstraints(assignments.Unwrap(), constraint)
 	}
 	// Add framing guards
