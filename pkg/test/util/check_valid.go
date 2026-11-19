@@ -90,9 +90,21 @@ func CheckValid(t *testing.T, zkcfile string, config TestConfig) {
 
 func checkValidInternal(t *testing.T, test TestCase) {
 	var p = test.program
-	// Apply marshling (if requested)
+	// Check that serialization preserves the kind of every module.
 	if test.marshal {
 		p = marshallUnmarshallMachine(p, test.build.GetField())
+
+		before, after := test.program.Modules(), p.Modules()
+		if len(after) != len(before) {
+			t.Fatalf("module count after binary round trip: got %d, want %d", len(after), len(before))
+		}
+
+		for i, mod := range before {
+			got, want := moduleKind(t, after[i]), moduleKind(t, mod)
+			if got != want {
+				t.Fatalf("module %s kind after binary round trip: got %T%+v, want %T%+v", mod.Name(), got, got, want, want)
+			}
+		}
 	}
 	// Run (fast mode) execution test
 	if test.fastMode {
@@ -120,6 +132,20 @@ func checkValidInternal(t *testing.T, test TestCase) {
 			// Rerun test (with gogen)
 			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true))
 		}
+	}
+}
+
+func moduleKind(t *testing.T, mod vm.Module[vm.Uint]) any {
+	switch m := mod.(type) {
+	case *vm.Function[vm.Uint]:
+		return m.Kind()
+	case *vm.Memory[vm.Uint]:
+		return m.Kind()
+	default:
+		t.Helper()
+		t.Fatalf("unknown module type %T", mod)
+
+		return nil
 	}
 }
 
