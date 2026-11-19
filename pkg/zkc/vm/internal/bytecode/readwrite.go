@@ -33,8 +33,11 @@ type ReadWrite[W word.Word[W]] struct {
 	// Data lines identify where the data row is written.
 	Data []RegisterId
 	// Stamp lines identify the timestamp this access carries: empty before
-	// timestamp threading (and always in fast mode), one register after it,
-	// several limbs after register splitting.
+	// timestamp threading, one register after it, several limbs after register
+	// splitting.  Timestamps are threaded for both fast mode and tracing.
+	// Constraint generation consumes this operand, as does generated Go code
+	// (gogen), which stamps the accessed row with it.  The interpreter ignores
+	// it, as its run-time memory keeps its own clock.
 	Stamp []RegisterId
 }
 

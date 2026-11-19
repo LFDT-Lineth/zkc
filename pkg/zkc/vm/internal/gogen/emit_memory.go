@@ -51,12 +51,17 @@ func (g *generator) emitMemRead(c *code, fn *descFunction, x *bytecode.ReadWrite
 		return err
 	}
 
+	stamp, err := g.stampExpr(fn, mi, x.Stamp)
+	if err != nil {
+		return err
+	}
+
 	dataRegs := mi.geom.DataRegisters()
 
 	var inner error
 
 	c.block(func() {
-		g.emitAccessPrologue(c, mi, start, len(x.Data))
+		g.emitAccessPrologue(c, mi, start, len(x.Data), stamp)
 		//
 		for i, d := range x.Data {
 			// A discarded data line binds no register: skip the load (the
@@ -125,6 +130,11 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 		return err
 	}
 
+	stamp, err := g.stampExpr(fn, mi, x.Stamp)
+	if err != nil {
+		return err
+	}
+
 	dataRegs := mi.geom.DataRegisters()
 	if len(x.Data) != len(dataRegs) {
 		return fmt.Errorf("gogen: MEMORY_WRITE data lines mismatch (%d vs %d)", len(x.Data), len(dataRegs))
@@ -133,7 +143,7 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 	var inner error
 
 	c.block(func() {
-		g.emitAccessPrologue(c, mi, start, len(x.Data))
+		g.emitAccessPrologue(c, mi, start, len(x.Data), stamp)
 		//
 		for i, s := range x.Data {
 			src, e := g.registerOperand(fn, s)
@@ -161,23 +171,65 @@ func (g *generator) emitMemWrite(c *code, fn *descFunction, x *bytecode.ReadWrit
 }
 
 // emitAccessPrologue emits the preamble shared by every read and write of a
-// memory: for scratch memories, the access clock tick and the stamping of the
-// accessed row (which also grows / allocates the storage as needed).  A
+// memory: for scratch memories, the stamping of the accessed row (which also
+// grows / allocates the storage as needed).  The row is stamped with "stamp",
+// the access's timestamp (see stampExpr); no clock is kept per memory.  A
 // non-paged access leaves the first cell's address in "start"; a paged access
 // instead leaves the accessed page in "page" and the first cell's offset within
 // it in "offset".
-func (g *generator) emitAccessPrologue(c *code, mi memInfo, start string, width int) {
+func (g *generator) emitAccessPrologue(c *code, mi memInfo, start string, width int, stamp string) {
 	switch mi.role {
 	case ramScratch:
 		c.linef("start := %s", start)
-		c.linef("stamp_%s = stamp_%s + 1", mi.varName, mi.varName)
-		c.linef("ramStamp(stamp_%s, &%s, %s, start+%d)", mi.varName, mi.varName, rowExpr(width), width)
+		c.linef("ramStamp(%s, &%s, %s, start+%d)", stamp, mi.varName, rowExpr(width), width)
 	case pagedScratch:
-		c.linef("stamp_%s = stamp_%s + 1", mi.varName, mi.varName)
-		c.linef("page, offset := pagedRamStamp(stamp_%s, &%s, %s, %d)", mi.varName, mi.varName, start, width)
+		c.linef("page, offset := pagedRamStamp(%s, &%s, %s, %d)", stamp, mi.varName, start, width)
 	default:
 		c.linef("start := %s", start)
 	}
+}
+
+// stampExpr returns the expression holding the timestamp of an access to the
+// given memory, or "" for memories which keep no timestamps (i.e. anything
+// other than a scratch memory).  The timestamp is the access's Stamp operand
+// (see ThreadTimestamps): a single register or, after register splitting, its
+// limbs (most significant first), which are folded back together as addrExpr
+// does for an address.  Row stamps are uint64, hence an access with no stamp
+// (timestamp threading was not applied) or whose stamp is wider than 64 bits
+// is rejected.
+func (g *generator) stampExpr(fn *descFunction, mi memInfo, stamps []regId) (string, error) {
+	if mi.role != ramScratch && mi.role != pagedScratch {
+		return "", nil
+	}
+
+	if len(stamps) == 0 {
+		return "", fmt.Errorf("gogen: access to read-write memory %q carries no stamp", mi.name)
+	}
+
+	var (
+		expr  string
+		total uint
+	)
+
+	for i, id := range stamps {
+		w, err := g.regWidth(fn, id)
+		if err != nil {
+			return "", err
+		}
+		// Bounding the total also bounds every limb to 64 bits, i.e. to a
+		// single uint64 local.
+		if total += w; total > 64 {
+			return "", fmt.Errorf("gogen: stamp wider than 64 bits unsupported for memory %q", mi.name)
+		}
+
+		if i == 0 {
+			expr = reg(id)
+		} else {
+			expr = fmt.Sprintf("(%s<<%d | %s)", expr, w, reg(id))
+		}
+	}
+
+	return expr, nil
 }
 
 // rowExpr returns the row holding cell "start" of a memory with the given

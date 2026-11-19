@@ -51,12 +51,17 @@ import (
 //	read r = ram[ram$stamp; x]
 //	add ram$stamp_out = ram$stamp + 1
 //
-// Required only for tracing / constraint generation (the run-time memory keeps
-// its own clock), so applied on the constraint path only; runs AFTER
-// vectorisation (a vector is then genuinely one trace row — a second canonical
-// write would have stopped the vectoriser forming the row, forcing one-line
-// functions multi-line) and before register splitting (stamps split into limbs
-// and are range-checked like any other register).
+// Constraint generation consumes the Stamp operands, as does generated Go code
+// (gogen), which stamps each accessed row with them.  The interpreter ignores
+// them, as its run-time memory keeps its own clock.  Either way, this is
+// applied for (fast mode) execution as well as tracing, so that both agree on
+// the layout of a stack frame (stamp registers included, even if they split
+// into different limbs) --- as required to restore a checkpoint taken in fast
+// mode for tracing --- and on when a stamp overflows.  Runs AFTER vectorisation
+// (a vector is then genuinely one trace row — a second canonical write would
+// have stopped the vectoriser forming the row, forcing one-line functions
+// multi-line) and before register splitting (stamps split into limbs and are
+// range-checked like any other register).
 func ThreadTimestamps[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		mods = program.Modules()

@@ -382,13 +382,11 @@ func (g *generator) emitFile(c *code, order []uint, bodies map[uint]*code) error
 	for _, m := range g.rams {
 		c.linef("// Scratch RAM %q.", m.name)
 		c.linef("var %s RamPage", m.varName)
-		c.linef("var stamp_%s uint64", m.varName)
 	}
 
 	for _, m := range g.prams {
 		c.linef("// Paged RAM %q.", m.name)
 		c.linef("var %s []RamPage", m.varName)
-		c.linef("var stamp_%s uint64", m.varName)
 	}
 
 	// Static read-only memories have fixed contents baked in as a literal.
@@ -951,11 +949,11 @@ func packetHeaderLiteral(kind byte) string {
 // (see checkpoint/encoding.go) and writes it to stdout: as a checkpoint packet
 // (see writePacket), or as a single JSON line of the form {"$":"0x…"} under the
 // JSON interchange.  The caller supplies the identifier of the function being
-// entered along with its (non-stamp) arguments, already packed as per
-// interpreter.Pack (see emitCheckpointArgs).  As with interpreter.Checkpoint,
-// every non-static memory is included in module order (Restore relies on
-// this), with page contents packed likewise (a fixed number of bytes per cell)
-// and the memory clock as tracked by the generated program.
+// entered along with its arguments, already packed as per interpreter.Pack
+// (see emitCheckpointArgs).  As with interpreter.Checkpoint, every non-static
+// memory is included in module order (Restore relies on this), with page
+// contents packed likewise (a fixed number of bytes per cell) and the memory
+// clock as tracked by the generated program.
 //
 // A checkpoint of a large memory runs to tens of megabytes, so the buffer is
 // package-level and reused: after the first checkpoint, no allocation is made
@@ -1002,19 +1000,27 @@ func (g *generator) emitCheckpointWriter(c *code) error {
 	return nil
 }
 
-// emitCheckpointArgs emits a local "args" holding the given (non-stamp input)
-// limbs of fn packed as checkpoint argument bytes, mirroring interpreter.Pack:
-// each register big endian in cellByteWidth bytes.
-func (g *generator) emitCheckpointArgs(c *code, fn *descFunction, args []limb) {
+// emitCheckpointArgs emits a local "args" holding the input registers of the
+// given (shard) function packed as checkpoint argument bytes, mirroring
+// interpreter.Pack: each register big endian in cellByteWidth bytes.  As with
+// interpreter.Checkpoint, this covers every input register, including any
+// threaded stamp-in inputs (see ThreadTimestamps): Restore refills the whole
+// input frame from these bytes and, hence, expects the stamps to be present.
+func (g *generator) emitCheckpointArgs(c *code, fn *descFunction) error {
 	var native = lword.ByteWidth(g.program.Field().BandWidth)
 	//
 	c.line("var args []byte")
 	//
-	for _, l := range args {
+	for i := range fn.NumInputs() {
 		var (
-			r = fn.Register(l.id)
-			n = cellByteWidth(r, native)
+			r      = fn.Register(regId(i))
+			n      = cellByteWidth(r, native)
+			l, err = g.limbOf(fn, regId(i))
 		)
+		//
+		if err != nil {
+			return err
+		}
 		//
 		c.commentf("argument %q", r.Name())
 		// A wide (lo/hi pair) register packs big endian as the hi limb in the
@@ -1026,6 +1032,8 @@ func (g *generator) emitCheckpointArgs(c *code, fn *descFunction, args []limb) {
 			c.linef("args = encodeCell(args, %s, %d)", l.lo(), n)
 		}
 	}
+	//
+	return nil
 }
 
 // emitBootCheckpoint emits the initial checkpoint written by main() before
@@ -1062,11 +1070,11 @@ func (g *generator) emitCheckpointWriterMemories(c *code) {
 		switch m.role {
 		case pagedScratch:
 			rows := pagedPageSize / uint64(len(m.geom.DataRegisters()))
-			c.linef("buf = encodePaged(buf, %d, %s, stamp_%s, %d, %s)", m.id, m.varName, m.varName, rows, widths)
+			c.linef("buf = encodePaged(buf, %d, %s, %d, %s)", m.id, m.varName, rows, widths)
 		case ramScratch:
-			c.linef("buf = encodeMemory(buf, %d, %s, stamp_%s, %s)", m.id, m.varName, m.varName, widths)
+			c.linef("buf = encodeMemory(buf, %d, %s, %s)", m.id, m.varName, widths)
 		default:
-			c.linef("buf = encodeMemory(buf, %d, RamPage{%s, nil}, 0, %s)", m.id, m.varName, widths)
+			c.linef("buf = encodeMemory(buf, %d, RamPage{%s, nil}, %s)", m.id, m.varName, widths)
 		}
 	}
 }
@@ -1136,11 +1144,11 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 	c.line("")
 	// encodeMemory appends one memory header (u16 module, u64 clock) followed by
 	// a single page at address zero holding all cells (and row stamps, if any).
-	c.line("func encodeMemory(buf []byte, mid uint16, page RamPage, stamp uint64, widths []uint) []byte {")
+	c.line("func encodeMemory(buf []byte, mid uint16, page RamPage, widths []uint) []byte {")
 	c.commentf("module identifier")
 	c.line("buf = binary.BigEndian.AppendUint16(buf, mid)")
 	c.commentf("timestamp")
-	c.line("buf = binary.BigEndian.AppendUint64(buf, stamp)")
+	c.line("buf = binary.BigEndian.AppendUint64(buf, maxStampInPage(page))")
 	c.commentf("page count")
 	c.line("buf = binary.BigEndian.AppendUint32(buf, 1)")
 	c.line("return encodePage(buf, 0, page, widths)")
@@ -1150,7 +1158,7 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 	if len(g.prams) > 0 {
 		// encodePaged is as encodeMemory, but with one page per allocated page of a
 		// paged memory, addressed by its first row (rows is rows per page).
-		c.line("func encodePaged(buf []byte, mid uint16, pages []RamPage, stamp," +
+		c.line("func encodePaged(buf []byte, mid uint16, pages []RamPage," +
 			"rowsPerPage uint64, widths []uint) []byte {")
 		c.line("var n uint32")
 		c.line("for _, p := range pages {")
@@ -1161,7 +1169,7 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 		c.commentf("module identifier")
 		c.line("buf = binary.BigEndian.AppendUint16(buf, mid)")
 		c.commentf("timestamp")
-		c.line("buf = binary.BigEndian.AppendUint64(buf, stamp)")
+		c.line("buf = binary.BigEndian.AppendUint64(buf, maxStampInPages(pages))")
 		c.commentf("page count")
 		c.line("buf = binary.BigEndian.AppendUint32(buf, n)")
 		c.line("for i, p := range pages {")
@@ -1172,7 +1180,26 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 		c.line("return buf")
 		c.line("}")
 		c.line("")
+		c.line("func maxStampInPages(pages []RamPage) uint64 {")
+		c.line("var stamp uint64 = 0")
+		c.commentf("Iterate every page")
+		c.line("for _, page := range pages {")
+		c.line("stamp = max(stamp,maxStampInPage(page))")
+		c.line("}")
+		c.line("return stamp")
+		c.line("}")
+		c.line("")
 	}
+	//
+	c.line("func maxStampInPage(page RamPage) uint64 {")
+	c.line("var stamp uint64 = 0")
+	c.commentf("Iterate every stamp")
+	c.line("for _, ith := range page.stamps {")
+	c.line("stamp = max(stamp, ith)")
+	c.line("}")
+	c.line("return stamp")
+	c.line("}")
+	c.line("")
 }
 
 // cellByteWidths returns, for each data lane of the given memory, the number
@@ -1201,30 +1228,6 @@ func cellByteWidth(r descriptor.Register[word.Uint], native uint) uint {
 	}
 	//
 	return lword.ByteWidth(r.Bitwidth().Unwrap())
-}
-
-// checkpointArgs returns the limbs of the given (shard) function's non-stamp
-// input registers, in register order.  These are the arguments recorded in a
-// checkpoint (mirroring Function.InputsExStamps), and hence the parameters of
-// the generated writeCheckpoint.
-func (g *generator) checkpointArgs(fn *descFunction) ([]limb, error) {
-	var limbs []limb
-	//
-	for i := range fn.NumInputs() {
-		if fn.Register(regId(i)).IsStamp() {
-			continue
-		}
-		//
-		l, err := g.limbOf(fn, regId(i))
-		//
-		if err != nil {
-			return nil, err
-		}
-		//
-		limbs = append(limbs, l)
-	}
-	//
-	return limbs, nil
 }
 
 // widthsLiteral renders a Go []uint literal of data-line bit-widths.
@@ -1395,13 +1398,6 @@ func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction, cfg Con
 	if cfg.CheckPointing.HasValue() {
 		if strategy := cfg.CheckPointing.Unwrap(); strategy.ShardFunction == fn.Name() {
 			var clkVarName = fmt.Sprintf("clk_%s", sanitize(strategy.ShardFunction))
-			// The checkpoint records this function's (non-stamp) arguments,
-			// packed from the parameters at the point of capture.
-			args, err := g.checkpointArgs(fn)
-			//
-			if err != nil {
-				return err
-			}
 			//
 			c.commentf("decrement clock")
 			c.linef("%s = %s - 1", clkVarName, clkVarName)
@@ -1409,7 +1405,13 @@ func (g *generator) emitFunctionBody(c *code, id uint, fn *descFunction, cfg Con
 			c.commentf("reset clock")
 			c.linef("%s = %d", clkVarName, strategy.ShardSteps)
 			c.commentf("capture checkpoint")
-			g.emitCheckpointArgs(c, fn, args)
+			// The checkpoint records this function's arguments (including any
+			// threaded stamps), packed from the parameters at the point of
+			// capture.
+			if err := g.emitCheckpointArgs(c, fn); err != nil {
+				return err
+			}
+			//
 			c.linef("writeCheckpoint(%d, args)", id)
 			c.linef("}")
 		}
@@ -1571,6 +1573,10 @@ func (g *generator) emitInstruction(c *code, fn *descFunction, insn bytecode.Byt
 		// The unconditional flag on a call (range checks) and the checkpoint
 		// flag affect only constraint lowering, which gogen does not perform;
 		// likewise memory reads/writes execute identically whatever their kind.
+		// The Stamp operand (see ThreadTimestamps) is NOT ignored, however:
+		// unlike the interpreter, generated code keeps no clock per memory,
+		// and instead stamps the accessed row of a read-write memory with
+		// this operand (see emitAccessPrologue).
 		if x.Write {
 			return g.emitMemWrite(c, fn, x)
 		}

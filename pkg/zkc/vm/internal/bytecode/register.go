@@ -157,11 +157,6 @@ func (p Register[W]) IsComputed() bool {
 	return p.kind.underlying == register.COMPUTED_REGISTER
 }
 
-// IsStamp determines whether or not this is a stamp register
-func (p Register[W]) IsStamp() bool {
-	return p.kind.stamp
-}
-
 // IsRangeChecked determines whether or not this register has a dedicated bounds
 // check.  If so, then the bitwidth of this register is guaranteed regardless.
 func (p Register[W]) IsRangeChecked() bool {

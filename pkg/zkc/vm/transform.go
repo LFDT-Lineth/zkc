@@ -345,11 +345,14 @@ func LowerSwitch[W word.Word[W]]() Transform[W] {
 // declares a read-write memory effect: each such function gains a stamp-in
 // input and stamp-out output per accessed read-write memory, calls forward
 // them, and every memory access carries a distinct timestamp in its Stamp
-// operand (the k-th access executed carries stamp-in + k).  Applied on the
-// constraint path only (the run-time memory maintains its own clock), after
-// vectorisation — so a vector is genuinely one trace row and the canonical
-// stamp register is written at most once per executed path through it — and
-// before register splitting.
+// operand (the k-th access executed carries stamp-in + k).  Constraint
+// generation consumes these operands, as does generated Go code (gogen), which
+// stamps each accessed row with them; the interpreter ignores them (its
+// run-time memory maintains its own clock).  This is applied for (fast mode)
+// execution as well as tracing so that both agree on the layout of a stack
+// frame.  Applied after vectorisation — so a vector is genuinely one trace row
+// and the canonical stamp register is written at most once per executed path
+// through it — and before register splitting.
 func ThreadTimestamps[W word.Word[W]]() Transform[W] {
 	var (
 		transformer  = transform.ThreadTimestamps[W]

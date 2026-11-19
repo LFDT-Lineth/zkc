@@ -517,8 +517,8 @@ func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F],
 		// on the same code line.
 		handle = fmt.Sprintf("ram_%d_%d_%d_%d", ctx, pc, cc, rw.Id)
 		// Source ids: the accessor's address, data and timestamp registers.
-		// The timestamp is threaded on the constraint path only, so it is
-		// always present here; its limbs split exactly like the table's
+		// Timestamps are always threaded ahead of constraint generation, so
+		// it is always present here; its limbs split exactly like the table's
 		// timestamp columns (same width, same field).
 		srcIds = append(append(append([]register.Id{},
 			mirc.ToRegisterIds(rw.Address)...),

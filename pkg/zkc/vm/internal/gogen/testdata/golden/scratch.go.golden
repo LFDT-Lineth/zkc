@@ -23,7 +23,6 @@ var zkc_result []uint64
 
 // Scratch RAM "scratch".
 var zkc_scratch RamPage
-var stamp_zkc_scratch uint64
 
 // zkc_main corresponds to ZkC function "main".
 func zkc_main() {
@@ -42,6 +41,11 @@ func zkc_main() {
 	var r12 uint64 // $12
 	var r13 uint64 // $13
 	var r14 uint64 // $14
+	var r15 uint64 // stamp$15
+	var r16 uint64 // stamp$16
+	var r17 uint64 // stamp$17
+	var r18 uint64 // stamp$18
+	var r19 uint64 // stamp$19
 	// [0.0] ldc $0 = 0x3
 	r0 = 3
 	// [0.1] ldc $2 = 0x0
@@ -54,18 +58,19 @@ func zkc_main() {
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.3] write scratch[$0] = $1
+	// [0.3] ldc stamp$15 = 0x1
+	r15 = 1
+	// [0.4] write scratch[stamp$15; $0] = $1
 	{
 		start := r0
-		stamp_zkc_scratch = stamp_zkc_scratch + 1
-		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
+		ramStamp(r15, &zkc_scratch, start, start+1)
 		zkc_scratch.data[start+0] = r1
 	}
-	// [0.4] ldc $3 = 0xf
+	// [0.5] ldc $3 = 0xf
 	r3 = 0xf
-	// [0.5] ldc $5 = 0x1
+	// [0.6] ldc $5 = 0x1
 	r5 = 1
-	// [0.6] read $4 = data[$5]
+	// [0.7] read $4 = data[$5]
 	{
 		start := r5
 		r4 = romRead(zkc_data, start+0, "data")
@@ -73,62 +78,66 @@ func zkc_main() {
 			fail("bit overflow (value exceeds u8)")
 		}
 	}
-	// [0.7] write scratch[$3] = $4
+	// [0.8] ldc stamp$16 = 0x2
+	r16 = 2
+	// [0.9] write scratch[stamp$16; $3] = $4
 	{
 		start := r3
-		stamp_zkc_scratch = stamp_zkc_scratch + 1
-		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
+		ramStamp(r16, &zkc_scratch, start, start+1)
 		zkc_scratch.data[start+0] = r4
 	}
-	// [0.8] ldc $6 = 0x0
+	// [0.10] ldc $6 = 0x0
 	r6 = 0
-	// [0.9] ldc $8 = 0x3
+	// [0.11] ldc $8 = 0x3
 	r8 = 3
-	// [0.10] read $7 = scratch[$8]
+	// [0.12] ldc stamp$17 = 0x3
+	r17 = 3
+	// [0.13] read $7 = scratch[stamp$17; $8]
 	{
 		start := r8
-		stamp_zkc_scratch = stamp_zkc_scratch + 1
-		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
+		ramStamp(r17, &zkc_scratch, start, start+1)
 		r7 = zkc_scratch.data[start+0]
 	}
-	// [0.11] write result[$6] = $7
+	// [0.14] write result[$6] = $7
 	{
 		start := r6
 		zkc_result = womWrite(zkc_result, start+0, r7, "result")
 	}
-	// [0.12] ldc $9 = 0x1
+	// [0.15] ldc $9 = 0x1
 	r9 = 1
-	// [0.13] ldc $11 = 0xf
+	// [0.16] ldc $11 = 0xf
 	r11 = 0xf
-	// [0.14] read $10 = scratch[$11]
+	// [0.17] ldc stamp$18 = 0x4
+	r18 = 4
+	// [0.18] read $10 = scratch[stamp$18; $11]
 	{
 		start := r11
-		stamp_zkc_scratch = stamp_zkc_scratch + 1
-		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
+		ramStamp(r18, &zkc_scratch, start, start+1)
 		r10 = zkc_scratch.data[start+0]
 	}
-	// [0.15] write result[$9] = $10
+	// [0.19] write result[$9] = $10
 	{
 		start := r9
 		zkc_result = womWrite(zkc_result, start+0, r10, "result")
 	}
-	// [0.16] ldc $12 = 0x2
+	// [0.20] ldc $12 = 0x2
 	r12 = 2
-	// [0.17] ldc $14 = 0x7
+	// [0.21] ldc $14 = 0x7
 	r14 = 7
-	// [0.18] read $13 = scratch[$14]
+	// [0.22] ldc stamp$19 = 0x5
+	r19 = 5
+	// [0.23] read $13 = scratch[stamp$19; $14]
 	{
 		start := r14
-		stamp_zkc_scratch = stamp_zkc_scratch + 1
-		ramStamp(stamp_zkc_scratch, &zkc_scratch, start, start+1)
+		ramStamp(r19, &zkc_scratch, start, start+1)
 		r13 = zkc_scratch.data[start+0]
 	}
-	// [0.19] write result[$12] = $13
+	// [0.24] write result[$12] = $13
 	{
 		start := r12
 		zkc_result = womWrite(zkc_result, start+0, r13, "result")
 	}
-	// [0.20] ret
+	// [0.25] ret
 	return
 }
 
