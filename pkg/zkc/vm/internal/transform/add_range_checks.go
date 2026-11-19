@@ -119,6 +119,13 @@ type rangeSplit struct {
 	lo, hi uint
 }
 
+// MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK is the largest bitwidth which is
+// range-checked by a vanishing constraint, rather than by a lookup into a range
+// module.  Specifically, a register r of width w at or below this is checked by
+// the polynomial constraint r * (r - 1) * ... * (r - (2^w - 1)) == 0, whose
+// degree (2^w) is what bounds this.
+const MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK uint = 2
+
 // neededRangeWidths computes the decomposition of every register width for which
 // a range module must be generated.  This is the set of widths occurring
 // directly on some register, closed under the destructuring of wide widths
@@ -439,13 +446,14 @@ type BitwidthSet struct {
 // NewBitwidthSet constructs the initial set of bitwidths.
 func NewBitwidthSet(maxStaticWidth uint) *BitwidthSet {
 	var worklist stack.Worklist
-	// We don't construct a module for range_u1 and range_u2, since a register r
-	// of width w in {1, 2} is instead range-checked by the vanishing constraint
-	// Product_{i=0}^{2^w - 1} (r - i) == 0. So 1 and 2 are always considered
-	// "seen" and never queued for processing.
-	worklist.Mark(0)
-	worklist.Mark(1)
-	worklist.Mark(2)
+	// We don't construct a module for range_uW when W is at most
+	// MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK, since a register r of such width is
+	// instead range-checked by the vanishing constraint
+	// Product_{i=0}^{2^W - 1} (r - i) == 0. So these widths are always
+	// considered "seen" and never queued for processing.
+	for w := range MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK + 1 {
+		worklist.Mark(w)
+	}
 	//
 	return &BitwidthSet{worklist, maxStaticWidth}
 }

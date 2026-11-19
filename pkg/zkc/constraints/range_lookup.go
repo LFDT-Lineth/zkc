@@ -106,9 +106,10 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			// added are range-checked. Note that len(mod.Registers()) >= len(regs)
 			continue
 		}
-		// Registers of width <= 2 are not range-checked with a lookup to a
-		// static table, but with a vanishing constraint (see smallRangeCheck).
-		if reg.Width() <= 2 {
+		// Registers of width <= MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK are not
+		// range-checked with a lookup to a static table, but with a vanishing
+		// constraint (see smallRangeCheck).
+		if reg.Width() <= vm.MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK {
 			regId := register.NewId(uint(i))
 			handle := fmt.Sprintf("range_u%d_%d", reg.Width(), regId.Unwrap())
 			r := mirc.Variable[F](regId, reg.Width(), 0)
@@ -148,8 +149,8 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 // declared width of r, so the (unconditional) range proof of r does not imply
 // this.  Three cases arise:
 //
-//   - N <= 2: the vanishing constraint "sel != 0 ==> poly_N(r) == 0" (see
-//     smallRangeCheck).
+//   - N <= MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK: the vanishing constraint
+//     "sel != 0 ==> poly_N(r) == 0" (see smallRangeCheck).
 //   - N <= maxStaticWidth: a lookup of r (filtered by sel) into the static
 //     $range_uN table.
 //   - N > maxStaticWidth: nothing to do here, as AddRangeChecks has already
@@ -176,7 +177,7 @@ func (p *constraintTranslator[W, F]) emitCastCheck(mod *schema.Table[F], ctx sch
 	case width > p.maxStaticWidth:
 		// Range-checked via the call to $range_uN following the cast.
 		return
-	case width <= 2:
+	case width <= vm.MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK:
 		var (
 			sel = mirc.Variable[F](srcSelector, 1, 0)
 			r   = mirc.Variable[F](regId, mod.Registers()[regId.Unwrap()].Width(), 0)
@@ -220,10 +221,10 @@ func isWrittenFrom[W vm.Word[W]](vec vm.BytecodeVector[W], from uint, reg vm.Reg
 
 // smallRangeCheck constructs the vanishing constraint "r * (r - 1) * ... * (r -
 // (2^width - 1)) == 0" asserting r fits within width bits, for a width of at most
-// 2 (wider registers being range-checked by lookups instead).  For width 0 this
-// is simply r == 0.
+// MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK (wider registers being range-checked by
+// lookups instead).  For width 0 this is simply r == 0.
 func smallRangeCheck[F field.Element[F]](r Expr[F], width uint) Expr[F] {
-	util.Assert(width <= 2, "invalid width for small range check")
+	util.Assert(width <= vm.MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK, "invalid width for small range check")
 	//
 	var factors = []Expr[F]{r}
 	//

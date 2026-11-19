@@ -31,6 +31,11 @@ type TransformConfig = transform.Config
 // pipeline transformations.
 var DEFAULT_TRANSFORMS = transform.DEFAULT_CONFIG
 
+// MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK is the largest bitwidth which is
+// range-checked by a vanishing (polynomial) constraint, rather than by a lookup
+// into a range module.
+const MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK = transform.MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK
+
 // TransformForExecution applies a transformation pipeline suitable for (fast
 // mode) execution, whilst applying the given transformation configuration (e.g.
 // to ignore any pipeline stages requested for debugging, etc).  The target word
