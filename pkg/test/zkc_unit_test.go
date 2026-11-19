@@ -499,11 +499,13 @@ func Test_ZkcUnit_Basic_118(t *testing.T) {
 }
 
 func Test_ZkcUnit_Basic_119(t *testing.T) {
+	// see #2342
 	checkZkcUnit(t, "zkc/unit/basic_119", DEFAULT_UNIT_CONFIG.
 		GoGen(false).Constraints(false))
 }
 
 func Test_ZkcUnit_Basic_120(t *testing.T) {
+	// see #2342
 	checkZkcUnit(t, "zkc/unit/basic_120", DEFAULT_UNIT_CONFIG.
 		GoGen(false).Constraints(false))
 }
@@ -518,6 +520,36 @@ func Test_ZkcUnit_Basic_122(t *testing.T) {
 
 func Test_ZkcUnit_Basic_123(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/basic_123", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_124(t *testing.T) {
+	// See #2342
+	checkZkcUnit(t, "zkc/unit/basic_124", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_125(t *testing.T) {
+	// See #2342
+	checkZkcUnit(t, "zkc/unit/basic_125", DEFAULT_UNIT_CONFIG.Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_126(t *testing.T) {
+	t.Skip("#2347 subtraction ignores operand bitwidth")
+	checkZkcUnit(t, "zkc/unit/basic_126", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_127(t *testing.T) {
+	t.Skip("#2348 folding trailing constants for CSUB")
+	checkZkcUnit(t, "zkc/unit/basic_127", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_Basic_128(t *testing.T) {
+	t.Skip("#2350 panic for large register")
+	checkZkcUnit(t, "zkc/unit/basic_128", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
+}
+
+func Test_ZkcUnit_Basic_129(t *testing.T) {
+	t.Skip("#2342 wide-target CSUB loses the overflow bit during execution")
+	checkZkcUnit(t, "zkc/unit/basic_129", DEFAULT_UNIT_CONFIG.GoGen(false).Constraints(false))
 }
 
 // End of CSUB cases

@@ -37,7 +37,7 @@ import (
 // Regardless of version, the file always begins with the ZKBINARY identifier
 // followed by a hand-rolled binary Header.  The encoding of everything after
 // the header is determined by the major version.
-const BINFILE_MAJOR_VERSION uint16 = 0
+const BINFILE_MAJOR_VERSION uint16 = 1
 
 // BINFILE_MINOR_VERSION is the minor version of the binary file format.  Files
 // produced by this implementation may not be readable by older versions.

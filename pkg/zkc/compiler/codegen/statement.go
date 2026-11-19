@@ -1028,14 +1028,16 @@ func (p *StmtCompiler) compileCSub(folded vm.Uint, nargs []Expr, bw util.Option[
 func (p *StmtCompiler) compileSubWithRegZero(folded vm.Uint, nargs []Expr, bw util.Option[uint], mapping []uint,
 	target RegisterPacket,
 ) []Bytecode {
-	sources, insns := p.compileUniformArgs(bw, mapping, nargs[1:]...)
-
-	// Add a register of the operation width holding zero as the leading source
-	regZero := p.allocate(bw)
-	insns = append(insns, vm.LoadConst(regZero, vm.Uint{}, util.Cast[uint16](bw.Unwrap())))
+	var (
+		zero           vm.Uint
+		sources, insns = p.compileUniformArgs(bw, mapping, nargs[1:]...)
+		// Add a register of the operation width holding zero as the leading source
+		regZero = p.allocate(bw)
+	)
+	//
+	insns = append(insns, vm.LoadConst(regZero, zero, util.Cast[uint16](bw.Unwrap())))
 	sources = append([]vm.RegisterId{regZero}, sources...)
-
-	positiveFolded, _ := vm.Uint{}.Sub(folded)
+	positiveFolded, _ := zero.Sub(folded)
 
 	return append(insns, vm.SubVec(target, sources, positiveFolded, util.Cast[uint16](bw.Unwrap())))
 }
