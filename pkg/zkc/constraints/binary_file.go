@@ -42,10 +42,10 @@ const BINFILE_MAJOR_VERSION uint16 = 0
 // BINFILE_MINOR_VERSION is the minor version of the binary file format.  Files
 // produced by this implementation may not be readable by older versions.
 //
-// History: v0.1 added the per-memory timestamp width (issue #2069).  Binary
-// files are assumed to be compiled to the current format: there is no
-// compatibility shim for v0.0 files, which fail to decode.
-const BINFILE_MINOR_VERSION uint16 = 1
+// v0.1 added the per-memory timestamp width (issue #2069); v0.2 added the
+// paged flag to MemoryKind. Recompile older binaries containing memories:
+// their payloads do not record whether those memories were paged.
+const BINFILE_MINOR_VERSION uint16 = 2
 
 // ZKC_EXEC is used as the file identifier for binary file types.  This just
 // helps us identify actual binary files from corrupted files.
