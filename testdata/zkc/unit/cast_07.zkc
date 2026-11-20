@@ -1,0 +1,18 @@
+pub input data(address:u16) -> (word:u16)
+pub output result(address:u16) -> (word:u16)
+
+// Prove that a cast checks the value its target holds at the cast, even when
+// that target is overwritten later on the same row (here, by the call's
+// return).  Furthermore, the cast is the only check bounding x here, since
+// both the callee's input and the result column are wider.
+fn main() {
+    var x:u16 = data[0]
+    x = inc((x as u8) as u16)
+    result[0] = x
+    return
+}
+
+fn inc(a:u16) -> (r:u16) {
+    r = a + 0x100
+    return
+}

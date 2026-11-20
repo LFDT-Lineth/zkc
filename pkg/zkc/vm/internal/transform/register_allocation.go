@@ -68,10 +68,10 @@ import (
 // This is simple, but not necessarily optimal.
 //
 // NOTE: this transform must run after register splitting, and before lookup
-// accesses are flattened.  Call and memory lookups read their operands on the
-// current row (i.e. after every write in the vector), hence FlattenLookupAccess
-// snapshots any operand written later in the same vector.  Coalescing after
-// that could reintroduce such writes.
+// accesses are flattened.  Call, memory and cast lookups read their operands on
+// the current row (i.e. after every write in the vector), hence
+// FlattenLookupAccess snapshots any operand written later in the same vector.
+// Coalescing after that could reintroduce such writes.
 func AllocateRegisters[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		mods = program.Modules()
