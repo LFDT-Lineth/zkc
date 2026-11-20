@@ -121,24 +121,13 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			case vm.OP_MUL:
 				local = it.translateMul(c.Target, c.Source, c.Constant)
 			case vm.OP_SUB:
-				var (
-					// Determine whether this is a subtract with borrow
-					isSbb        = vm.IsSubtractWithBorrow(*c, p.enclosing)
-					hasSignedBit = hasSignedBit(c.Target, p.enclosing)
-				)
-				//
-				if isSbb && hasSignedBit {
-					local = it.translateSignedSub(c.Target, c.Source, c.Constant)
-				} else if isSbb {
-					panic("subtract with borrow bytecode missing sign bit")
-				} else {
-					local = it.translateSub(c.Target, c.Source, c.Constant)
-				}
+				local = it.translateSub(c, p.enclosing)
+			case vm.OP_CSUB:
+				local = it.translateCSub(c, p.enclosing)
 			default:
 				panic("unknown arithmetic operation")
 			}
 			// translate integer arithmetic assignment
-
 		case *vm.BytecodeFieldArith[W]:
 			it := InstructionTranslator[W, F]{p, localWrites}
 

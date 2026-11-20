@@ -185,8 +185,11 @@ func snapshotUses[W Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 	//
 	for i, use := range ids {
 		if snapshot[i] {
-			tmp := registers.Allocate("fla", registers.Register(use).Bitwidth())
-			insns = append(insns, bytecode.Assign[W](tmp, use))
+			bw := registers.Register(use).Bitwidth()
+			tmp := registers.Allocate("fla", bw)
+			// A native register has no width, so the snapshot is a field copy.
+			insns = append(insns, bytecode.Copy[W](tmp, use, bw))
+
 			ids[i] = tmp
 		}
 	}

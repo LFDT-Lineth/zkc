@@ -175,7 +175,7 @@ func transferArith[W Word[W]](pp ProgramPoint, bc *bytecode.Arith[W], in Bitwidt
 		bits = descriptor.CalculateAddBitwidth(sources, bc.Constant, env)
 	case bytecode.OP_MUL:
 		bits = descriptor.CalculateMulBitwidth(sources, bc.Constant, env)
-	case bytecode.OP_SUB:
+	case bytecode.OP_SUB, bytecode.OP_CSUB:
 		// NOTE: subtraction can always underflow and, therefore, we cannot
 		// assume anything about the result.
 		bits = util.Some[uint](math.MaxUint)
