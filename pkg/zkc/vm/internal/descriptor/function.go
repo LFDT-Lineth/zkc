@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"encoding/gob"
 
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -63,30 +62,6 @@ func (p *Function[W]) Kind() FunctionKind {
 // to access.
 func (p *Function[W]) Effects() []ModuleId {
 	return p.effects
-}
-
-// NumStampInputs returns the number of stamp (input) registers allocated for
-// this function.  Here, the first n input registers hold the corresponding
-// timestamps for the relevant memories listed under effects. Observe that stamp
-// registers are not guaranteed to have been allocated, even for functions with
-// declared effects.
-func (p *Function[W]) NumStampInputs() uint {
-	//
-	for i := range p.NumInputs() {
-		if !p.registers[i].IsStamp() {
-			return i
-		}
-	}
-	// Every input register is a stamp register.
-	return p.NumInputs()
-}
-
-// InputsExStamps returns the set of input registers for this function,
-// excluding any stamp registers.
-func (p *Function[W]) InputsExStamps() []Register[W] {
-	return array.Filter(p.registers[:p.numInputs], func(r Register[W]) bool {
-		return !r.IsStamp()
-	})
 }
 
 // IsCacheable returns true if caching (i.e. memoisation) of this function is

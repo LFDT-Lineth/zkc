@@ -355,20 +355,20 @@ func (p *Interpreter[W]) Outputs() iter.Iterator[InputOutput[W]] {
 }
 
 // CheckPoint relevant state of the interpreter, such that execution can be
-// resumed from this point.  Observe that any threaded stamp-in inputs (see
-// ThreadTimestamps) are excluded from the packed arguments: they are not
-// meaningful across machines of different word widths (e.g. fast mode has no
-// such registers), and are instead reconstructed from the memory clocks upon
-// restore (see Restore).
+// resumed from this point.  Observe that the packed arguments cover every input
+// register of the executing function, including any threaded stamp-in inputs
+// (see ThreadTimestamps).  Stamps are threaded for both fast mode and tracing
+// and, hence, the two agree on the layout of the inputs (upto register
+// splitting, which packing is agnostic to --- see Pack).
 func (p *Interpreter[W]) CheckPoint() checkpoint.CheckPoint {
 	var (
 		fp = uint(p.fp)
 		// Extract checkpointed function
-		fun = p.program.Module(p.fid).(*descriptor.Function[W])
-		// Extract arguments (excluding stamps)
-		frame = p.dataStack.Slice(fp+fun.NumStampInputs(), fp+fun.NumInputs())
+		fun = p.program.Module(p.fid)
+		// Extract arguments (including stamps)
+		frame = p.dataStack.Slice(fp, fp+fun.NumInputs())
 		// Pack into bytes
-		args     []byte = Pack(p.field, fun.InputsExStamps(), frame)
+		args     []byte = Pack(p.field, fun.Inputs(), frame)
 		memories []checkpoint.Memory
 	)
 	// Pack memories
@@ -397,16 +397,18 @@ func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint) {
 	var (
 		memories = cp.Memories()
 		// Extract function descriptor
-		fun = p.program.Module(cp.Function()).(*descriptor.Function[W])
-		// Determine number of stamp inputs (i.e. as these are excluded from the
-		// packed arguments).
-		k = fun.NumStampInputs()
+		fun = p.program.Module(cp.Function())
+		// Unpack arguments (including stamps)
+		args = Unpack(p.field, fun.Inputs(), cp.ArgumentBytes())
 	)
+	// Sanity check the arguments exactly fill the input registers, otherwise
+	// the frame would be silently corrupted.
+	util.Assert(uint(len(args)) == fun.NumInputs(), "expected %d argument words, got %d", fun.NumInputs(), len(args))
 	// Reset machine to given function
 	p.Reset(cp.Function())
-	// Restore (non-stamp) arguments
-	for i, val := range Unpack(p.field, fun.InputsExStamps(), cp.ArgumentBytes()) {
-		p.dataStack.Set(k+uint(i), val)
+	// Restore arguments
+	for i, val := range args {
+		p.dataStack.Set(uint(i), val)
 	}
 	// Restore memories
 	for mid, m := range p.program.Modules() {
@@ -418,35 +420,6 @@ func (p *Interpreter[W]) Restore(cp checkpoint.CheckPoint) {
 			memories = memories[1:]
 		}
 	}
-	// Restore (stamp) arguments
-	if k > 0 {
-		var stamps = p.unpackStampsOf(fun.Effects())
-		// Sanity check the stamp words (one per limb of each effect's stamp)
-		// exactly fill the stamp input registers, otherwise the frame would be
-		// silently corrupted.
-		util.Assert(uint(len(stamps)) == k, "expected %d stamp words, got %d", k, len(stamps))
-		//
-		for i, val := range stamps {
-			p.dataStack.Set(uint(i), val)
-		}
-	}
-}
-
-// Extract stamp words for each memory in the given function's effects
-// declaration.
-func (p *Interpreter[W]) unpackStampsOf(effects []uint16) []W {
-	var words []W
-	//
-	for _, effect := range effects {
-		var (
-			ram = p.Memory(effect).(ReadWriteMemory[W])
-			ws  = Unpack64[W](p.field, ram.Descriptor().StampWidth(), ram.Clock()+1)
-		)
-		//
-		words = append(words, ws...)
-	}
-	//
-	return words
 }
 
 // Binary provides access to the compiled program binary being executed.
