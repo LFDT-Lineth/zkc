@@ -29,9 +29,6 @@ import (
 type Type struct {
 	// underlying register type
 	underlying register.Type
-	// flag to indicate whether this register is part of an synthetic stamp
-	// register (i.e. added by ThreadTimeStamps).
-	stamp bool
 	// rangeChecked registers have dedicated checks to enforce their range (i.e.
 	// bounds).
 	rangeChecked bool
@@ -40,13 +37,13 @@ type Type struct {
 var (
 	// INPUT_REGISTER signals a register used for holding the input values of a
 	// function.
-	INPUT_REGISTER = Type{register.INPUT_REGISTER, false, true}
+	INPUT_REGISTER = Type{register.INPUT_REGISTER, true}
 	// OUTPUT_REGISTER signals a register used for holding the output values of
 	// a function.
-	OUTPUT_REGISTER = Type{register.OUTPUT_REGISTER, false, true}
+	OUTPUT_REGISTER = Type{register.OUTPUT_REGISTER, true}
 	// COMPUTED_REGISTER signals a register whose values are computed from one
 	// (or more) assignments during trace expansion.
-	COMPUTED_REGISTER = Type{register.COMPUTED_REGISTER, false, true}
+	COMPUTED_REGISTER = Type{register.COMPUTED_REGISTER, true}
 )
 
 // WithRangeCheck returns the given type with its checked status updated
@@ -57,25 +54,9 @@ func (p Type) WithRangeCheck(checked bool) Type {
 	return p
 }
 
-// WithStamp returns the given type with its stamp status updated according to
-// the given flag.  All other aspects of the type remain unchanged.
-func (p Type) WithStamp(stamp bool) Type {
-	p.stamp = stamp
-	//
-	return p
-}
-
 // Cmp implementation for Comparable interface
 func (p Type) Cmp(other Type) int {
-	if c := p.underlying.Cmp(other.underlying); c != 0 {
-		return c
-	} else if p.stamp == other.stamp {
-		return 0
-	} else if p.stamp {
-		return -1
-	}
-	//
-	return 1
+	return p.underlying.Cmp(other.underlying)
 }
 
 // Register represents an individual register in a module that, eventually, will
@@ -214,10 +195,6 @@ func (p *Register[W]) GobEncode() ([]byte, error) {
 		return nil, err
 	}
 	//
-	if err := gobEncoder.Encode(p.kind.stamp); err != nil {
-		return nil, err
-	}
-	//
 	if err := gobEncoder.Encode(p.kind.underlying); err != nil {
 		return nil, err
 	}
@@ -245,10 +222,6 @@ func (p *Register[W]) GobDecode(data []byte) error {
 	)
 	//
 	if err := gobDecoder.Decode(&p.kind.rangeChecked); err != nil {
-		return err
-	}
-	//
-	if err := gobDecoder.Decode(&p.kind.stamp); err != nil {
 		return err
 	}
 	//

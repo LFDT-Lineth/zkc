@@ -227,7 +227,7 @@ func (t *threader[W]) initNewRegs(fn *Function[W]) []Register[W] {
 	if !t.isMain {
 		for _, e := range t.effects {
 			t.stampIn[e] = bytecode.RegisterId(len(newRegs))
-			newRegs = append(newRegs, descriptor.NewStampInputRegister(stampName(t.mods, e),
+			newRegs = append(newRegs, descriptor.NewInputRegister(stampName(t.mods, e),
 				util.Some(t.timestampWidth(e)), padding))
 		}
 	}
@@ -237,7 +237,7 @@ func (t *threader[W]) initNewRegs(fn *Function[W]) []Register[W] {
 	if !t.isMain && !fn.Kind().NonReturning() {
 		for _, e := range t.effects {
 			t.canonical[e] = bytecode.RegisterId(len(newRegs))
-			newRegs = append(newRegs, descriptor.NewStampOutputRegister(stampOutName(t.mods, e),
+			newRegs = append(newRegs, descriptor.NewOutputRegister(stampOutName(t.mods, e),
 				util.Some(t.timestampWidth(e)), padding))
 		}
 	}

@@ -952,8 +952,9 @@ func packetHeaderLiteral(kind byte) string {
 // entered along with its arguments, already packed as per interpreter.Pack
 // (see emitCheckpointArgs).  As with interpreter.Checkpoint, every non-static
 // memory is included in module order (Restore relies on this), with page
-// contents packed likewise (a fixed number of bytes per cell) and the memory
-// clock as tracked by the generated program.
+// contents packed likewise (a fixed number of bytes per cell).  The generated
+// program tracks no clock per memory: the clock recorded for a memory is
+// instead recovered as its largest row stamp (see maxStampInPage below).
 //
 // A checkpoint of a large memory runs to tens of megabytes, so the buffer is
 // package-level and reused: after the first checkpoint, no allocation is made
@@ -1180,6 +1181,8 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 		c.line("return buf")
 		c.line("}")
 		c.line("")
+		// maxStampInPages is as maxStampInPage, but across every page of a paged
+		// memory.
 		c.line("func maxStampInPages(pages []RamPage) uint64 {")
 		c.line("var stamp uint64 = 0")
 		c.commentf("Iterate every page")
@@ -1190,7 +1193,8 @@ func (g *generator) emitCheckpointWriterHelpers(c *code) {
 		c.line("}")
 		c.line("")
 	}
-	//
+	// maxStampInPage returns the largest row stamp of a page (zero when it has
+	// none, i.e. for memories which keep no timestamps).
 	c.line("func maxStampInPage(page RamPage) uint64 {")
 	c.line("var stamp uint64 = 0")
 	c.commentf("Iterate every stamp")

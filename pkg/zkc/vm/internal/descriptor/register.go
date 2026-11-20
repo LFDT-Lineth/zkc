@@ -88,18 +88,6 @@ func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], 
 	return bytecode.NewRegister(bytecode.OUTPUT_REGISTER.WithRangeCheck(checked), name, bitwidth, padding)
 }
 
-// NewStampInputRegister constructs a new (stamp) input register descriptor.
-func NewStampInputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	var checked = bitwidth.HasValue()
-	return bytecode.NewRegister(bytecode.INPUT_REGISTER.WithRangeCheck(checked).WithStamp(true), name, bitwidth, padding)
-}
-
-// NewStampOutputRegister constructs a new (stamp) output register descriptor.
-func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	var checked = bitwidth.HasValue()
-	return bytecode.NewRegister(bytecode.OUTPUT_REGISTER.WithRangeCheck(checked).WithStamp(true), name, bitwidth, padding)
-}
-
 // NewComputedRegister constructs a new computed (i.e. internal) register descriptor.
 func NewComputedRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
 	var checked = bitwidth.HasValue()
