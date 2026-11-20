@@ -44,8 +44,10 @@ const BINFILE_MAJOR_VERSION uint16 = 0
 //
 // v0.1 added the per-memory timestamp width (issue #2069); v0.2 added the
 // paged flag to MemoryKind. Recompile older binaries containing memories:
-// their payloads do not record whether those memories were paged.
-const BINFILE_MINOR_VERSION uint16 = 2
+// their payloads do not record whether those memories were paged.  v0.3
+// removed the (unused) stamp flag from register descriptors.  Recompile any
+// older binary: its registers still carry that flag and no longer decode.
+const BINFILE_MINOR_VERSION uint16 = 3
 
 // ZKC_EXEC is used as the file identifier for binary file types.  This just
 // helps us identify actual binary files from corrupted files.

@@ -212,20 +212,6 @@ func NewOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], 
 	return descriptor.NewOutputRegister(name, bitwidth, padding)
 }
 
-// NewStampInputRegister constructs an input register descriptor of the given name
-// and bit-width.  A bit-width of math.MaxUint yields a native (field) register,
-// which carries no fixed bit-width.
-func NewStampInputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return descriptor.NewStampInputRegister(name, bitwidth, padding)
-}
-
-// NewStampOutputRegister constructs an output register descriptor of the given name
-// and bit-width.  A bit-width of math.MaxUint yields a native (field) register,
-// which carries no fixed bit-width.
-func NewStampOutputRegister[W word.Word[W]](name string, bitwidth util.Option[uint], padding W) Register[W] {
-	return descriptor.NewStampOutputRegister(name, bitwidth, padding)
-}
-
 // IsSubtractWithBorrow checks whether or not this corresponds with a "subtract with borrow" operation, or not.
 func IsSubtractWithBorrow[W word.Word[W]](code BytecodeArith[W], env descriptor.RegisterMap[W]) bool {
 	var (
