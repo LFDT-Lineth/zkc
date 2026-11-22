@@ -1,0 +1,24 @@
+input data(c:u16) -> (b:u8)
+memory ram[u32](addr:u16) -> (b:u8)
+
+fn main<ram>() {
+    var n:u16 = data[0] as u16
+    //
+    tick(0, n)
+    //
+    for i:u16 = 0; i<n; i = i + 1 {
+        if ram[i] != data[i + 1] {
+            fail
+        }
+    }
+}
+
+fn tick<ram>(i:u16, n:u16) {
+    while ram[i] != data[i + 1] {
+        ram[i] = ram[i] + 1
+    }
+    //
+    if (i + 1)<n {
+        tick(i + 1, n)
+    }
+}

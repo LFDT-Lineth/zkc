@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/transform/split"
@@ -289,9 +290,12 @@ func (t *threader[W]) seedEntryRow(nvecs []BytecodeVector[W], entry []stampValue
 		seed = append(seed, t.materialise(t.resolve(x, entry[x]), t.getCanonical(e)))
 		entry[x] = stampValue{kind: stampCanonical}
 	}
-	//
-	nvecs = append([]BytecodeVector[W]{bytecode.NewVector(seed...)}, nvecs...)
-	//
+	// Terminate seed vector with branch to following instruction, noting that
+	// the target will be incremented by the map below.
+	seed = append(seed, bytecode.Jump[W](0))
+	// Prepend seed vector
+	nvecs = array.Prepend(bytecode.NewVector(seed...), nvecs)
+	// Increase all branch targets by one
 	for vi, vec := range nvecs {
 		nvecs[vi] = vec.Map(func(_ uint, insn Bytecode[W]) []Bytecode[W] {
 			if jmp, ok := insn.(*bytecode.Jmp[W]); ok {
@@ -414,21 +418,27 @@ type rowInserts[W Word[W]] struct {
 // Then a rewrite sweep walks the row once more: it equalises the incoming
 // paths at each merge point (mergeAt), assigns every read-write memory access
 // its stamp operand, threads calls to effectful callees, and materialises the
-// canonical stamp registers at every exit (return, jump, or fall-through into
-// the next row) — resolving the analysis's position-tagged bases onto the
-// registers it allocates along the way.
+// canonical stamp registers at every exit (a jump, or a return outside main)
+// — resolving the analysis's position-tagged bases onto the registers it
+// allocates along the way.
+//
+// PRECONDITION: every path through the row ends in a terminator (Jmp / Ret /
+// Fail / never-returning call).  Inter-row control flow is expressed only by
+// Jmp (see Vectorize), so no path may run, or skip, off the end of the row.
 func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) BytecodeVector[W] {
 	var (
 		insns = vec.Bytecodes
 		n     = len(insns)
-		// inserts[i] = instructions materialised around original instruction i
-		// (i == n denotes the end of the row).
+		// inserts[i] = instructions materialised around original instruction i.
 		inserts = map[int]*rowInserts[W]{}
 		// replace[i] = rebuilt instruction at original index i.
 		replace = map[int]Bytecode[W]{}
 	)
 	//
 	result, incoming, lands := t.analyseStamps(insns, entry)
+	// The analysis gives the end of the row a sentinel position of its own,
+	// which is reachable only if some path is unterminated.
+	util.Assert(result.StateOf(uint(n)).isBottom(), "timestamp threading: vector has unterminated path")
 	//
 	at := func(i int) *rowInserts[W] {
 		if inserts[i] == nil {
@@ -438,7 +448,7 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) Bytecode
 		return inserts[i]
 	}
 	//
-	for i := 0; i <= n; i++ {
+	for i := 0; i < n; i++ {
 		st := result.StateOf(uint(i))
 		// Positions never reached (on any path) are copied verbatim.
 		if st.isBottom() {
@@ -447,14 +457,6 @@ func (t *threader[W]) threadVector(vec BytecodeVector[W], entry stamps) Bytecode
 		// Equalise the incoming paths at a merge point.
 		states, need := t.normaliseEntry(i, st, lands[i], t.isExitAt(insns, i))
 		t.mergeAt(i, states, need, incoming[i], at)
-		//
-		if i == n {
-			// A path reaching the end of the row falls into the next row,
-			// which is entered with canonical stamps.
-			at(n).fall = append(at(n).fall, t.canonicalise(states)...)
-			//
-			continue
-		}
 		//
 		t.threadInstruction(insns, i, states, at, replace)
 	}
@@ -505,9 +507,9 @@ func (t *threader[W]) threadInstruction(insns []Bytecode[W], i int, states stamp
 // effects normaliseEntry flagged.  Each incoming path materialises the merge
 // register at a position executed exactly on that path: inline for the
 // fall-through, at the source's preEdge for an unconditional edge, in an edge
-// block at the landing for a conditional edge.  At an exit (return, jump, end
-// of row) the merge register is the canonical stamp itself, so the exit needs
-// no further materialisation on any path.
+// block at the landing for a conditional edge.  At an exit (return, jump) the
+// merge register is the canonical stamp itself, so the exit needs no further
+// materialisation on any path.
 func (t *threader[W]) mergeAt(i int, merged stamps, need []bool, incoming []stampArc,
 	at func(int) *rowInserts[W]) {
 	//

@@ -203,7 +203,6 @@ func Test_ZkcUtil_Sharding_06(t *testing.T) {
 }
 
 func Test_ZkcUtil_Sharding_07(t *testing.T) {
-	t.Skip("function beginning with loop --- see #2338")
 	checkZkcUtil(t, "zkc/util/sharding_07", DEFAULT_UTIL_CONFIG.Sharding("count", 1))
 }
 
