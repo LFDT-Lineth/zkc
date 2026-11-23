@@ -1,0 +1,26 @@
+pub input data(address:u16) -> (word:u16)
+pub output result(address:u16) -> (word:u16)
+
+// As for cast_07, but the cast's target is overwritten on the same row by a
+// later statement (rather than by the statement holding the cast).  The value
+// written never fits within the cast's width.
+fn main() {
+    var x:u16 = data[0]
+    result[0] = f(x)
+    return
+}
+
+fn f(x:u16) -> (r:u16) {
+    var v:u16 = x
+    var w:u16 = x
+    v = v + 1
+    var y:u16 = inc((w as u8) as u16)
+    w = 0x1000
+    r = y + v + w
+    return
+}
+
+fn inc(a:u16) -> (r:u16) {
+    r = a + 0x100
+    return
+}

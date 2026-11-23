@@ -14,6 +14,7 @@ package constraints
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
@@ -105,39 +106,15 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			// added are range-checked. Note that len(mod.Registers()) >= len(regs)
 			continue
 		}
-		// Zero-width registers can only hold zero, enforced with r == 0.
-		if reg.Width() == 0 {
+		// Registers of width <= MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK are not
+		// range-checked with a lookup to a static table, but with a vanishing
+		// constraint (see smallRangeCheck).
+		if reg.Width() <= vm.MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK {
 			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u0_%d", regId.Unwrap())
+			handle := fmt.Sprintf("range_u%d_%d", reg.Width(), regId.Unwrap())
 			r := mirc.Variable[F](regId, reg.Width(), 0)
 			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
-				r.Equals(mirc.Number[F](0)).AsLogical()))
-
-			continue
-		}
-		// u1 registers are not range-checked with a lookup to a static table,
-		// but with a constraint r * r == r (equivalently r * (1 - r) == 0).
-		if reg.Width() == 1 {
-			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u1_%d", regId.Unwrap())
-			r := mirc.Variable[F](regId, reg.Width(), 0)
-			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
-				mirc.Product(r, r).Equals(r).AsLogical()))
-
-			continue
-		}
-		// u2 registers are not range-checked with a lookup to a static table,
-		// but with a constraint r * (r - 1) * (r - 2) * (r - 3) == 0.
-		if reg.Width() == 2 {
-			regId := register.NewId(uint(i))
-			handle := fmt.Sprintf("range_u2_%d", regId.Unwrap())
-			r := mirc.Variable[F](regId, reg.Width(), 0)
-			poly := mirc.Product(r,
-				r.Subtract(mirc.Number[F](1)),
-				r.Subtract(mirc.Number[F](2)),
-				r.Subtract(mirc.Number[F](3)))
-			mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
-				poly.Equals(mirc.Number[F](0)).AsLogical()))
+				smallRangeCheck(r, reg.Width()).AsLogical()))
 
 			continue
 		}
@@ -164,4 +141,96 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 		mod.AddConstraints(lookup.NewConstraint[F](handle,
 			[]mir.LookupVector{target}, []mir.LookupVector{source}))
 	}
+}
+
+// emitCastCheck lowers a cast "check r:uN" into a range check of r against N
+// bits, which applies only on the rows where the cast executes (i.e. those
+// where the given source selector is on).  Observe that N is strictly below the
+// declared width of r, so the (unconditional) range proof of r does not imply
+// this.  Three cases arise:
+//
+//   - N <= MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK: the vanishing constraint
+//     "sel != 0 ==> poly_N(r) == 0" (see smallRangeCheck).
+//   - N <= maxStaticWidth: a lookup of r (filtered by sel) into the static
+//     $range_uN table.
+//   - N > maxStaticWidth: nothing to do here, as AddRangeChecks has already
+//     inserted a call "$range_uN(r)" after the cast (on the same path), which is
+//     lowered into a call lookup gated likewise.
+//
+// In all cases, r is read on the cast's row, where its column holds the value
+// cast.  This is because r is never written at or after the cast on that row:
+// where it would be (e.g. by the call in "x = f(x as u8)"), FlattenLookupAccess
+// has already replaced it with a snapshot.  This applies equally to the call
+// "$range_uN(r)" following a wide cast, which reads the same column.
+func (p *constraintTranslator[W, F]) emitCastCheck(mod *schema.Table[F], ctx schema.ModuleId, pc, cc uint,
+	vec vm.BytecodeVector[W], cast *vm.BytecodeCheckCast[W], srcSelector register.Id) {
+	var (
+		width  = uint(cast.Bitwidth)
+		regId  = register.NewId(uint(cast.Target))
+		handle = fmt.Sprintf("cast_u%d_%d_%d_%d", width, ctx, pc, cc)
+	)
+	// Sanity check the column of r holds the value cast (see above).
+	util.Assert(!isWrittenFrom(vec, cc, cast.Target),
+		"cast target %d written at or after the cast on the same row", cast.Target)
+	//
+	switch {
+	case width > p.maxStaticWidth:
+		// Range-checked via the call to $range_uN following the cast.
+		return
+	case width <= vm.MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK:
+		var (
+			sel = mirc.Variable[F](srcSelector, 1, 0)
+			r   = mirc.Variable[F](regId, mod.Registers()[regId.Unwrap()].Width(), 0)
+		)
+		//
+		mod.AddConstraints(vanishing.NewConstraint(handle, ctx, util.None[int](),
+			mirc.If(sel.NotEquals(mirc.Number[F](0)), smallRangeCheck(r, width)).AsLogical()))
+	default:
+		table, ok := p.rangeTables[width]
+		// Sanity check a static table was generated for this width.
+		util.Assert(ok, "missing static range table for cast to u%d", width)
+		//
+		var (
+			// Source: the cast's target on the rows executing the cast.
+			source = lookup.FilteredVector(ctx, srcSelector, regId)
+			// Target: the enumerated value column of the matching $range_un table.
+			target = lookup.UnfilteredVector(table.module, table.value)
+		)
+		//
+		mod.AddConstraints(lookup.NewConstraint[F](handle,
+			[]mir.LookupVector{target}, []mir.LookupVector{source}))
+	}
+}
+
+// isWrittenFrom determines whether the given register may be written by the
+// bytecode at offset "from" in the given vector, or by any bytecode on some path
+// through it.
+func isWrittenFrom[W vm.Word[W]](vec vm.BytecodeVector[W], from uint, reg vm.RegisterId) bool {
+	var reaches = vec.ReachMap()
+	//
+	for j := from; j < uint(len(vec.Bytecodes)); j++ {
+		var reachable = j == from || reaches.StateOf(j).ReachableFrom(from)
+		//
+		if reachable && slices.Contains(vec.Bytecodes[j].Definitions(), reg) {
+			return true
+		}
+	}
+	//
+	return false
+}
+
+// smallRangeCheck constructs the vanishing constraint "r * (r - 1) * ... * (r -
+// (2^width - 1)) == 0" asserting r fits within width bits, for a width of at most
+// MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK (wider registers being range-checked by
+// lookups instead).  For width 0 this is simply r == 0.
+func smallRangeCheck[F field.Element[F]](r Expr[F], width uint) Expr[F] {
+	util.Assert(width <= vm.MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK, "invalid width for small range check")
+	//
+	var factors = []Expr[F]{r}
+	//
+	for i := uint(1); i < 1<<width; i++ {
+		factors = append(factors, r.Subtract(mirc.Number[F](i)))
+	}
+	//
+	return mirc.Product(factors...).Equals(mirc.Number[F](0))
 }

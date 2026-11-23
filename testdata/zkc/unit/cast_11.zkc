@@ -1,0 +1,26 @@
+pub input data(address:u16) -> (word:u16)
+pub output result(address:u16) -> (word:u16)
+
+// As for cast_07, but where the value cast is passed to a parameter of the
+// cast's width, through: a nested cast (x); and two casts of the same local
+// (y).  In both cases, the cast's target is overwritten on the same row by the
+// call's return, whose value never fits within the cast's width.
+fn main() {
+    var x:u16 = data[0]
+    x = inc4((x as u8) as u4)
+    result[0] = x
+    var y:u16 = data[1]
+    y = add8(y as u8, y as u8)
+    result[1] = y
+    return
+}
+
+fn inc4(a:u4) -> (r:u16) {
+    r = (a as u16) + 0x100
+    return
+}
+
+fn add8(a:u8, b:u8) -> (r:u16) {
+    r = (a as u16) + (b as u16) + 0x100
+    return
+}
