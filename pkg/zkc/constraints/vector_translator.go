@@ -102,9 +102,9 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			// selectors), requires knowledge of target modules, etc.
 			continue
 		case *vm.BytecodeCheckCast[W]:
-			// Width checks are enforced by the range-proof constraints emitted for
-			// each register, so a cast check needs no constraint of its own.  This
-			// mirrors the bytecode→word decompiler, which drops casts entirely.
+			// Translation of casts is done at the function level (see
+			// addLookups), as they are lowered into conditional range lookups
+			// requiring source selectors and knowledge of the range tables.
 			continue
 		case *vm.BytecodeFail[W]:
 			// Failing paths are rejected, so they impose no constancy obligations.
@@ -121,24 +121,13 @@ func (p *VectorInsnTranslator[W, F]) translate() Expr[F] {
 			case vm.OP_MUL:
 				local = it.translateMul(c.Target, c.Source, c.Constant)
 			case vm.OP_SUB:
-				var (
-					// Determine whether this is a subtract with borrow
-					isSbb        = vm.IsSubtractWithBorrow(*c, p.enclosing)
-					hasSignedBit = hasSignedBit(c.Target, p.enclosing)
-				)
-				//
-				if isSbb && hasSignedBit {
-					local = it.translateSignedSub(c.Target, c.Source, c.Constant)
-				} else if isSbb {
-					panic("subtract with borrow bytecode missing sign bit")
-				} else {
-					local = it.translateSub(c.Target, c.Source, c.Constant)
-				}
+				local = it.translateSub(c, p.enclosing)
+			case vm.OP_CSUB:
+				local = it.translateCSub(c, p.enclosing)
 			default:
 				panic("unknown arithmetic operation")
 			}
 			// translate integer arithmetic assignment
-
 		case *vm.BytecodeFieldArith[W]:
 			it := InstructionTranslator[W, F]{p, localWrites}
 

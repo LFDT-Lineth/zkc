@@ -1,0 +1,19 @@
+input data(addr:u16) -> (word:u16)
+
+fn main() {
+    var s:u1
+    var l:u16
+    var u:u16 = data[0]
+    var v:u16 = data[1]
+    var w:u1 = data[2] as u1
+    // Run
+    s, l = f(u)
+    // Check
+    if l != v || s != w {
+        fail
+    }
+}
+
+fn f(a:u16) -> (sign:u1, lo:u16) {
+    sign::lo = (3 - a) as u17
+}

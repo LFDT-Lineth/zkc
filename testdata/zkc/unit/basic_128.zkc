@@ -1,0 +1,7 @@
+pub output out(addr:u8) -> (value:u8)
+
+fn main() {
+    // The value fits in one bit; only the declared width exceeds 65535.
+    var w:u65536 = 1
+    out[0] = w as u8
+}

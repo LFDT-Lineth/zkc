@@ -1,0 +1,6 @@
+{ "data": "0x00000000", "result": "0x01000100" }
+{ "data": "0x00010001", "result": "0x01010102" }
+{ "data": "0x000f0000", "result": "0x010f0100" }
+{ "data": "0x000000ff", "result": "0x010002fe" }
+{ "data": "0x000f00ff", "result": "0x010f02fe" }
+{ "data": "0x00070080", "result": "0x01070200" }

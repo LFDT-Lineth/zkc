@@ -1,0 +1,10 @@
+pub output out(addr:u8) -> (word:u64)
+
+// A CSUB immediate wider than a register is split into limbs even when the
+// target is wider than the field bandwidth.  a = 0, so the result is the
+// immediate itself.
+fn main() {
+    var a:u8 = 0
+    var r:u64 = 0x100000000 - (a as u64)
+    out[0] = r
+}

@@ -73,7 +73,7 @@ func Bitwise[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn *byte
 		} else if i < len(right) {
 			code = newBitwiseBytecode(insn.Op, mapping, target, right[i])
 		} else if i < len(targets) {
-			code = bytecode.LoadConst(target, zero)
+			code = bytecode.LoadConst(target, zero, util.Cast[uint16](mapping.Limb(target).Bitwidth().Unwrap()))
 		} else {
 			panic("unreachable")
 		}
@@ -111,7 +111,7 @@ func newAndBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ..
 	var zero W
 	//
 	if len(sources) != 2 {
-		return bytecode.LoadConst(target, zero)
+		return bytecode.LoadConst(target, zero, util.Cast[uint16](bitwidth))
 	}
 	//
 	return bytecode.NewBitwise(bytecode.OP_AND, target, sources[0],
@@ -120,7 +120,7 @@ func newAndBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ..
 
 func newOrBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ...RegisterId) Bytecode[W] {
 	if len(sources) != 2 {
-		return bytecode.Assign[W](target, sources[0])
+		return bytecode.Assign[W](target, sources[0], util.Cast[uint16](bitwidth))
 	}
 	//
 	return bytecode.NewBitwise(bytecode.OP_OR, target, sources[0],
@@ -132,7 +132,7 @@ func newXorBytecode[W word.Word[W]](bitwidth uint, target RegisterId, sources ..
 		// Surplus limb of the wider operand: the narrower operand contributes a
 		// zero-extended limb, so "x ^ 0 = x" is the identity (an Assign), not a
 		// complement.
-		return bytecode.Assign[W](target, sources[0])
+		return bytecode.Assign[W](target, sources[0], util.Cast[uint16](bitwidth))
 	}
 	//
 	return bytecode.NewBitwise(bytecode.OP_XOR, target, sources[0],
@@ -170,13 +170,16 @@ func bitwiseConst[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn 
 			target RegisterId
 			code   Bytecode[W]
 			// climb is zero when the constant has no limb at this position.
-			climb W
+			climb    W
+			bwTarget uint16
 		)
 		//
 		if i >= len(targets) {
 			target = alloc.ZeroRegister()
+			bwTarget = 0
 		} else {
 			target = targets[i]
+			bwTarget = util.Cast[uint16](mapping.Limb(target).Bitwidth().Unwrap())
 		}
 		//
 		if i < len(climbs) {
@@ -189,10 +192,10 @@ func bitwiseConst[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], insn 
 			code = bytecode.NewBitwise(insn.Op, target, left[i],
 				bytecode.NewConstantOperand(climb), util.Cast[uint16](bitwidth))
 		case insn.Op == bytecode.OP_AND:
-			code = bytecode.LoadConst(target, zero)
+			code = bytecode.LoadConst(target, zero, bwTarget)
 		default:
 			// OR/XOR: 0 op climb == climb.
-			code = bytecode.LoadConst(target, climb)
+			code = bytecode.LoadConst(target, climb, bwTarget)
 		}
 		//
 		bytecodes = append(bytecodes, code)

@@ -119,6 +119,13 @@ type rangeSplit struct {
 	lo, hi uint
 }
 
+// MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK is the largest bitwidth which is
+// range-checked by a vanishing constraint, rather than by a lookup into a range
+// module.  Specifically, a register r of width w at or below this is checked by
+// the polynomial constraint r * (r - 1) * ... * (r - (2^w - 1)) == 0, whose
+// degree (2^w) is what bounds this.
+const MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK uint = 2
+
 // neededRangeWidths computes the decomposition of every register width for which
 // a range module must be generated.  This is the set of widths occurring
 // directly on some register, closed under the destructuring of wide widths
@@ -141,6 +148,9 @@ func neededRangeWidths[W Word[W]](modules []descriptor.Module[W], field field.Co
 			}
 			// Seed from every checked register.
 			worklist.AddChecked(mod.Registers()...)
+			// Seed from every cast, which is range-checked against its own
+			// (narrower) width rather than that of its target register.
+			worklist.AddCasts(mod.Vectors()...)
 		case *descriptor.Memory[W]:
 			// TODO: the need for this highlights some problems with the current
 			// implementation of memory.  Specifically, that some columns are
@@ -275,7 +285,8 @@ func newRecursiveRangeModule[W Word[W]](name string, width uint, s rangeSplit,
 		// (little-endian targets, so lo receives the low bits).  The subsequent
 		// checks read lo/hi via in-vector forwarding, so they see the destructured
 		// values.
-		codes = []Bytecode[W]{bytecode.AddVec[W]([]bytecode.RegisterId{loID, hiID}, []bytecode.RegisterId{valID})}
+		codes = []Bytecode[W]{bytecode.AddVec[W]([]bytecode.RegisterId{loID, hiID},
+			[]bytecode.RegisterId{valID}, util.Cast[uint16](width))}
 	)
 	// Range-check each half to:
 	// a static table (<= maxStaticWidth): nothing to do here, the lookup will be added at constraint generation.
@@ -346,6 +357,14 @@ func addRangeCalls[W Word[W]](modules []descriptor.Module[W],
 // Jmp terminator in each vector of the given function.  Vector.Map remaps skip
 // offsets, so a skip which targeted the terminator instead lands on the first
 // check and falls through to it.
+//
+// Likewise, every cast "check r:uN" with N > maxStaticWidth is followed by a
+// call into $range_uN(r).  The cast itself is retained, since it is what fails
+// execution on overflow (the call copies its argument without any width check).
+// The call populates the recursive range module and, being on the same path as
+// the cast, is lowered into a lookup gated by the cast's branch condition.
+// Narrower casts are instead lowered directly into conditional lookups (or
+// vanishing constraints) when generating constraints.
 func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 	maxStaticWidth uint) descriptor.Module[W] {
 	fn, ok := mod.(*Function[W])
@@ -361,18 +380,15 @@ func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 		// For registers of width <= maxStaticWidth, the range check is done via a static table,
 		// and the lookup is added when generating constraints.
 		if w := registerWidthOrZero(r); r.IsRangeChecked() && w > maxStaticWidth {
-			mid, ok := idOf[rangeModuleName(w)]
-			// Sanity check module was found
-			util.Assert(ok, "missing range module for u%d", w)
-			//
-			checks = append(checks, rangeCheck[W](mid, bytecode.RegisterId(j), w, maxStaticWidth))
+			checks = append(checks, rangeCheck[W](rangeModuleId(idOf, w), bytecode.RegisterId(j), w, maxStaticWidth))
 		}
 	}
 	//
-	if len(checks) == 0 {
+	if len(checks) == 0 && !hasWideCast(fn, maxStaticWidth) {
 		return mod
 	}
-	// Insert the check block before every Ret / Jmp in each vector.
+	// Insert the check block before every Ret / Jmp in each vector, and a range
+	// call after every wide cast.
 	var (
 		vectors = fn.Vectors()
 		nvecs   = make([]BytecodeVector[W], len(vectors))
@@ -380,9 +396,15 @@ func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 	//
 	for i, vec := range vectors {
 		nvecs[i] = vec.Map(func(_ uint, ith Bytecode[W]) []Bytecode[W] {
-			switch ith.(type) {
+			switch c := ith.(type) {
 			case *bytecode.Ret[W], *bytecode.Jmp[W]:
 				return append(slices.Clone(checks), ith)
+			case *bytecode.CheckCast[W]:
+				if w := uint(c.Bitwidth); w > maxStaticWidth {
+					return []Bytecode[W]{ith, rangeCheck[W](rangeModuleId(idOf, w), c.Target, w, maxStaticWidth)}
+				}
+				//
+				return []Bytecode[W]{ith}
 			default:
 				return []Bytecode[W]{ith}
 			}
@@ -390,6 +412,29 @@ func addRangeChecks[W Word[W]](mod descriptor.Module[W], idOf map[string]uint,
 	}
 	//
 	return descriptor.NewFunction(fn.Name(), fn.Registers(), fn.Kind(), fn.Effects(), nvecs)
+}
+
+// rangeModuleId returns the module id of $range_u{w}, which must exist.
+func rangeModuleId(idOf map[string]uint, w uint) uint {
+	mid, ok := idOf[rangeModuleName(w)]
+	// Sanity check module was found
+	util.Assert(ok, "missing range module for u%d", w)
+	//
+	return mid
+}
+
+// hasWideCast determines whether the given function contains a cast whose width
+// exceeds maxStaticWidth (hence, requiring a call into a recursive range module).
+func hasWideCast[W Word[W]](fn *Function[W], maxStaticWidth uint) bool {
+	for _, vec := range fn.Vectors() {
+		for _, code := range vec.Bytecodes {
+			if cast, ok := code.(*bytecode.CheckCast[W]); ok && uint(cast.Bitwidth) > maxStaticWidth {
+				return true
+			}
+		}
+	}
+	//
+	return false
 }
 
 // BitwidthSet is a worklist data structure used to assist with decomposing
@@ -402,13 +447,14 @@ type BitwidthSet struct {
 // NewBitwidthSet constructs the initial set of bitwidths.
 func NewBitwidthSet(maxStaticWidth uint) *BitwidthSet {
 	var worklist stack.Worklist
-	// We don't construct a module for range_u1 and range_u2, since a register r
-	// of width w in {1, 2} is instead range-checked by the vanishing constraint
-	// Product_{i=0}^{2^w - 1} (r - i) == 0. So 1 and 2 are always considered
-	// "seen" and never queued for processing.
-	worklist.Mark(0)
-	worklist.Mark(1)
-	worklist.Mark(2)
+	// We don't construct a module for range_uW when W is at most
+	// MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK, since a register r of such width is
+	// instead range-checked by the vanishing constraint
+	// Product_{i=0}^{2^W - 1} (r - i) == 0. So these widths are always
+	// considered "seen" and never queued for processing.
+	for w := range MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK + 1 {
+		worklist.Mark(w)
+	}
 	//
 	return &BitwidthSet{worklist, maxStaticWidth}
 }
@@ -430,6 +476,18 @@ func (p *BitwidthSet) AddChecked[W word.Word[W]](registers ...descriptor.Registe
 			// NOTE: a native registers cannot be range checked, hence Unwrap()
 			// here is safe.
 			p.Push(reg.Bitwidth().Unwrap())
+		}
+	}
+}
+
+// AddCasts adds the bitwidth of every CheckCast occurring in the given vectors
+// to this worklist.
+func (p *BitwidthSet) AddCasts[W word.Word[W]](vectors ...BytecodeVector[W]) {
+	for _, vec := range vectors {
+		for _, code := range vec.Bytecodes {
+			if cast, ok := code.(*bytecode.CheckCast[W]); ok {
+				p.Push(uint(cast.Bitwidth))
+			}
 		}
 	}
 }
