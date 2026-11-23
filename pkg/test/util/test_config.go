@@ -33,7 +33,7 @@ type TestConfig struct {
 	// enable constraints checking, or not.
 	constraints bool
 	// enable the generated-Go ("native") executor
-	gogen bool
+	gogen util.Option[*vm.GoGenExecutor]
 	// enable verbose mode.
 	verbose bool
 	// optional sampling percentage
@@ -61,7 +61,11 @@ func (p TestConfig) MaxStaticHeights(heights ...uint) TestConfig {
 // applies to the Uint64 word; programs the generator cannot yet handle are skipped
 // rather than failed (see runGogenExecutionTest).
 func (p TestConfig) GoGen(flag bool) TestConfig {
-	p.gogen = flag
+	if flag {
+		p.gogen = util.Some(GOGEN_EXECUTOR)
+	} else {
+		p.gogen = util.None[*vm.GoGenExecutor]()
+	}
 	//
 	return p
 }
@@ -156,13 +160,12 @@ func genExecutionTests(t *testing.T, test string, config TestConfig, f field.Con
 	}
 	// Fast mode tests don't consider height or padding strategy.
 	for _, tv := range vecs {
+		var tc = NewTestCase(test, tv, build, prog).
+			FastMode().
+			GoGen(config.gogen)
 		// Only run fast mode tests for the default height / padding, since
 		// neither static height nor padding impacts on fast mode.
-		tests = append(tests, NewTestCase(test, tv, build, prog).FastMode())
-	}
-	// Apply GoGen (if requested)
-	if config.gogen {
-		tests = applyGoGen(t, test, prog, tests)
+		tests = append(tests, tc)
 	}
 	//
 	return tests
@@ -185,7 +188,10 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 			// Iterate all vectors
 			for _, vector := range vecs {
 				// Construct base test
-				var t = NewTestCase(test, vector, build, pU).Constraints().Sharding(cfg.sharding)
+				var t = NewTestCase(test, vector, build, pU).
+					Constraints().
+					Sharding(cfg.sharding).
+					GoGen(cfg.gogen)
 				// Only test different padding for default static height.
 				if height == codegen.DEFAULT_MAX_STATIC_HEIGHT {
 					for _, padding := range cfg.paddingStrategies {
@@ -195,55 +201,11 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 					localTests = append(localTests, t)
 				}
 			}
-			// TODO: fully support gogen tracing.  Currently, using gogen for
-			// tracing only covers checkpointing during the initial fast-mode
-			// execution run.  As such, it only makes sense to run the test when
-			// sharding is active.  Issue #2336 will add full tracing support;
-			// whilst #2331 will eliminate the redundancy of rebuilding the
-			// gogen file within BinaryFile.Trace().  For now, overhead from the
-			// latter is tolerable because relatively few tests cover sharding
-			// anyway.
-			//
-			// Apply GoGen (if requested)
-			if cfg.gogen && cfg.sharding.HasValue() {
-				localTests = applyGoGen(t, test, pU, localTests)
-			}
 			//
 			tests = append(tests, localTests...)
 		}
 	}
 	//
-	return tests
-}
-
-// Attempt enable gogen to a given set of test cases for a given zkcfile.  This
-// results in a test failure if there is some compilation failure, but otherwise
-// allows the tests to continue (without gogen).
-func applyGoGen(t *testing.T, test string, program vm.Program[vm.Uint], tests []TestCase) []TestCase {
-	// Attempt to extend tests to include gogen
-	var (
-		// Construct gogen execution program
-		pG = vm.TransformForGoGenExecution(program, vm.DEFAULT_TRANSFORMS)
-		// Build bin program
-		bin, err = vm.GoGenCompile(pG)
-	)
-	// Check for any gogen errors
-	if err != nil {
-		t.Errorf("[gogen] %s: %v", test, err)
-		// gogen cannot represent this program --- fail.
-		return tests
-	}
-	// Apply gogen to each test
-	for i := range tests {
-		tests[i] = tests[i].GoGen(bin)
-	}
-	// Register clean up of compiled binaries
-	t.Cleanup(func() {
-		if err := bin.Free(); err != nil {
-			t.Error(err)
-		}
-	})
-	// Done
 	return tests
 }
 

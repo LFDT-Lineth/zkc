@@ -89,12 +89,16 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		sharding = GetString(cmd, "sharding")
 		//
 		includes = GetStringArray(cmd, "include")
+		// initialise fresh executor
+		executor = vm.NewGoGenExecutor()
 		// Indicate as to whether trace was fully computed or not.
 		computed = false
 		//
 		tr      trace.LazyTrace[F]
 		outputs map[string]bit.Array
 	)
+	// Ensure resources held by executor released.
+	defer func() { executor.ClearAll() }()
 	// Sanity permitted flag combinations
 	checkFlags(cmd, traceFlags)
 	// Configure stats
@@ -108,8 +112,11 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
 		WithBatchSize(GetUint(cmd, "batch")).
-		WithParallelism(!GetFlag(cmd, "sequential")).
-		WithGoGen(build.gogen)
+		WithParallelism(!GetFlag(cmd, "sequential"))
+	// Configure gogen
+	if build.gogen {
+		traceConfig = traceConfig.WithGoGen(util.Some(executor))
+	}
 	//
 	if sharding != "" {
 		traceConfig = traceConfig.WithSharding(parseShardingConfig(sharding))

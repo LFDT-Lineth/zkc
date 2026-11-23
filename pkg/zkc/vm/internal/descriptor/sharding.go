@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
@@ -26,6 +27,16 @@ type ShardingStrategy struct {
 	ShardFunction string
 	// Maximum executions of the given function to execute in each shard.
 	ShardSteps uint64
+}
+
+// Equals implementation for Hasher interface
+func (p ShardingStrategy) Equals(o ShardingStrategy) bool {
+	return p.ShardFunction == o.ShardFunction && p.ShardSteps == o.ShardSteps
+}
+
+// Hash implementation for Hasher interface
+func (p ShardingStrategy) Hash() uint64 {
+	return hash.Uint64s(hash.String(p.ShardFunction), p.ShardSteps)
 }
 
 // CheckShardingStrategy checks that a given sharding strategy is valid for a

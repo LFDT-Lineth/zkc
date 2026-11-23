@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -62,12 +63,19 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		outputs map[string]bit.Array
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
+		// initialise fresh executor
+		executor = vm.NewGoGenExecutor()
 	)
+	// Ensure resources held by executor released.
+	defer func() { executor.ClearAll() }()
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	//
-	execConfig := vm.DEFAULT_EXECUTION_CONFIG.
-		WithGoGen(build.gogen)
+	execConfig := vm.DEFAULT_EXECUTION_CONFIG
+	// Configure gogen
+	if build.gogen {
+		execConfig = execConfig.WithGoGen(util.Some(executor))
+	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binfile := Build[F, W](build, args[1:]...)
 	// Include sharding configuration (if this makes sense).

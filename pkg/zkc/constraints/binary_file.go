@@ -327,15 +327,14 @@ func (p *BinaryFile[F, W]) Execute(input map[string]bit.Array, config vm.Executi
 	var checkpointing = config.Checkpointing()
 	// TODO: currently, for gogen execution it compiles (and deletes) the gogen
 	// binary every time, which is not optimal.  See #2331
-	if config.GoGen() && checkpointing.HasValue() {
+	if gogen := config.GoGen(); gogen.HasValue() && checkpointing.HasValue() {
 		// TODO: drop gogen program and use execution program directly.  See
 		// #2332
-		//
 		// Fast-mode execution via gogen
-		output, _, errs = vm.BootAndCheckpointWithGogen(p.GoGenProgram(), input, checkpointing.Unwrap())
-	} else if config.GoGen() {
+		output, _, errs = vm.BootAndCheckpointWithGogen(p.GoGenProgram(), input, checkpointing.Unwrap(), gogen.Unwrap())
+	} else if gogen.HasValue() {
 		// Fast-mode execution via gogen
-		output, _, errs = vm.BootAndExecuteWithGogen(p.GoGenProgram(), input)
+		output, _, errs = vm.BootAndExecuteWithGogen(p.GoGenProgram(), input, gogen.Unwrap())
 	} else if checkpointing.HasValue() {
 		// Fast-mode execution via interpreter (with checkpointing)
 		// Boot and execute fast machine

@@ -1726,8 +1726,10 @@ func hasNativeDataLine(info memInfo) bool {
 
 func (g *generator) classifyMemory(m *descriptor.Memory[word.Uint]) (memInfo, error) {
 	info := memInfo{name: m.Name(), varName: g.uniqueName("zkc_" + sanitize(m.Name())), geom: *m}
-	// All memory traffic moves through uint64 cells.
-	for _, r := range append(info.geom.AddressRegisters(), info.geom.DataRegisters()...) {
+	// All memory traffic moves through uint64 cells.  The registers are
+	// concatenated into a fresh slice since appending to the address registers
+	// would write into the (shared) program being compiled.
+	for _, r := range slices.Concat(info.geom.AddressRegisters(), info.geom.DataRegisters()) {
 		if !r.IsNative() && r.Bitwidth().Unwrap() > 64 {
 			return info, fmt.Errorf("gogen: memory %q register %q wider than 64 bits unsupported", m.Name(), r.Name())
 		}

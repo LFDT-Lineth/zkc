@@ -50,15 +50,15 @@ func NewCheckPointer(strategy ShardingStrategy, handler func(checkpoint.CheckPoi
 
 // ExecutionConfig provides necessary configuration options for fast-mode execution.
 type ExecutionConfig struct {
-	// Specified whether or not to use gogen
-	gogen bool
+	// Specifies whether or not to use gogen and (if so) which executor to use.
+	gogen util.Option[*GoGenExecutor]
 	// Specifies whether or not to use a sharding strategy.
 	strategy util.Option[CheckPointer]
 }
 
 // DEFAULT_EXECUTION_CONFIG defines a default configuration for fast-mode execution.
 var DEFAULT_EXECUTION_CONFIG = ExecutionConfig{
-	gogen: false,
+	gogen: util.None[*GoGenExecutor](),
 }
 
 // Checkpointing determines whether a given checkpoint function should be
@@ -69,14 +69,14 @@ func (tb ExecutionConfig) Checkpointing() util.Option[CheckPointer] {
 
 // GoGen determines whether (or not) gogen should be used for fast-mode
 // execution.
-func (tb ExecutionConfig) GoGen() bool {
+func (tb ExecutionConfig) GoGen() util.Option[*GoGenExecutor] {
 	return tb.gogen
 }
 
 // WithGoGen updates the configuration given to enable (or disable) gogen for
 // fast-mode execution.
-func (tb ExecutionConfig) WithGoGen(flag bool) ExecutionConfig {
-	tb.gogen = flag
+func (tb ExecutionConfig) WithGoGen(config util.Option[*GoGenExecutor]) ExecutionConfig {
+	tb.gogen = config
 	//
 	return tb
 }
@@ -99,10 +99,10 @@ type TraceConfig struct {
 	// parallel.  This should be the default, but a sequential option is
 	// retained for debugging purposes.
 	parallel bool
-	// Specify the maximum size of any dispatched batch.
+	// Specifies the maximum size of any dispatched batch.
 	batchSize uint
-	// Specified whether or not to use gogen
-	gogen bool
+	// Specifies whether or not to use gogen and (if so) which executor to use.
+	gogen util.Option[*GoGenExecutor]
 	// Determines how much front padding is added to the generated trace (see
 	// ir.TraceBuilder.WithPadding).
 	paddingStrategy ir.PaddingStrategy
@@ -112,7 +112,7 @@ type TraceConfig struct {
 
 // DEFAULT_TRACE_CONFIG defines a default configuration for tracing.
 var DEFAULT_TRACE_CONFIG = TraceConfig{
-	parallel: true, batchSize: 1024, gogen: false, paddingStrategy: ir.NextPowerOfTwoPadding}
+	parallel: true, batchSize: 1024, gogen: util.None[*GoGenExecutor](), paddingStrategy: ir.NextPowerOfTwoPadding}
 
 // WithParallelism updates a given builder configuration to allow trace expansion to be
 // performed concurrently (or not).
@@ -132,14 +132,14 @@ func (tb TraceConfig) WithBatchSize(batchSize uint) TraceConfig {
 
 // GoGen determines whether (or not) gogen should be used for fast-mode
 // execution.
-func (tb TraceConfig) GoGen() bool {
+func (tb TraceConfig) GoGen() util.Option[*GoGenExecutor] {
 	return tb.gogen
 }
 
 // WithGoGen updates the configuration given to enable (or disable) gogen for
 // fast-mode execution.
-func (tb TraceConfig) WithGoGen(flag bool) TraceConfig {
-	tb.gogen = flag
+func (tb TraceConfig) WithGoGen(config util.Option[*GoGenExecutor]) TraceConfig {
+	tb.gogen = config
 	//
 	return tb
 }

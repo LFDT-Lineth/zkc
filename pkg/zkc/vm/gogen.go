@@ -20,7 +20,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/gogen"
-	log "github.com/sirupsen/logrus"
 )
 
 // GoGenConfig controls the shape of the Go source GoGenGenerate produces.
@@ -29,9 +28,17 @@ type GoGenConfig = gogen.Config
 // GoGenBinary gives a handle to a compiled gogen binary executable.
 type GoGenBinary = gogen.Binary
 
+// GoGenExecutor manages compiled binaries efficiently allowing reuse.
+type GoGenExecutor = gogen.Executor
+
 // GoGenMachineFailure is used to indicate when a gogen binary leads to a
 // machine failure, as opposed to any other kind of internal error.
 var GoGenMachineFailure = gogen.ErrMachineFailure
+
+// NewGoGenExecutor initialises an empty executor.
+func NewGoGenExecutor() *GoGenExecutor {
+	return gogen.NewExecutor()
+}
 
 // GoGenGenerate compiles a bytecode program into native Go source: the "fast
 // execution mode" alternative to interpreting the program.  Where the bytecode
@@ -55,27 +62,21 @@ func GoGenCompile(program Program[Uint]) (GoGenBinary, error) {
 
 // BootAndExecuteWithGogen executes the given program by generating native Go,
 // compiling it, and running the resulting binary as a subprocess.
-func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) (map[string]bit.Array, bool, []error) {
+func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array, executor *gogen.Executor,
+) (map[string]bit.Array, bool, []error) {
 	var (
-		stats  = util.NewPerfStats()
 		output map[string]bit.Array
 		binary gogen.Binary
 		err    error
 	)
 	// Compile program into gogen executable.
-	binary, err = gogen.Compile(program, gogen.DEFAULT_CONFIG)
+	binary, err = executor.Compile(program, gogen.DEFAULT_CONFIG)
 	// Check for errors
 	if err != nil {
 		return nil, false, []error{err}
 	}
-	// Log result
-	stats.Log(fmt.Sprintf("compiling binary %s", binary.Path()))
-	// Make sure temporary executable is deleted, regardless of what happens.
-	defer func() {
-		if err := binary.Free(); err != nil {
-			log.Error(err)
-		}
-	}()
+	// Start the time
+	var stats = util.NewPerfStats()
 	// Run the compiled program, passing only the machine's declared inputs (the
 	// generated harness rejects unknown keys).  Forward its debug/printf
 	// output to our stderr so those statements are surfaced to the user.
@@ -94,28 +95,21 @@ func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array) 
 // according to the given strategy, and these are then passed on to the
 // checkpointing function.
 func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Array, cp CheckPointer,
-) (map[string]bit.Array, bool, []error) {
+	executor *gogen.Executor) (map[string]bit.Array, bool, []error) {
 	var (
-		stats        = util.NewPerfStats()
 		output       map[string]bit.Array
 		binary       gogen.Binary
 		err          error
 		nCheckPoints uint
 	)
 	// Compile program into gogen executable.
-	binary, err = gogen.Compile(program, gogen.DEFAULT_CONFIG.WithCheckPointing(cp.ShardingStrategy))
+	binary, err = executor.Compile(program, gogen.DEFAULT_CONFIG.WithCheckPointing(cp.ShardingStrategy))
 	// Check for errors
 	if err != nil {
 		return nil, false, []error{err}
 	}
-	// Log result
-	stats.Log(fmt.Sprintf("compiling binary %s", binary.Path()))
-	// Make sure temporary executable is deleted, regardless of what happens.
-	defer func() {
-		if err := binary.Free(); err != nil {
-			log.Error(err)
-		}
-	}()
+	// Start timer
+	var stats = util.NewPerfStats()
 	// Run the compiled program, passing only the machine's declared inputs (the
 	// generated harness rejects unknown keys).  Forward its debug/printf
 	// output to our stderr so those statements are surfaced to the user.

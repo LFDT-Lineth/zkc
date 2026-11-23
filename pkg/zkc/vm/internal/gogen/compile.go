@@ -27,6 +27,8 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
+	"github.com/LFDT-Lineth/zkc/pkg/util/option"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -96,6 +98,26 @@ func (p Config) WithCheckPointing(strategy descriptor.ShardingStrategy) Config {
 	p.CheckPointing = util.Some(strategy)
 	//
 	return p
+}
+
+// Equals implementation for Hasher interface
+func (p Config) Equals(other Config) bool {
+	return p.NoIntervals == other.NoIntervals &&
+		p.Source == other.Source &&
+		option.Equal(p.CheckPointing, other.CheckPointing) &&
+		p.Json == other.Json
+}
+
+// Hash implementation for Hasher interface
+func (p Config) Hash() uint64 {
+	var (
+		noint = hash.Bool(p.NoIntervals)
+		src   = hash.String(p.Source)
+		cp    = option.Hash(p.CheckPointing)
+		json  = hash.Bool(p.Json)
+	)
+	//
+	return hash.Uint64s(noint, src, cp, json)
 }
 
 // DEFAULT_CONFIG provides a default configuration config which is generally

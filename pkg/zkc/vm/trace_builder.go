@@ -70,7 +70,12 @@ func NewTraceBuilder[W Word[W], F Element[F], T Tracer[W, F, T], E Word[E]](conf
 		WithExpansion(true).
 		WithPadding(config.PaddingStrategy())
 		//
-	return TraceBuilder[W, F, T, E]{config, builder, executionProgram, tracingProgram, gogenProgram, constraints}
+	return TraceBuilder[W, F, T, E]{config,
+		builder,
+		executionProgram,
+		tracingProgram,
+		gogenProgram,
+		constraints}
 }
 
 // BootAndTrace generates a suitable trace from the given inputs for the contraints
@@ -126,10 +131,10 @@ func (p TraceBuilder[W, F, T, E]) bootAndTraceShards(inputs map[string]bit.Array
 		traceable bool
 	)
 	// fast mode execution to generate checkpoints
-	if p.config.gogen {
+	if gogen := p.config.gogen; gogen.HasValue() {
 		// TODO: drop gogen program and use execution program directly.  See
 		// #2332
-		outputs, traceable, errors = BootAndCheckpointWithGogen(p.gogenProgram, inputs, strategy)
+		outputs, traceable, errors = BootAndCheckpointWithGogen(p.gogenProgram, inputs, strategy, gogen.Unwrap())
 	} else {
 		outputs, traceable, errors = BootAndCheckpoint(p.executionProgram, inputs, strategy)
 	}

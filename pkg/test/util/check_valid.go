@@ -35,6 +35,8 @@ import (
 )
 
 var (
+	// GOGEN_EXECUTOR is the default gogen executor used for all tests.
+	GOGEN_EXECUTOR = vm.NewGoGenExecutor()
 	// MIN_SAMPLE_SIZE determines the least number of test cases for which
 	// sampling is permitted.  Essentially, if sampling is enabled by there are
 	// less than 10 test vectors, then it automatically causes a test failure.
@@ -61,7 +63,7 @@ var (
 	DEFAULT_CONFIG = TestConfig{
 		fields:            DEFAULT_FIELDS,
 		constraints:       true,
-		gogen:             true,
+		gogen:             util.Some(GOGEN_EXECUTOR),
 		verbose:           false,
 		sampling:          util.None[float64](),
 		maxStaticHeights:  []uint{codegen.DEFAULT_MAX_STATIC_HEIGHT},
@@ -77,7 +79,6 @@ func CheckValid(t *testing.T, zkcfile string, config TestConfig) {
 	// binary, none of which is parallelised internally.  Without this, that
 	// work is serialised across every file in the suite.
 	t.Parallel()
-	//
 	// Check for each field requested
 	for _, test := range config.GenerateTests(t, zkcfile) {
 		t.Run(fmt.Sprintf("%s", test.Handle()), func(t *testing.T) {
@@ -108,10 +109,13 @@ func checkValidInternal(t *testing.T, test TestCase) {
 	}
 	// Run (fast mode) execution test
 	if test.fastMode {
-		runExecutionTests(t, p, test.vector)
+		var (
+			execConfig = vm.DEFAULT_EXECUTION_CONFIG
+		)
+		runExecutionTests(t, p, test.vector, execConfig)
 		// Run gogen (if requested)
-		if test.gogen.HasValue() {
-			runGogenExecutionTest(t, p, test.gogen.Unwrap(), test.vector)
+		if gogen := test.gogen; gogen.HasValue() {
+			runExecutionTests(t, p, test.vector, execConfig.WithGoGen(gogen))
 		}
 	}
 	// Run constraint check (if requested)
@@ -127,10 +131,14 @@ func checkValidInternal(t *testing.T, test TestCase) {
 		}
 		// Run the test (without gogen)
 		runConstraintTest(t, p, test.vector, field, traceConfig)
-		//
-		if test.gogen.HasValue() {
+		// TODO: fully support gogen tracing.  Currently, using gogen for
+		// tracing only covers checkpointing during the initial fast-mode
+		// execution run.  As such, it only makes sense to run a gogen tracing
+		// test when sharding is active.  Issue #2336 will add full tracing
+		// support.
+		if gogen := test.gogen; gogen.HasValue() && test.sharding.HasValue() {
 			// Rerun test (with gogen)
-			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true))
+			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(gogen))
 		}
 	}
 }
@@ -149,21 +157,21 @@ func moduleKind(t *testing.T, mod vm.Module[vm.Uint]) any {
 	}
 }
 
-func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
+func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector, cfg vm.ExecutionConfig) {
 	// Dispatch based on field config
 	switch p.Field() {
 	case field.GF_251:
-		runExecutionTest[gf251.Element, vm.Uint32](t, p, test)
+		runExecutionTest[gf251.Element, vm.Uint32](t, p, test, cfg)
 	case field.GF_8209:
-		runExecutionTest[gf8209.Element, vm.Uint32](t, p, test)
+		runExecutionTest[gf8209.Element, vm.Uint32](t, p, test, cfg)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
-		runExecutionTest[koalabear.Element, vm.Uint32](t, p, test)
+		runExecutionTest[koalabear.Element, vm.Uint32](t, p, test, cfg)
 	case field.GOLDILOCKS_32:
-		runExecutionTest[goldilocks.Element, vm.Uint64](t, p, test)
+		runExecutionTest[goldilocks.Element, vm.Uint64](t, p, test, cfg)
 	case field.MAMABEAR_32:
-		runExecutionTest[mamabear.Element, vm.Uint64](t, p, test)
+		runExecutionTest[mamabear.Element, vm.Uint64](t, p, test, cfg)
 	case field.MAMABEAR2_32:
-		runExecutionTest[mamabear2.Element, vm.Uint64](t, p, test)
+		runExecutionTest[mamabear2.Element, vm.Uint64](t, p, test, cfg)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for execution")
@@ -172,7 +180,8 @@ func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
 	}
 }
 
-func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Program[vm.Uint], test TestVector) {
+func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Program[vm.Uint], test TestVector,
+	cfg vm.ExecutionConfig) {
 	//
 	var (
 		// decode inputs / outputs
@@ -180,7 +189,7 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		// construct binary file
 		binf = constraints.NewBinaryFile[F, W](nil, nil, p)
 		// Execute the test
-		actuals, errs = binf.Execute(inputs, vm.DEFAULT_EXECUTION_CONFIG)
+		actuals, errs = binf.Execute(inputs, cfg)
 		// Record whether test accepted or not.
 		accepted = len(errs) == 0
 	)

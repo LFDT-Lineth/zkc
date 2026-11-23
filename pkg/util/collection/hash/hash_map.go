@@ -36,6 +36,11 @@ func NewMap[K Hasher[K], V any](size uint) *Map[K, V] {
 	return &Map[K, V]{items}
 }
 
+// Clear empty's the contents of this map
+func (p *Map[K, V]) Clear() {
+	clear(p.buckets)
+}
+
 // Size returns the number of unique items stored in this HashMap.
 //
 //nolint:revive
