@@ -9,7 +9,7 @@ fn main() {
     return
 }
 
-fn fill_hi(a:u16) -> (r:u16) {
-    r = a | 0xff00
+fn fill_hi(a:u8) -> (r:u16) {
+    r = (a as u16) | 0xff00
     return
 }
