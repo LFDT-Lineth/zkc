@@ -55,7 +55,7 @@ import (
 func InlineFunctions[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
 	var (
 		modules = slices.Clone(program.Modules())
-		targetIds = resolveInlineTargets(modules)
+		targets = resolveInlineTargets(modules)
 	)
 	// Inline named functions in callee-first order.  At each step, pick a
 	// target whose body no longer calls any unprocessed target; hence, by the
