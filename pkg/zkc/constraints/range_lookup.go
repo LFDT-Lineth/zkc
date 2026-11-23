@@ -96,14 +96,13 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 	regs ...vm.Register[W]) {
 	// TODO: lots of perf possible here, see
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
-	// https://github.com/LFDT-Lineth/zkc/issues/1911
 	for i, reg := range mod.Registers() {
 		if reg.IsNative() {
-			// Native registers are not range-checked.
+			// Native registers are obviously not range-checked.
 			continue
 		} else if i < len(regs) && !regs[i].IsRangeChecked() {
-			// The condition "if i < len(regs)" ensures that ALL registers (like PC, etc)
-			// added are range-checked. Note that len(mod.Registers()) >= len(regs)
+			// We have len(regs) <= len(mod.Registers()), where the diff is corset-added registers
+			// ($ret, IS_PC, etc). We may skip only the first ones, but will always range-checked the later.
 			continue
 		}
 		// Registers of width <= MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK are not
@@ -125,7 +124,8 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			if reg.Width() <= p.maxStaticWidth {
 				panic(fmt.Sprintf("missing static range table for width %d", reg.Width()))
 			}
-			// Wider registers are range-checked recursively via a call lookup.
+			// Wider registers are range-checked recursively via a call lookup that
+			// has been inserted in the vm previously.
 			continue
 		}
 		//
