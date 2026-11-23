@@ -52,10 +52,10 @@ import (
 // vector containing a call at the call site.  It panics on: an unknown or
 // duplicate name; a native function; the entry function "main"; or (mutual)
 // recursion amongst the named functions.
-func InlineFunctions[W Word[W]](program descriptor.Program[W]) descriptor.Program[W] {
+func InlineFunctions[W Word[W]](program descriptor.Program[W], targets ...string) descriptor.Program[W] {
 	var (
 		modules = slices.Clone(program.Modules())
-		targets = resolveInlineTargets(modules)
+		targetIds = resolveInlineTargets(modules, targets...)
 	)
 	// Inline named functions in callee-first order.  At each step, pick a
 	// target whose body no longer calls any unprocessed target; hence, by the
