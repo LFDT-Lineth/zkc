@@ -449,11 +449,9 @@ func FactorLimbEqualities[W word.Word[W]]() Transform[W] {
 //
 // NOTE: This transform must be applied before vectorisation, since it splits
 // the vector enclosing a call at the call site.
-func InlineFunctions[W word.Word[W]](targets ...string) Transform[W] {
+func InlineFunctions[W word.Word[W]]() Transform[W] {
 	var (
-		transformer  = func(p Program[W]) Program[W] {
-			return transform.InlineFunctions[W](p, targets...)
-		}
+		transformer  = transform.InlineFunctions[W]
 		precondition = before(VECTORIZE)
 	)
 	//
