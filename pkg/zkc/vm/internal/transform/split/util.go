@@ -203,7 +203,7 @@ func selectAlignedTargetLimbs[W word.Word[W]](bitwidth uint, targets []RegisterI
 			hi = alloc.Allocate("t", util.Some(n))
 		)
 		//
-		context = append(context, bytecode.AssignV[W]([]RegisterId{selected[m]}, lo, hi))
+		context = append(context, bytecode.AssignV[W]([]RegisterId{selected[m]}, util.Cast[uint16](lastWidth), lo, hi))
 		selected = append(selected[:m], lo)
 		targets = array.Prepend(hi, targets)
 	}
@@ -288,4 +288,12 @@ func (p limbsMapWrapper[W]) LimbsRegisterMap() descriptor.RegisterMap[W] {
 // Registers implementation for the LimbsMap interface
 func (p limbsMapWrapper[W]) Registers() []Limb[W] {
 	panic("unsupported operation")
+}
+
+// chunkBitwidth is the width of a chunk's targets before
+// - any carry line is appended.
+// - any borrow line is appended.
+// - before any carry or borrow line is spliced in.
+func chunkBitwidth[W word.Word[W]](alloc Allocator[W], targets []RegisterId) uint16 {
+	return util.Cast[uint16](descriptor.BitwidthOf(alloc, targets...).Unwrap())
 }

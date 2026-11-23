@@ -1,0 +1,10 @@
+pub input inp(addr:u8) -> (w:u8)
+pub output out(addr:u8) -> (w:u16)
+
+// Constant subtraction into a wider register
+// Operation bitwidth is u8
+fn main() {
+    var a:u8 = inp[0]
+    var r:u16 = (3 - a) as u16
+    out[0] = r
+}

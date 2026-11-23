@@ -1,0 +1,17 @@
+pub input data(address:u8) -> (word:u8)
+
+// Subtract-with-borrow whose top limb is the sign bit,
+// ==> the constraints use the signed form.
+fn main() {
+    var a:u8 = data[0]
+    var lo:u8
+    var sign:u1
+    //
+    sign::lo = (3 - a) as u9
+    //
+    if lo != data[1] {
+        fail
+    } else if (sign as u8) != data[2] {
+        fail
+    }
+}

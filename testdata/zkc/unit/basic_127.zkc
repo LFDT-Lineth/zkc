@@ -1,0 +1,10 @@
+pub input inp(addr:u8) -> (value:u8)
+pub output out(addr:u8) -> (value:u16)
+
+fn main() {
+    var x:u8 = inp[0]
+    // With x = 1, both subtractions are in range: (3 - 1) - 2 = 0.
+    // r is a single widened result, not a sign::lo pair.
+    var r:u9 = (3 - x - 2) as u9
+    out[0] = r as u16
+}
