@@ -1,0 +1,11 @@
+pub input inp(addr:u8) -> (w:u8)
+pub output out(addr:u8) -> (w:u16)
+
+// 1 - (a as u16) - 2 folds to -1 - a, which is negative, so the subtraction is
+// compiled from a zero register of width u16. That underflows for every a, so
+// this file only has rejects.
+fn main() {
+    var a:u8 = inp[0]
+    var neg:u16 = 1 - (a as u16) - 2
+    out[0] = neg
+}

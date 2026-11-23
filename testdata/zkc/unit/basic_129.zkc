@@ -1,0 +1,9 @@
+pub input inp(addr:u8) -> (value:u8)
+pub output out(addr:u8) -> (value:u128)
+
+fn main() {
+    var x:u8 = inp[0]
+    // With x = 4 the subtraction must fail, not store the low 128 bits of -1.
+    var r:u128 = 3 - (x as u128)
+    out[0] = r
+}

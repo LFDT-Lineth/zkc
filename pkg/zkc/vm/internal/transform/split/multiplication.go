@@ -95,7 +95,7 @@ func Multiplication[W word.Word[W]](mapping LimbsMap[W], alloc Allocator[W], ins
 		// largest possible result fits within the machine bandwidth.  Besides
 		// avoiding needless temporaries, this retains the original instruction's
 		// dynamic target-overflow check.
-		return []Bytecode[W]{bytecode.MulVecConst(targetLimbs, sourceLimbs, insn.Constant)}
+		return []Bytecode[W]{bytecode.MulVecConst(targetLimbs, sourceLimbs, insn.Constant, insn.Bitwidth)}
 	}
 	// Choose the multiply granularity for the full product width (the sum of
 	// the operand widths plus the constant's width bounds the product).
@@ -261,7 +261,7 @@ func decomposeToSubLimbs[W word.Word[W]](alloc Allocator[W], g uint, limbs []Reg
 		} else {
 			var sub = alloc.Allocate("s", util.Some(width))
 			//
-			insns = append(insns, bytecode.AssignV[W]([]RegisterId{sub}, cell...))
+			insns = append(insns, bytecode.AssignV[W]([]RegisterId{sub}, util.Cast[uint16](width), cell...))
 			subs = append(subs, sub)
 		}
 	}
@@ -321,7 +321,7 @@ func splitAtBoundaries[W word.Word[W]](alloc Allocator[W], prefix string, group 
 				ps[i] = alloc.Allocate(prefix, util.Some(w))
 			}
 			//
-			insns = append(insns, bytecode.AddVec[W](ps, []RegisterId{reg}))
+			insns = append(insns, bytecode.AddVec[W](ps, []RegisterId{reg}, util.Cast[uint16](width)))
 			pieces = append(pieces, ps...)
 		}
 		//
@@ -386,9 +386,11 @@ func scalarStep[W word.Word[W]](alloc Allocator[W], g uint, a []RegisterId, k W,
 				continue
 			}
 			//
-			var pp = allocSubLimbs(alloc, "pp", g, wa+uint(kj.BigInt().BitLen()))
+			var wb = uint(kj.BigInt().BitLen())
 			//
-			insns = append(insns, bytecode.MulVecConst(pp, []RegisterId{ai}, kj))
+			var pp = allocSubLimbs(alloc, "pp", g, wa+wb)
+			//
+			insns = append(insns, bytecode.MulVecConst(pp, []RegisterId{ai}, kj, util.Cast[uint16](wa+wb)))
 			bucket(partials, uint(i+j), pp)
 		}
 	}
@@ -421,7 +423,7 @@ func binaryStep[W word.Word[W]](alloc Allocator[W], g uint, a, b []RegisterId, l
 				pp = allocSubLimbs(alloc, "pp", g, wa+wb)
 			)
 			//
-			insns = append(insns, bytecode.MulVecConst(pp, []RegisterId{ai, bj}, one))
+			insns = append(insns, bytecode.MulVecConst(pp, []RegisterId{ai, bj}, one, util.Cast[uint16](wa+wb)))
 			bucket(partials, uint(i+j), pp)
 		}
 	}
@@ -581,7 +583,7 @@ func accumulate[W word.Word[W]](alloc Allocator[W], g uint, layout [][]uint, par
 			carry = util.Some(cr)
 		}
 		//
-		insns = append(insns, bytecode.AddVecConst(targets, sources, zero))
+		insns = append(insns, bytecode.AddVecConst(targets, sources, zero, util.Cast[uint16](width)))
 	}
 	//
 	return outs, insns
@@ -618,12 +620,13 @@ func reassembleToTarget[W word.Word[W]](alloc Allocator[W], outs, targetLimbs []
 	for i, tl := range targetLimbs {
 		var cell []RegisterId
 		//
-		cell, pieces = takePieces(alloc, pieces, widths[i])
+		bw := widths[i]
+		cell, pieces = takePieces(alloc, pieces, bw)
 		//
 		if len(cell) == 0 {
-			insns = append(insns, bytecode.LoadConst(tl, zero))
+			insns = append(insns, bytecode.LoadConst(tl, zero, util.Cast[uint16](bw)))
 		} else {
-			insns = append(insns, bytecode.AssignV[W]([]RegisterId{tl}, cell...))
+			insns = append(insns, bytecode.AssignV[W]([]RegisterId{tl}, util.Cast[uint16](bw), cell...))
 		}
 	}
 	//
@@ -646,7 +649,7 @@ func loadConstant[W word.Word[W]](alloc Allocator[W], targetLimbs []RegisterId, 
 		//
 		acc = acc.Shr64(uint64(tw))
 		//
-		insns = append(insns, bytecode.AddVecConst([]RegisterId{tl}, nil, piece))
+		insns = append(insns, bytecode.AddVecConst([]RegisterId{tl}, nil, piece, util.Cast[uint16](tw)))
 	}
 	//
 	return insns

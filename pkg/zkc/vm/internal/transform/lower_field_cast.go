@@ -144,7 +144,7 @@ func (p *fieldCastHelpers[W]) ensure(widths []uint, total uint) uint {
 	if len(inputs) > 1 {
 		valueReg = bytecode.RegisterId(len(regs))
 		regs = append(regs, descriptor.NewComputedRegister("value", util.Some(total), padding))
-		code = append(code, bytecode.AssignV[W]([]bytecode.RegisterId{valueReg}, inputs...))
+		code = append(code, bytecode.AssignV[W]([]bytecode.RegisterId{valueReg}, util.Cast[uint16](total), inputs...))
 	}
 	// Assign the modulus
 	prime = prime.SetBigInt(p.modulus)

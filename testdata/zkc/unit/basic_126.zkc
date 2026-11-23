@@ -1,0 +1,10 @@
+pub input inp(addr:u8) -> (w:u8)
+pub output out(addr:u8) -> (w:u16)
+
+fn main() {
+    var a:u8 = inp[0]
+    var b:u8 = inp[1]
+    // With a = 0 and b = 1, this u16 subtraction should report underflow.
+    var r:u16 = (a as u16) - (b as u16)
+    out[0] = r
+}

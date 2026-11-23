@@ -200,8 +200,11 @@ func snapshotUses[W Word[W]](uses []bytecode.RegisterId, snapshot []bool,
 	//
 	for i, use := range ids {
 		if snapshot[i] {
-			tmp := registers.Allocate("fla", registers.Register(use).Bitwidth())
-			insns = append(insns, bytecode.Assign[W](tmp, use))
+			bw := registers.Register(use).Bitwidth()
+			tmp := registers.Allocate("fla", bw)
+			// A native register has no width, so the snapshot is a field copy.
+			insns = append(insns, bytecode.Copy[W](tmp, use, bw))
+
 			ids[i] = tmp
 		}
 	}
@@ -277,12 +280,13 @@ func flattenCast[W Word[W]](vec BytecodeVector[W], index uint, registers split.A
 	var (
 		cast   = vec.Bytecodes[index].(*bytecode.CheckCast[W])
 		target = cast.Target
-		tmp    = registers.Allocate("fla", registers.Register(target).Bitwidth())
+		bw     = registers.Register(target).Bitwidth()
+		tmp    = registers.Allocate("fla", bw)
 	)
 	// Cast the snapshot in place of the target.
 	vec = vec.Map(func(i uint, ith Bytecode[W]) []Bytecode[W] {
 		if i == index {
-			return []Bytecode[W]{bytecode.Assign[W](tmp, target), bytecode.NewCheckCast[W](tmp, cast.Bitwidth)}
+			return []Bytecode[W]{bytecode.Copy[W](tmp, target, bw), bytecode.NewCheckCast[W](tmp, cast.Bitwidth)}
 		}
 		//
 		return []Bytecode[W]{ith}

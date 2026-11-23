@@ -115,7 +115,7 @@ func arithCasts[W word.Word[W]](b *bytecode.Arith[W], regmap descriptor.Register
 		bits = descriptor.CalculateAddBitwidth(sources, b.Constant, regmap)
 	case bytecode.OP_MUL:
 		bits = descriptor.CalculateMulBitwidth(sources, b.Constant, regmap)
-	case bytecode.OP_SUB:
+	case bytecode.OP_SUB, bytecode.OP_CSUB:
 		// Subtraction can always underflow.
 		bits = util.Some[uint](math.MaxUint)
 	default:

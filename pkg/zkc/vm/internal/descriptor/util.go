@@ -76,6 +76,28 @@ func CalculateSubBitwidth[W word.Word[W]](sources []RegisterId, constant W, env 
 	return util.Some(1 + uint(max(lhs.BitLen(), rhs.BitLen())))
 }
 
+// CalculateCSubBitwidth computes the minimal bitwidth required to hold the
+// result of subtracting every source register from the constant. bitwidth is
+// the operation width carried on the arithmetic instruction. The constant is
+// bounded by that width, just as a SUB minuend is bounded by its register
+// width
+func CalculateCSubBitwidth[W word.Word[W]](sources []RegisterId, constant W, bitwidth uint16,
+	env RegisterMap[W]) util.Option[uint] {
+	var (
+		zero W
+		acc  = func(lhs, rhs *big.Int) { lhs.Add(lhs, rhs) }
+		lhs  = CalculateMaximumValue(constant, []RegisterId{}, env, acc).Unwrap()
+		rhs  = CalculateMaximumValue(zero, sources, env, acc).Unwrap()
+	)
+	// Subtract one for rhs to account correctly for negative values.  This is
+	// because negative values do not need to encode zero and, hence, can
+	// account for one additional value.
+	rhs.Sub(&rhs, big.NewInt(1))
+	// Calculate bitwidth, including an additional bit for the sign. The
+	// operation width stands in for the constant when the constant is narrower
+	return util.Some(1 + max(uint(bitwidth), uint(max(lhs.BitLen(), rhs.BitLen()))))
+}
+
 // CalculateMulBitwidth computes the minimal bitwidth required to hold the
 // result of the product of the given registers and constant.
 //
