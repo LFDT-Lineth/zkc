@@ -61,17 +61,12 @@ func failure(msg string, values ...any) error {
 }
 
 // failure records the current machine state and then constructs a suitable
-// machine failure.  Recording is done by triggering the breakpoint handler
-// which, outside of tracing, is a no-op (see New).  Routing every recognised
-// runtime failure through here ensures the row which triggered the failure is
-// committed to the trace being generated, so the constraints can reject it
-// (e.g. a u32 addition which overflows leaves a wrapped result in the frame
-// that violates the corresponding arithmetic / range constraint).
+// machine failure.  Recording is done by triggering the registered failure
+// handler (which, by default, is a no-op).
 func (p *Interpreter[W]) failure(msg string, values ...any) error {
-	// Snapshot the current (failing) state.  A failing row is never a normal
-	// return, so the opcode passed to the handler is irrelevant (0 ≠ RET).
-	p.breakpoint(0)
-	//
+	// Trigger failure handler
+	p.failureHandler()
+	// Done
 	return failure(msg, values...)
 }
 
@@ -114,10 +109,14 @@ type Interpreter[W word.Word[W]] struct {
 	// Program counter: offset into program.bytecodes of the next bytecode to
 	// decode and execute.
 	pc uint32
-	// Frame pointer: base offset within dataStack of the current function's
-	// activation record.  Registers are addressed relative to this.
+	// Function entry flag.  This is true for the first instruction executed in
+	// the current function, and is useful for distinguishing breakpoints which
+	// capture the function entry and a given function execution.
+	funEntry bool
+	// Frame Pointer (FP): base offset within dataStack of the current
+	// function's activation record.  Registers are addressed relative to this.
 	fp uint32
-	// return pointer / width (used for function call returns).
+	// Return Pointer (RP) / Return Width (RW): used for function call returns.
 	rp, rw uint32
 	// Data stack holding the activation records (registers) of active function
 	// calls.  The current frame begins at fp.
@@ -144,13 +143,13 @@ type Interpreter[W word.Word[W]] struct {
 	cache FunctionCallCache[W]
 	// Optional callback invoked whenever a breakpoint is reached, i.e. an
 	// instruction flagged with the BREAKPOINT modifier bit (see BreakPoint) is
-	// about to execute.  The callback typically snapshots the current machine
-	// state itself (see CheckPoint) and is responsible for governing how
-	// frequently it actually acts.  Configured via the BreakPointer builder
-	// method; defaults to a panicking stub until one has been set.  Finally,
-	// the breakpoint function may "interrupt" the interpreter's execution by
-	// returning true.
-	breakpoint func(uint32) (interrupt bool)
+	// about to execute.  This can be used, for example, to snapshot the current
+	// machine state, etc.  Finally, the breakpointHandler function may
+	// "interrupt" the interpreter's execution by returning true.
+	breakpointHandler func(uint32, bool) (interrupt bool)
+	// Optional callback invoked whenever a machine failure arises.  This is
+	// typically used to allow some additional processing in this case.
+	failureHandler func()
 }
 
 // StackFrame captures relevant information about all functions currently
@@ -230,24 +229,26 @@ func New[W word.Word[W]](program descriptor.Program[W], tracing bool) *Interpret
 	}
 	//
 	return &Interpreter[W]{
-		program: compiled,
-		modulus: prime,
-		field:   program.Field(),
-		pc:      0,
-		fp:      0,
-		rp:      0,
-		rw:      0,
-		sroms:   sroms,
-		roms:    roms,
-		woms:    woms,
-		rams:    rams,
-		prams:   prams,
-		cache:   cache,
-		// Default breakpointer: a no-op.  A real handler is installed via
-		// BreakPointer when tracing / debugging (see BootAndTrace, BootAndDebug).
-		// Note that failures route through this handler too (see failure), so it
-		// must be safe to invoke even when no explicit handler is configured.
-		breakpoint: func(uint32) bool { return false },
+		program:  compiled,
+		modulus:  prime,
+		field:    program.Field(),
+		pc:       0,
+		funEntry: true,
+		fp:       0,
+		rp:       0,
+		rw:       0,
+		sroms:    sroms,
+		roms:     roms,
+		woms:     woms,
+		rams:     rams,
+		prams:    prams,
+		cache:    cache,
+		// Default breakpoint handler is a no-op.  A real handler can be installed via
+		// WithBreakpointHandler.
+		breakpointHandler: func(uint32, bool) bool { return false },
+		// Default failure handler is a no-op.  A real handler can be installed
+		// via WithFailureHandler.
+		failureHandler: func() {},
 	}
 }
 
@@ -273,15 +274,26 @@ func (p *Interpreter[W]) WithAccessLog() *Interpreter[W] {
 	return p
 }
 
-// BreakPointer configures the callback invoked whenever a breakpoint is
-// reached, i.e. an instruction flagged with the BREAKPOINT modifier bit (see
-// BreakPoint) is about to execute.  The callback typically snapshots the
-// current machine state itself (see CheckPoint) and is responsible for
-// governing how frequently it actually acts.  It returns the interpreter to
-// allow method chaining.
-func (p *Interpreter[W]) BreakPointer(breakpointer func(uint32) bool) *Interpreter[W] {
+// WithBreakpointHandler configures the callback invoked whenever a breakpoint
+// is reached, i.e. an instruction flagged with the BREAKPOINT modifier bit (see
+// BreakPoint) is about to execute.   The callback is triggered with two
+// parameters: (i) the opcode of the instruction which triggered the breakpoint;
+// (ii) the entry flag which signals that this is the first instruction executed
+// on entry to the enclosing function.  The latter is used to distinguish
+// function entry from repeated execution of the first instruction.  Finally,
+// the handler returns a flag indicating whether or not to interrupt execution
+// and return from the enclosing execution instance.
+func (p *Interpreter[W]) WithBreakpointHandler(handler func(uint32, bool) bool) *Interpreter[W] {
 	//
-	p.breakpoint = breakpointer
+	p.breakpointHandler = handler
+	//
+	return p
+}
+
+// WithFailureHandler configures a handler to be triggered upon machine failure.
+func (p *Interpreter[W]) WithFailureHandler(handler func()) *Interpreter[W] {
+	//
+	p.failureHandler = handler
 	//
 	return p
 }
@@ -317,6 +329,7 @@ func (p *Interpreter[W]) Reset(fid uint16) {
 	//
 	p.pc = sym.Offset
 	p.fid = fid
+	p.funEntry = true
 	p.fp = 0
 	p.rp = 0
 	p.rw = 0
@@ -481,6 +494,7 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 		frame     []W = p.dataStack.SliceEnd(uint(p.fp))
 		bytecodes     = p.program.Bytecodes()
 		pool          = p.program.Constants()
+		funEntry      = p.funEntry
 	)
 	//
 	for nsteps < steps && err == nil {
@@ -499,11 +513,13 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 				cbop |= bytecodes[p.pc] & 0xff00
 			}
 			// Apply breakpoint and interrupt if requested
-			if p.breakpoint(cbop) {
+			if p.breakpointHandler(cbop, funEntry) {
 				// fire interrupt
 				break
 			}
 		}
+		//
+		funEntry = false
 		// increase step counter
 		nsteps++
 		//
@@ -521,6 +537,7 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			// refresh the register window, since wide instructions include
 			// those (ENTER/LEAVE/RET) which change the enclosing frame.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+			funEntry = p.funEntry
 		case encoding.CHECKCAST:
 			p.pc, err = p.executeCheckCast(p.pc, bytecodes, frame)
 		case encoding.DEBUG:
@@ -535,18 +552,22 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			err = p.executeEnter_n(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+			funEntry = p.funEntry
 		case encoding.ENTER_2:
 			err = p.executeEnter_2(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+			funEntry = p.funEntry
 		case encoding.TAILCALL_n:
 			err = p.executeTailCall_n(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+			funEntry = p.funEntry
 		case encoding.TAILCALL_2:
 			err = p.executeTailCall_2(p.pc, bytecodes, frame)
 			// refresh the register window.
 			frame = p.dataStack.SliceEnd(uint(p.fp))
+			funEntry = p.funEntry
 		case encoding.LEAVE_n:
 			p.pc = p.executeLeave_n(p.pc, bytecodes, frame)
 			// refresh the register window.
@@ -691,6 +712,8 @@ func (p *Interpreter[W]) Execute(steps uint64) (uint64, error) {
 			err = fmt.Errorf("unknown bytecode encountered (0x%x)", opcode)
 		}
 	}
+	// Reset function entry flag
+	p.funEntry = funEntry
 	//
 	return nsteps, err
 }
@@ -707,6 +730,8 @@ func (p *Interpreter[W]) executeWide(pc uint32, codes []uint32, pool []W, stack 
 		wopcode = (codes[pc] >> 8) & 0xff
 		err     error
 	)
+	// Reset function entry flag (i.e. because it is refreshed after this).
+	p.funEntry = false
 	//
 	switch wopcode {
 	case encoding.WIDE_FAIL:
@@ -898,12 +923,15 @@ func (p *Interpreter[W]) executeEnter_n(pc uint32, codes []uint32, stack []W) er
 	if p.tryCachedCall(fid, calleeFp, width, numArgs) {
 		// Skip to next instruction
 		p.pc = pc + n
+		// Clear flag because it is reloaded after this call.
+		p.funEntry = false
 	} else {
 		// save function pointer and return address
 		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
 		//
 		p.fid = fid
 		p.fp = calleeFp
+		p.funEntry = true
 		p.pc = target
 	}
 	//
@@ -929,12 +957,15 @@ func (p *Interpreter[W]) executeEnter_2(pc uint32, codes []uint32, stack []W) er
 	if p.tryCachedCall(fid, calleeFp, width, 1) {
 		// Skip to next instruction
 		p.pc = pc + n
+		// Clear flag because it is reloaded after this call.
+		p.funEntry = false
 	} else {
 		// save function pointer and return address
 		p.callStack.Push(NewStackFrame(p.fid, p.fp, pc+n))
 		//
 		p.fid = fid
 		p.fp = calleeFp
+		p.funEntry = true
 		p.pc = target
 	}
 	//
@@ -987,6 +1018,7 @@ func (p *Interpreter[W]) executeTailCall_n(pc uint32, codes []uint32, stack []W)
 	p.scratch.Clear()
 	//
 	p.fid = p.program.FunctionAt(target).ModuleId
+	p.funEntry = true
 	p.pc = target
 	//
 	return nil
@@ -1008,6 +1040,7 @@ func (p *Interpreter[W]) executeTailCall_2(pc uint32, codes []uint32, stack []W)
 	p.dataStack.Set(uint(p.fp), tmp)
 	//
 	p.fid = p.program.FunctionAt(target).ModuleId
+	p.funEntry = true
 	p.pc = target
 	//
 	return nil

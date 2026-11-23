@@ -198,7 +198,8 @@ type stampArc struct {
 // analyseStamps runs the dataflow analysis over one row, returning the joined
 // symbolic state entering every position, the arcs into every position, and
 // the skip-landing table.  All three carry one sentinel slot for the end of
-// the row, which skips may land on and a live path may fall into.
+// the row, which is reached only by an unterminated path (rejected by
+// threadVector).
 func (t *threader[W]) analyseStamps(insns []Bytecode[W], entry stamps,
 ) (dfa.Result[stamps], [][]stampArc, []bool) {
 	var (
@@ -452,14 +453,10 @@ func (t *threader[W]) skipLandings(insns []Bytecode[W]) []bool {
 }
 
 // isExitAt reports whether position i is an exit which must be entered with the
-// stamps in their canonical registers on every path: a jump, a non-main return
-// (main binds no stamp outputs), or the end of the row.  A fail aborts, so it
-// does not force this.
+// stamps in their canonical registers on every path: a jump, or a non-main
+// return (main binds no stamp outputs).  A fail aborts, so it does not force
+// this.
 func (t *threader[W]) isExitAt(insns []Bytecode[W], i int) bool {
-	if i == len(insns) {
-		return true
-	}
-	//
 	switch b := insns[i].(type) {
 	case *bytecode.Jmp[W]:
 		return true

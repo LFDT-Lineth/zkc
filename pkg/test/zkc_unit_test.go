@@ -828,6 +828,15 @@ func Test_ZkcUnit_While_05(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/while_05", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_While_06(t *testing.T) {
+	t.Skip("#2120 recursive multi-line functions")
+	checkZkcUnit(t, "zkc/unit/while_06", DEFAULT_UNIT_CONFIG)
+}
+
+func Test_ZkcUnit_While_07(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/while_07", DEFAULT_UNIT_CONFIG)
+}
+
 func Test_ZkcUnit_For_01(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/for_01", DEFAULT_UNIT_CONFIG)
 }

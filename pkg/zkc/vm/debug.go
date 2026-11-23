@@ -29,21 +29,29 @@ import (
 // command: it uses the interpreter's breakpoint facility (enabled by running in
 // tracing mode) so that a breakpoint fires as each vector completes.
 func BootAndDebug[W Word[W]](program Program[W], in map[string]bit.Array, observer func(State[W])) []error {
-	// Construct a tracing interpreter, which registers a breakpoint at the
-	// terminal of every bytecode vector.
-	bci := interpreter.New(program, true)
+	var (
+		// Construct a tracing interpreter, which registers a breakpoint at the
+		// terminal of every bytecode vector.
+		bci     = interpreter.New(program, true)
+		handler = func(opcode uint32, _ bool) bool {
+			fid, pc, frame := interpreter.ExtractExecutingState(bci)
+			// Clone the frame so the observer sees a stable snapshot which cannot be
+			// mutated by subsequent execution.
+			returning := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
+			//
+			observer(State[W]{fid, pc, returning, slices.Clone(frame)})
+			// don't interrupt interpeter
+			return false
+		}
+	)
 	// Register a breakpoint handler which reports the executing state to the
 	// observer.
-	bci = bci.BreakPointer(func(opcode uint32) bool {
-		fid, pc, frame := interpreter.ExtractExecutingState(bci)
-		// Clone the frame so the observer sees a stable snapshot which cannot be
-		// mutated by subsequent execution.
-		returning := opcode == encoding.RET || opcode == encoding.WIDE|encoding.WIDE_RET<<8
-		//
-		observer(State[W]{fid, pc, returning, slices.Clone(frame)})
-		// don't interrupt interpeter
-		return false
-	})
+	bci = bci.
+		// Register breakpoint handler to capture executing function's state.
+		WithBreakpointHandler(handler).
+		// Register failure handler to ensure execution state is captured even
+		// on a machine failure.
+		WithFailureHandler(func() { handler(encoding.FAIL, false) })
 	// Boot and execute to completion.
 	_, _, errs := BootAndExecute(bci, in, math.MaxUint)
 	//
