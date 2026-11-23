@@ -1,0 +1,15 @@
+pub input data(address:u16) -> (word:u64)
+pub output result(address:u16) -> (word:u64)
+
+// 
+fn main() {
+    var x:u64 = data[0]
+    x = fill_hi(x as u40)
+    result[0] = x
+    return
+}
+
+fn fill_hi(a:u40) -> (r:u64) {
+    r = (a as u64) | 0xffffff0000000000
+    return
+}
