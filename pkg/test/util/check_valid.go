@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -131,12 +132,8 @@ func checkValidInternal(t *testing.T, test TestCase) {
 		}
 		// Run the test (without gogen)
 		runConstraintTest(t, p, test.vector, field, traceConfig)
-		// TODO: fully support gogen tracing.  Currently, using gogen for
-		// tracing only covers checkpointing during the initial fast-mode
-		// execution run.  As such, it only makes sense to run a gogen tracing
-		// test when sharding is active.  Issue #2336 will add full tracing
-		// support.
-		if gogen := test.gogen; gogen.HasValue() && test.sharding.HasValue() {
+		// Run GoGen constraint test (if requested)
+		if gogen := test.gogen; gogen.HasValue() {
 			// Rerun test (with gogen)
 			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(gogen))
 		}
@@ -193,23 +190,12 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		// Record whether test accepted or not.
 		accepted = len(errs) == 0
 	)
+	// Fail automatically on any internal error arising during execution
+	failIfNot[*vm.Failure](t, errs...)
 	// Check what happened
-	if accepted {
+	if accepted && test.expected {
 		// Check outputs line up
-		for name, actual := range actuals {
-			if expected, ok := test.data[name]; ok {
-				//
-				if !expected.Equals(actual) {
-					t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
-						test.filename, test.line, expected.String(), actual.String())
-				}
-			}
-		}
-		// Sanity check enough outputs
-		if uint(len(actuals)) != p.Outputs().Count() {
-			t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
-				test.filename, test.line, p.Outputs().Count(), len(actuals))
-		}
+		checkMatchingOutputs(t, p, actuals, test)
 	}
 	// Process what happened versus what was supposed to happen.
 	if !accepted && test.expected {
@@ -252,7 +238,7 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 		// decode inputs / outputs
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// generate trace
-		_, tr, traceErrors = binf.Trace(inputs, traceCfg)
+		traceOutputs, tr, traceErrors = binf.Trace(inputs, traceCfg)
 	)
 	// Check whether a trace was actually generated.
 	if tr.IsEmpty() {
@@ -274,6 +260,9 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 			test.line, failures, traceErrors, checkErrors)
 	} else if !test.expected && (traceAccepted || constraintsAccepted) {
 		t.Errorf("Trace accepted incorrectly (%s:%d)", test.filename, test.line)
+	} else if test.expected {
+		// Check matching outputs
+		checkMatchingOutputs(t, p, traceOutputs, test)
 	}
 	// Run duplication check
 	if len(traceErrors) == 0 {
@@ -321,6 +310,28 @@ func runFunctionDedupTest[F field.Element[F], W vm.Word[W]](t *testing.T, fn *vm
 			// Yes, found a duplicate instance
 			t.Errorf("Trace has duplicate function call (%s:%d:%s)", test.filename, test.line, fn.Name())
 		}
+	}
+}
+
+// Check outputs generated during the given execution match exactly those in the
+// given test vector.
+func checkMatchingOutputs(t *testing.T, p vm.Program[vm.Uint], actuals map[string]bit.Array, test TestVector) {
+	// Check outputs line up
+	for name, actual := range actuals {
+		// Check output recognised, and has expected value.
+		expected, ok := test.data[name]
+		// Following holds from validTestVector
+		util.Assert(ok, "unreachable")
+		//
+		if !expected.Equals(actual) {
+			t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
+				test.filename, test.line, expected.String(), actual.String())
+		}
+	}
+	// Sanity check enough outputs produced
+	if uint(len(actuals)) != p.Outputs().Count() {
+		t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
+			test.filename, test.line, p.Outputs().Count(), len(actuals))
 	}
 }
 

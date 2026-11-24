@@ -160,13 +160,16 @@ func genExecutionTests(t *testing.T, test string, config TestConfig, f field.Con
 	}
 	// Fast mode tests don't consider height or padding strategy.
 	for _, tv := range vecs {
-		var tc = NewTestCase(test, tv, build, prog).
-			FastMode().
-			GoGen(config.gogen)
-		// Only run fast mode tests for the default height / padding, since
-		// neither static height nor padding impacts on fast mode.
-		tests = append(tests, tc)
+		if validTestVector(t, prog, tv) {
+			var tc = NewTestCase(test, tv, build, prog).
+				FastMode()
+			// Only run fast mode tests for the default height / padding, since
+			// neither static height nor padding impacts on fast mode.
+			tests = append(tests, tc)
+		}
 	}
+	// Apply GoGen (if requested)
+	applyGoGen(t, prog, config, tests)
 	//
 	return tests
 }
@@ -187,19 +190,32 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 			var localTests []TestCase
 			// Iterate all vectors
 			for _, vector := range vecs {
-				// Construct base test
-				var t = NewTestCase(test, vector, build, pU).
-					Constraints().
-					Sharding(cfg.sharding).
-					GoGen(cfg.gogen)
-				// Only test different padding for default static height.
-				if height == codegen.DEFAULT_MAX_STATIC_HEIGHT {
-					for _, padding := range cfg.paddingStrategies {
-						localTests = append(localTests, t.Padding(padding))
+				if validTestVector(t, pU, vector) {
+					// Construct base test
+					var tc = NewTestCase(test, vector, build, pU).
+						Constraints().
+						Sharding(cfg.sharding)
+
+					// Only test different padding for default static height.
+					if height == codegen.DEFAULT_MAX_STATIC_HEIGHT {
+						for _, padding := range cfg.paddingStrategies {
+							localTests = append(localTests, tc.Padding(padding))
+						}
+					} else {
+						localTests = append(localTests, tc)
 					}
-				} else {
-					localTests = append(localTests, t)
 				}
+			}
+			// TODO: fully support gogen tracing.  Currently, using gogen
+			// for tracing only covers checkpointing during the initial
+			// fast-mode execution run.  As such, it only makes sense to run
+			// the test when sharding is active.  For now, overhead from the
+			// latter is tolerable because relatively few tests cover
+			// sharding anyway.
+			//
+			// Apply GoGen (if requested)
+			if cfg.sharding.HasValue() {
+				applyGoGen(t, pU, cfg, localTests)
 			}
 			//
 			tests = append(tests, localTests...)
@@ -207,6 +223,23 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 	}
 	//
 	return tests
+}
+
+func applyGoGen(t *testing.T, prog vm.Program[vm.Uint], config TestConfig, tests []TestCase) {
+	if gogen := config.gogen.UnwrapOr(nil); gogen != nil {
+		// Construct gogen execution program
+		var pG = vm.TransformForGoGenExecution(prog, vm.DEFAULT_TRANSFORMS)
+		// build the program
+		if _, err := gogen.Compile(pG, vm.DEFAULT_GOGEN_CONFIG); err != nil {
+			// Raise an error
+			t.Error(err.Error())
+		} else {
+			// Configure each test to use gogen
+			for i := range tests {
+				tests[i] = tests[i].GoGen(config.gogen)
+			}
+		}
+	}
 }
 
 func readTestVectors(t *testing.T, test string, sampling util.Option[float64]) map[field.Config][]TestVector {

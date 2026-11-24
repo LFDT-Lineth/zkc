@@ -35,6 +35,10 @@ type GoGenExecutor = gogen.Executor
 // machine failure, as opposed to any other kind of internal error.
 var GoGenMachineFailure = gogen.ErrMachineFailure
 
+// DEFAULT_GOGEN_CONFIG provides a default configuration config which is
+// generally sufficient for small, self-contained tests.
+var DEFAULT_GOGEN_CONFIG = gogen.DEFAULT_CONFIG
+
 // NewGoGenExecutor initialises an empty executor.
 func NewGoGenExecutor() *GoGenExecutor {
 	return gogen.NewExecutor()

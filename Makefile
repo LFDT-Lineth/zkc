@@ -27,15 +27,15 @@ test:
 
 corset-test:
 	@echo ">>> Running Corset Tests..."
-	go test --timeout 0 -run "Test_Valid|Test_Invalid" ./...
+	go test --timeout 0 -run "Test_Valid|Test_Invalid" ./pkg/test
 
 corset-racer:
 	@echo ">>> Running Corset Racer Tests..."
-	go test -race --timeout 0 -run "Test_Bench_Bin|Test_Bench_Euc|Test_Bench_Mul" ./...
+	go test -race --timeout 0 -run "Test_Bench_Bin|Test_Bench_Euc|Test_Bench_Mul" ./pkg/test
 
 corset-bench:
 	@echo ">>> Running Corset Benchmark Tests..."
-	go test -p 1 --timeout 0 -run "Test_Bench" ./...
+	go test -p 1 --timeout 0 -run "Test_Bench" ./pkg/test
 
 unit-test:
 	@echo ">>> Running Unit Tests..."
@@ -55,19 +55,19 @@ zkc-lint-apply:
 
 zkc-unit-test: zkc-lint
 	@echo ">>> Running ZkC (Unit) Tests..."
-	go test --timeout 0 -run "Test_ZkcUnit|Test_ZkcMixed|Test_ZkcInvalid" ./...
+	go test --timeout 0 -run "Test_ZkcUnit|Test_ZkcMixed|Test_ZkcInvalid" ./pkg/test
 
 zkc-util-test: zkc-lint
 	@echo ">>> Running ZkC (Util) Tests..."
-	go test --timeout 0 -run "Test_ZkcUtil" ./...
+	go test --timeout 0 -run "Test_ZkcUtil" ./pkg/test
 
 zkc-bench-test: zkc-lint
 	@echo ">>> Running ZkC (Bench) Tests..."
-	go test --timeout 0 -run "Test_ZkcBench" ./...
+	go test --timeout 0 -run "Test_ZkcBench" ./pkg/test
 
 zkc-racer-test:
 	@echo ">>> Running ZkC (Racer) Tests..."
-	go test -v -race --timeout 0 -run "Test_ZkcBench_FastPow|Test_ZkcBench_Sort" pkg/test/zkc_bench_test.go
+	go test -v -race --timeout 0 -run "Test_ZkcBench_FastPow|Test_ZkcBench_Sort" ./pkg/test
 
 build:
 	@echo ">>> Building go-corset... ${GOCORSET_VERSION}"
