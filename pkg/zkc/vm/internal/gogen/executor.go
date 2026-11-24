@@ -71,14 +71,16 @@ func NewExecutor() *Executor {
 // reused on subsequent calls.  Once the executor is closed, this always fails
 // with ErrExecutorClosed.
 func (p *Executor) Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
-	var key, err = Generate(program, config)
-	//
+	if p.isClosed() {
+		return Binary{}, ErrExecutorClosed
+	}
+	// Generate the key without blocking other callers or Close.
+	key, err := generateRaw(program, config)
 	if err != nil {
 		return Binary{}, err
 	}
-	// Stake a claim on the given compilation
+	// Claim rechecks closure in case Close ran during generation.
 	entry, owner, err := p.claim(key)
-	//
 	if err != nil {
 		return Binary{}, err
 	}
@@ -133,6 +135,13 @@ func (p *Executor) Close() error {
 	}
 	// Return any errors arising
 	return errors.Join(errs...)
+}
+
+func (p *Executor) isClosed() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	return p.closed
 }
 
 // claim returns the compilation for a given key, creating it if there is none.

@@ -316,14 +316,17 @@ func runFunctionDedupTest[F field.Element[F], W vm.Word[W]](t *testing.T, fn *vm
 // Check outputs generated during the given execution match exactly those in the
 // given test vector.
 func checkMatchingOutputs(t *testing.T, p vm.Program[vm.Uint], actuals map[string]bit.Array, test TestVector) {
-	// Check outputs line up
-	for name, actual := range actuals {
-		// Check output recognised, and has expected value.
-		expected, ok := test.data[name]
-		// Following holds from validTestVector
-		util.Assert(ok, "unreachable")
-		//
-		if !expected.Equals(actual) {
+	// Sanity check correct outputs produced
+	for iter := p.Outputs(); iter.HasNext(); {
+		var output = iter.Next()
+		// Check output
+		if actual, ok := actuals[output.Name()]; !ok {
+			t.Errorf("test (%s:%d) did not produce output (\"%s\")",
+				test.filename, test.line, output.Name())
+		} else if expected, ok := test.data[output.Name()]; !ok {
+			t.Errorf("test (%s:%d) vector is missing output (\"%s\")",
+				test.filename, test.line, output.Name())
+		} else if !expected.Equals(actual) {
 			t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
 				test.filename, test.line, expected.String(), actual.String())
 		}

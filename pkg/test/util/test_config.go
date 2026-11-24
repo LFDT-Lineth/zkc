@@ -168,6 +168,8 @@ func genExecutionTests(t *testing.T, test string, config TestConfig, f field.Con
 			tests = append(tests, tc)
 		}
 	}
+	// Clear sharding strategy, since fast-mode tests do not use it.
+	config.sharding = util.None[vm.ShardingStrategy]()
 	// Apply GoGen (if requested)
 	applyGoGen(t, prog, config, tests)
 	//
@@ -226,11 +228,20 @@ func genTracingTests(t *testing.T, test string, cfg TestConfig, f field.Config, 
 }
 
 func applyGoGen(t *testing.T, prog vm.Program[vm.Uint], config TestConfig, tests []TestCase) {
+	//
 	if gogen := config.gogen.UnwrapOr(nil); gogen != nil {
-		// Construct gogen execution program
-		var pG = vm.TransformForGoGenExecution(prog, vm.DEFAULT_TRANSFORMS)
+		var (
+			// Construct suitable gogen config
+			gogenConfig = vm.DEFAULT_GOGEN_CONFIG
+			// Construct gogen execution program
+			pG = vm.TransformForGoGenExecution(prog, vm.DEFAULT_TRANSFORMS)
+		)
+		// Tweak gogen config to match (if applicable)
+		if sharding := config.sharding; sharding.HasValue() {
+			gogenConfig = gogenConfig.WithCheckPointing(sharding.Unwrap())
+		}
 		// build the program
-		if _, err := gogen.Compile(pG, vm.DEFAULT_GOGEN_CONFIG); err != nil {
+		if _, err := gogen.Compile(pG, gogenConfig); err != nil {
 			// Raise an error
 			t.Error(err.Error())
 		} else {
