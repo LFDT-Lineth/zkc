@@ -200,21 +200,6 @@ func compileTestProgram(testfile, ext string, cfg codegen.Config) (vm vm.Program
 	return vm, nil
 }
 
-func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[string]bit.Array,
-) (inputs map[string][]W, outputs map[string][]W) {
-	inputs, outputs, errs := vm.DecodeInputsOutputs(p, data)
-	//
-	if len(errs) > 0 {
-		for _, err := range errs {
-			t.Errorf("%s", err.Error())
-		}
-
-		t.FailNow()
-	}
-	//
-	return inputs, outputs
-}
-
 // Marshall / Unmarshall takes a machine and constructs a suitable BinaryFile
 // for the given field configuration, and then marshalls it into a byte sequence
 // and the unmarshalls this sequence back into a fresh machine.  The purpose of

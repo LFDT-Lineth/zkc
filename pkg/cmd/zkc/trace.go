@@ -15,7 +15,6 @@ package zkc
 import (
 	"fmt"
 	"math"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -89,8 +88,10 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		sharding = GetString(cmd, "sharding")
 		//
 		includes = GetStringArray(cmd, "include")
-		// initialise fresh executor
+		// create fresh executor
 		executor = vm.NewGoGenExecutor()
+		// register exit handler
+		release = RegisterExitHandler(executor)
 		// Indicate as to whether trace was fully computed or not.
 		computed = false
 		//
@@ -98,7 +99,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		outputs map[string]bit.Array
 	)
 	// Ensure resources held by executor released.
-	defer func() { executor.ClearAll() }()
+	defer release()
 	// Sanity permitted flag combinations
 	checkFlags(cmd, traceFlags)
 	// Configure stats
@@ -265,7 +266,7 @@ func handleErrors(errors []error) {
 			log.Error(fmt.Sprintf("%s", e))
 		}
 		//
-		os.Exit(4)
+		log.Exit(4)
 	}
 }
 
@@ -296,7 +297,7 @@ func parseShardingConfig(spec string) vm.ShardingStrategy {
 	//
 	if colon < 0 {
 		fmt.Printf("invalid sharding spec \"%s\" (expected \"<function>:<n>[K|M|G]\")\n", spec)
-		os.Exit(1)
+		log.Exit(1)
 	}
 	//
 	fn, istr := spec[:colon], spec[colon+1:]
@@ -304,7 +305,7 @@ func parseShardingConfig(spec string) vm.ShardingStrategy {
 	//
 	if err != nil {
 		fmt.Printf("invalid sharding spec \"%s\": %s\n", spec, err.Error())
-		os.Exit(1)
+		log.Exit(1)
 	}
 	//
 	return vm.NewShardingStrategy(fn, n)

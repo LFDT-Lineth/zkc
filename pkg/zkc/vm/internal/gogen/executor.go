@@ -68,15 +68,21 @@ type compilation struct {
 // GoGenExecutor
 // ============================================================================
 
+// ErrExecutorClosed is returned by Compile once the executor has been closed.
+var ErrExecutorClosed = errors.New("gogen executor closed")
+
 // Executor provides a means of reusing compiled binaries across different calls
 // to Compile().  Specifically, it caches the programs being compiled along with
 // their configurations and reuses them when possible.  Concurrent requests for
 // the same program and configuration share a single compilation, whilst those
 // for different ones compile in parallel.  Finally, resources are released when
-// ClearAll is called.
+// Close is called.
 type Executor struct {
 	database *hash.Map[compilationKey, *compilation]
-	// Protects database (but not the compilations it holds, see compilation).
+	// Set by Close, after which no more compilations are accepted.
+	closed bool
+	// Protects database and closed (but not the compilations held in the
+	// database, see compilation).
 	mu sync.Mutex
 }
 
@@ -91,9 +97,14 @@ func NewExecutor() *Executor {
 // an error indicating some kind of compilation failure.  This requires a Go
 // toolchain on the PATH, and fails if none is found.  Furthermore, the outcome
 // of that compilation (whether a binary or a failure) is cached such that it is
-// reused on subsequent calls, until ClearAll is called.
+// reused on subsequent calls.  Once the executor is closed, this always fails
+// with ErrExecutorClosed.
 func (p *Executor) Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
-	var entry, owner = p.claim(compilationKey{program, config})
+	var entry, owner, err = p.claim(compilationKey{program, config})
+	//
+	if err != nil {
+		return Binary{}, err
+	}
 	// Check whether somebody else is (or was) responsible for compiling this.
 	if !owner {
 		// Yes, so wait for them to finish (if they haven't already).
@@ -118,13 +129,14 @@ func (p *Executor) Compile(program descriptor.Program[word.Uint], config Config)
 	return entry.binary, entry.err
 }
 
-// ClearAll releases all cached results and resets the internal cache to an
-// empty state.  This waits for any compilations still in flight, so that their
-// binaries are released as well.
-func (p *Executor) ClearAll() error {
+// Close releases all cached results and prevents anything more from being
+// compiled.  This waits for any compilations still in flight, so that their
+// binaries are released as well.  Thus, no binary outlives this call, even
+// when it races against calls to Compile.
+func (p *Executor) Close() error {
 	var (
 		errs    []error
-		entries = p.detachAll()
+		entries = p.closeAndDetachAll()
 	)
 	//
 	log.Info("Releasing ", len(entries), " cached gogen binaries")
@@ -144,32 +156,41 @@ func (p *Executor) ClearAll() error {
 
 // claim returns the compilation for a given key, creating it if there is none.
 // In the latter case this returns true to signal that the caller is now its
-// owner and, hence, is responsible for completing it.
-func (p *Executor) claim(key compilationKey) (*compilation, bool) {
+// owner and, hence, is responsible for completing it.  No compilation can be
+// claimed once the executor is closed.
+func (p *Executor) claim(key compilationKey) (*compilation, bool, error) {
 	// Take lock
 	p.mu.Lock()
 	// Release lock upon leaving function
 	defer func() { p.mu.Unlock() }()
+	// Check whether or not executor still accepting compilations.
+	if p.closed {
+		return nil, false, ErrExecutorClosed
+	}
 	// Check whether or not this compilation already exists.
 	if entry, exists := p.database.Get(key); exists {
 		// Yes, return it.
-		return entry, false
+		return entry, false, nil
 	}
 	// No, so register it before anybody else does.
 	entry := &compilation{done: make(chan struct{})}
 	p.database.Insert(key, entry)
 	//
-	return entry, true
+	return entry, true, nil
 }
 
-// detachAll removes every compilation from the database and returns them.  The
+// closeAndDetachAll closes the executor, then removes every compilation from
+// the database and returns them.  Doing both under the lock ensures every
+// compilation ever claimed is amongst those returned by some call to this.  The
 // lock is not held whilst the caller waits on them.
-func (p *Executor) detachAll() []*compilation {
+func (p *Executor) closeAndDetachAll() []*compilation {
 	var entries []*compilation
 	// Take lock
 	p.mu.Lock()
 	// Release lock upon leaving function
 	defer func() { p.mu.Unlock() }()
+	// Refuse any further compilations
+	p.closed = true
 	//
 	for iter := p.database.KeyValues(); iter.HasNext(); {
 		entries = append(entries, iter.Next().Right)

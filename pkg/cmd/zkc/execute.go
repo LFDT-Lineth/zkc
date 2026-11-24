@@ -14,7 +14,6 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
@@ -63,11 +62,13 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		outputs map[string]bit.Array
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
-		// initialise fresh executor
+		// create fresh executor
 		executor = vm.NewGoGenExecutor()
+		// register exit handler
+		release = RegisterExitHandler(executor)
 	)
 	// Ensure resources held by executor released.
-	defer func() { executor.ClearAll() }()
+	defer release()
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	//
@@ -117,7 +118,7 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 			log.Error(fmt.Sprintf("%s", e))
 		}
 		//
-		os.Exit(4)
+		log.Exit(4)
 	}
 }
 

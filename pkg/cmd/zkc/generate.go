@@ -84,14 +84,14 @@ func runGenerateCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args [
 	})
 	if err != nil {
 		log.Error(err)
-		os.Exit(4)
+		log.Exit(4)
 	}
 	//
 	if output == "" {
 		fmt.Print(src)
 	} else if err := os.WriteFile(output, []byte(src), 0o644); err != nil {
 		log.Error(err)
-		os.Exit(5)
+		log.Exit(5)
 	}
 }
 

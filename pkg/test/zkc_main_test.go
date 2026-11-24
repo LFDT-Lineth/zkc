@@ -13,22 +13,21 @@
 package test
 
 import (
-	"os"
 	"testing"
 
+	"github.com/LFDT-Lineth/zkc/pkg/cmd/zkc"
 	"github.com/LFDT-Lineth/zkc/pkg/test/util"
+	log "github.com/sirupsen/logrus"
 )
 
 // TestMain manages resources for all tests
 func TestMain(m *testing.M) {
 	// Access default executor
 	var executor = util.GOGEN_EXECUTOR
+	// Register proper exit handler
+	zkc.RegisterExitHandler(executor)
 	// Run all tests in the package
 	exitCode := m.Run()
-	// Free executor
-	if err := executor.ClearAll(); err != nil {
-		panic(err)
-	}
 	// Exit with the test suite's status code
-	os.Exit(exitCode)
+	log.Exit(exitCode)
 }
