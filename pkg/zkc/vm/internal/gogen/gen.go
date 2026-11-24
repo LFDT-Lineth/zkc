@@ -114,7 +114,16 @@ type pos struct {
 // Generate compiles a bytecode program into a self-contained Go source file.
 // See the package documentation for the semantics contract and Config for the
 // artefact shape.
-func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error) {
+func Generate(program descriptor.Program[word.Uint], cfg Config) (src string, err error) {
+	// Generate raw, unformatted source
+	if src, err = generateRaw(program, cfg); err != nil {
+		return src, err
+	}
+	// Format it
+	return formatSource(src)
+}
+
+func generateRaw(program descriptor.Program[word.Uint], cfg Config) (string, error) {
 	g := &generator{
 		config:   cfg,
 		memByID:  map[uint]memInfo{},
@@ -209,8 +218,8 @@ func Generate(program descriptor.Program[word.Uint], cfg Config) (string, error)
 	if err := g.emitFile(&file, order, bodies); err != nil {
 		return "", err
 	}
-
-	return formatSource(file.String())
+	//
+	return file.String(), nil
 }
 
 type generator struct {

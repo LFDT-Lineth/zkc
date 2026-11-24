@@ -27,8 +27,6 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
-	"github.com/LFDT-Lineth/zkc/pkg/util/option"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
@@ -100,26 +98,6 @@ func (p Config) WithCheckPointing(strategy descriptor.ShardingStrategy) Config {
 	return p
 }
 
-// Equals implementation for Hasher interface
-func (p Config) Equals(other Config) bool {
-	return p.NoIntervals == other.NoIntervals &&
-		p.Source == other.Source &&
-		option.Equal(p.CheckPointing, other.CheckPointing) &&
-		p.Json == other.Json
-}
-
-// Hash implementation for Hasher interface
-func (p Config) Hash() uint64 {
-	var (
-		noint = hash.Bool(p.NoIntervals)
-		src   = hash.String(p.Source)
-		cp    = option.Hash(p.CheckPointing)
-		json  = hash.Bool(p.Json)
-	)
-	//
-	return hash.Uint64s(noint, src, cp, json)
-}
-
 // DEFAULT_CONFIG provides a default configuration config which is generally
 // sufficient for small, self-contained tests.
 var DEFAULT_CONFIG = Config{}
@@ -128,21 +106,29 @@ var DEFAULT_CONFIG = Config{}
 // executed, or an error indicating some kind of compilation failure.  This
 // requires a Go toolchain on the PATH, and fails if none is found.
 func Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
+	// Generate native Go source for the word machine.
+	var (
+		err error
+		src string
+	)
+	// Attempt to generate source
+	if src, err = Generate(program, config); err != nil {
+		return Binary{}, err
+	}
+	// Build source into executable
+	return Build(src)
+}
+
+// Build a given source string into a Go executable using "go build".   This
+// requires a Go toolchain on the PATH, and fails if none is found.
+func Build(src string) (Binary, error) {
+	var dir string
 	// Locate the Go toolchain up front, so its absence is reported clearly
 	// (rather than as an obscure build failure).
 	goTool, err := exec.LookPath("go")
 	//
 	if err != nil {
 		return Binary{}, fmt.Errorf("gogen: Go toolchain not found (required to compile generated code): %w", err)
-	}
-	// Generate native Go source for the word machine.
-	var (
-		src string
-		dir string
-	)
-	//
-	if src, err = Generate(program, config); err != nil {
-		return Binary{}, err
 	}
 	// Construct temporary directory in which to build
 	dir, err = os.MkdirTemp("", "zkcgen")

@@ -17,11 +17,9 @@ import (
 	"encoding/gob"
 	"fmt"
 	"math"
-	"reflect"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/iter"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/bytecode"
@@ -151,20 +149,6 @@ func (p Program[W]) EnvironmentOf(mid uint16) bytecode.Environment[W] {
 		mid,
 		p.modules,
 	}
-}
-
-// Equals implementation for Hasher interface
-func (p Program[W]) Equals(q Program[W]) bool {
-	return reflect.DeepEqual(p, q)
-}
-
-// Hash implementation for Hasher interface
-func (p Program[W]) Hash() uint64 {
-	var bytes, err = p.GobEncode()
-	//
-	util.Assert(err == nil, "unable to encode program")
-	// Compute the hash
-	return hash.Bytes(bytes...)
 }
 
 // IsTracing indicates whether or not this program is intended for tracing or
