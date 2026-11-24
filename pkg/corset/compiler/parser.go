@@ -281,10 +281,6 @@ func (p *Parser) parseDeclaration(module file.Path, s *sexp.List) (ast.Declarati
 		decl, errors = p.parseDefInRange(s.Elements)
 	} else if s.Len() == 4 && s.MatchSymbols(1, "deflookup") {
 		decl, errors = p.parseDefLookup(module, s.Elements)
-	} else if (s.Len() == 5 || s.Len() == 6) && s.MatchSymbols(1, "defclookup") {
-		decl, errors = p.parseDefConditionalLookup(module, s.Elements)
-	} else if s.Len() == 4 && s.MatchSymbols(1, "defmlookup") {
-		decl, errors = p.parseDefMultiLookup(module, s.Elements)
 	} else if s.Len() == 5 && s.MatchSymbols(1, "defsend") {
 		decl, errors = p.parseDefSendReceive(module, s.Elements, true)
 	} else if s.Len() == 5 && s.MatchSymbols(1, "defrecv") {
@@ -350,7 +346,9 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 		// Check at least the name provided.
 		if len(l.Elements) == 0 {
 			return nil, p.translator.SyntaxError(l, "empty column declaration")
-		} else if !isIdentifier(l.Elements[0]) {
+		} else if !isIdentifier(l.Elements[0]) || isNoSelector(l.Elements[0]) {
+			// NOTE: the selector placeholder is reserved so that it is never
+			// ambiguous with a column access.
 			return nil, p.translator.SyntaxError(l.Elements[0], "invalid column name")
 		}
 		// Column name is always first
@@ -592,99 +590,26 @@ func (p *Parser) parseDefConstraint(module file.Path, elements []sexp.SExp) (ast
 	return ast.NewDefConstraint(handle, domain, guard, expr), nil
 }
 
-// Parse a lookup declaration
+// Parse a lookup declaration of the form "(deflookup HANDLE (SOURCES...)
+// (TARGETS...))", where each source / target is a vector of the form "(SELECTOR
+// COLUMNS...)".
 func (p *Parser) parseDefLookup(module file.Path, elements []sexp.SExp) (ast.Declaration, []SyntaxError) {
 	// Extract items
 	handle, checked, errors := p.parseLookupHandle(module, elements[1])
-	targets, tgtErrors := p.parseDefLookupSources("target", elements[2])
-	sources, srcErrors := p.parseDefLookupSources("source", elements[3])
+	n, sourceSelectors, sources, srcErrors := p.parseDefLookupVectors("source", elements[2])
+	m, targetSelectors, targets, tgtErrors := p.parseDefLookupVectors("target", elements[3])
 	// Combine any and all errors
 	errors = append(errors, srcErrors...)
 	errors = append(errors, tgtErrors...)
-	// Sanity check length of sources / targets
-	if len(sources) != len(targets) {
-		msg := fmt.Sprintf("differing number of source and target columns (%d v %d)", len(sources), len(targets))
-		errors = append(errors, *p.translator.SyntaxError(elements[3], msg))
-	}
-	// Error check
-	if len(errors) != 0 {
-		return nil, errors
-	}
-	//
-	targetSelectors := make([]ast.TypedSymbol, 1)
-	sourceSelectors := make([]ast.TypedSymbol, 1)
-	// Done
-	return ast.NewDefLookup(handle,
-		checked,
-		sourceSelectors, [][]ast.TypedSymbol{sources},
-		targetSelectors, [][]ast.TypedSymbol{targets}), nil
-}
-
-// Parse a conditional lookup declaration
-func (p *Parser) parseDefConditionalLookup(module file.Path, elements []sexp.SExp) (ast.Declaration, []SyntaxError) {
-	// Extract items
-	var (
-		targets, sources               []ast.TypedSymbol
-		targetSelector, sourceSelector ast.TypedSymbol
-		errs1, errs2, errs3, errs4     []SyntaxError
-	)
-	//
-	handle, checked, errors := p.parseLookupHandle(module, elements[1])
-	//
-	if len(elements) == 6 {
-		targetSelector, errs1 = p.parseDefLookupSelector(elements[2])
-		targets, errs2 = p.parseDefLookupSources("target", elements[3])
-		sourceSelector, errs3 = p.parseDefLookupSelector(elements[4])
-		sources, errs4 = p.parseDefLookupSources("source", elements[5])
-	} else {
-		// Assume source selector
-		targets, errs1 = p.parseDefLookupSources("target", elements[2])
-		sourceSelector, errs2 = p.parseDefLookupSelector(elements[3])
-		sources, errs3 = p.parseDefLookupSources("source", elements[4])
-	}
-	// Combine any and all errors
-	errors = append(errors, errs1...)
-	errors = append(errors, errs2...)
-	errors = append(errors, errs3...)
-	errors = append(errors, errs4...)
-	// Sanity check length of sources / targets
-	if len(sources) != len(targets) {
-		msg := fmt.Sprintf("differing number of source and target columns (%d v %d)", len(sources), len(targets))
-		errors = append(errors, *p.translator.SyntaxError(elements[3], msg))
-	}
-	// Error check
-	if len(errors) != 0 {
-		return nil, errors
-	}
-	// Done
-	return ast.NewDefLookup(handle,
-		checked,
-		[]ast.TypedSymbol{sourceSelector},
-		[][]ast.TypedSymbol{sources},
-		[]ast.TypedSymbol{targetSelector},
-		[][]ast.TypedSymbol{targets}), nil
-}
-
-func (p *Parser) parseDefMultiLookup(module file.Path, elements []sexp.SExp) (ast.Declaration, []SyntaxError) {
-	// Extract items
-	handle, checked, errors := p.parseLookupHandle(module, elements[1])
-	m, targets, tgtErrors := p.parseDefLookupMultiSources("target", elements[2])
-	n, sources, srcErrors := p.parseDefLookupMultiSources("source", elements[3])
-	// Combine any and all errors
-	errors = append(errors, srcErrors...)
-	errors = append(errors, tgtErrors...)
-	// Sanity check length of sources / targets
-	if n != m {
+	// Compare column widths only when both sides have vectors.
+	if len(sources) != 0 && len(targets) != 0 && n != m {
 		msg := fmt.Sprintf("differing number of source and target columns (%d v %d)", n, m)
-		errors = append(errors, *p.translator.SyntaxError(elements[3], msg))
+		errors = append(errors, *p.translator.SyntaxError(elements[2], msg))
 	}
 	// Error check
 	if len(errors) != 0 {
 		return nil, errors
 	}
-	//
-	targetSelectors := make([]ast.TypedSymbol, len(targets))
-	sourceSelectors := make([]ast.TypedSymbol, len(sources))
 	// Done
 	return ast.NewDefLookup(handle, checked, sourceSelectors, sources, targetSelectors, targets), nil
 }
@@ -746,64 +671,91 @@ func (p *Parser) parseLookupAttributes(list *sexp.List) (string, bool, []SyntaxE
 	return handle, checked, errors
 }
 
-func (p *Parser) parseDefLookupMultiSources(handle string, element sexp.SExp) (int, [][]ast.TypedSymbol,
-	[]SyntaxError) {
+// Parse the vectors making up one side (i.e. the sources or the targets) of a
+// lookup.  Each vector has the form "(SELECTOR COLUMNS...)" and, hence, must
+// begin with either a selector column or the placeholder "_" (meaning the
+// vector has no selector).  This returns the width of the vectors (i.e. their
+// number of columns, excluding the selector) along with the selector and
+// columns of each vector, where a nil selector signals there is none.
+func (p *Parser) parseDefLookupVectors(handle string, element sexp.SExp) (int, []ast.TypedSymbol,
+	[][]ast.TypedSymbol, []SyntaxError) {
 	//
 	var (
-		sexpTargets = element.AsList()
+		sexpVectors = element.AsList()
 		errors      []SyntaxError
 		width       int
 	)
-	// Check target expressions
-	if sexpTargets == nil {
-		return width, nil, p.translator.SyntaxErrors(element, "malformed target columns")
+	// Check vectors
+	if sexpVectors == nil {
+		msg := fmt.Sprintf("malformed %s vectors", handle)
+		return width, nil, nil, p.translator.SyntaxErrors(element, msg)
+	} else if sexpVectors.Len() == 0 {
+		msg := fmt.Sprintf("missing %s vector", handle)
+		return width, nil, nil, p.translator.SyntaxErrors(element, msg)
 	}
 	//
-	targets := make([][]ast.TypedSymbol, sexpTargets.Len())
-	// Translate all target expressions
-	for i := range sexpTargets.Len() {
-		ith := sexpTargets.Get(i).AsList()
-		// Sanity check length
+	selectors := make([]ast.TypedSymbol, sexpVectors.Len())
+	vectors := make([][]ast.TypedSymbol, sexpVectors.Len())
+	// Translate all vectors
+	for i := range sexpVectors.Len() {
+		ith := sexpVectors.Get(i).AsList()
+		// Sanity check vector
 		if ith == nil {
-			errors = append(errors, *p.translator.SyntaxError(ith, "malformed columns"))
-		} else if i != 0 && ith.Len() != width {
+			msg := fmt.Sprintf("malformed %s vector", handle)
+			errors = append(errors, *p.translator.SyntaxError(sexpVectors.Get(i), msg))
+		} else if ith.Len() == 0 {
+			errors = append(errors, *p.translator.SyntaxError(ith, "missing selector"))
+		} else if ith.Len() == 1 {
+			// NOTE: a vector without columns has no context (when it also has
+			// no selector) and, regardless, does not make sense.
+			msg := fmt.Sprintf("empty %s columns", handle)
+			errors = append(errors, *p.translator.SyntaxError(ith, msg))
+		} else if i != 0 && ith.Len()-1 != width {
 			errors = append(errors, *p.translator.SyntaxError(ith, "incorrect number of columns"))
 		} else {
-			ith_targets, errs := p.parseDefLookupSources(handle, ith)
-			errors = append(errors, errs...)
-			targets[i] = ith_targets
-			width = ith.Len()
+			selector, selErrors := p.parseDefLookupSelector(ith.Get(0))
+			columns, colErrors := p.parseDefLookupColumns(handle, ith.Elements[1:])
+			//
+			errors = append(errors, selErrors...)
+			errors = append(errors, colErrors...)
+			selectors[i] = selector
+			vectors[i] = columns
+			width = len(columns)
 		}
 	}
 	//
-	return width, targets, errors
+	return width, selectors, vectors, errors
 }
 
 func (p *Parser) parseDefLookupSources(handle string, element sexp.SExp) ([]ast.TypedSymbol, []SyntaxError) {
-	var (
-		sexpSources = element.AsList()
-		errors      []SyntaxError
-		sources     []ast.TypedSymbol
-	)
+	sexpSources := element.AsList()
 	// Check source columns
 	if sexpSources == nil {
 		msg := fmt.Sprintf("malformed %s columns", handle)
 		return nil, p.translator.SyntaxErrors(element, msg)
 	}
 	//
-	sources = make([]ast.TypedSymbol, sexpSources.Len())
+	return p.parseDefLookupColumns(handle, sexpSources.Elements)
+}
+
+// Parse the columns making up (one vector of) one side of a lookup.
+func (p *Parser) parseDefLookupColumns(handle string, elements []sexp.SExp) ([]ast.TypedSymbol, []SyntaxError) {
+	var (
+		errors  []SyntaxError
+		columns = make([]ast.TypedSymbol, len(elements))
+		msg     = fmt.Sprintf("malformed %s column", handle)
+	)
 	//
-	for i := 0; i != sexpSources.Len(); i++ {
-		msg := fmt.Sprintf("malformed %s column", handle)
-		// Sources must be column accesses, rather than arbitrary expressions.
-		ith, errs := p.parseColumnAccess(sexpSources.Get(i), msg)
+	for i, element := range elements {
+		// Columns must be column accesses, rather than arbitrary expressions.
+		ith, errs := p.parseColumnAccess(element, msg)
 		//
-		sources[i] = ith
+		columns[i] = ith
 		//
 		errors = append(errors, errs...)
 	}
 	//
-	return sources, errors
+	return columns, errors
 }
 
 // Parse a send / receive (i.e. bus port) declaration of the form
@@ -851,11 +803,23 @@ func (p *Parser) parseDefSendReceive(module file.Path, elements []sexp.SExp,
 	return ast.NewDefSendReceive(handle, busName, isSend, selector, columns), nil
 }
 
-// Parse the selector of a (conditional) lookup which, as for the sources /
-// targets it gates, must be a column access rather than an arbitrary
-// expression.
+// Parse the selector of a lookup vector which, as for the columns it gates,
+// must be a column access rather than an arbitrary expression.  The selector is
+// optional and nil is returned when the placeholder is given in its place.
 func (p *Parser) parseDefLookupSelector(element sexp.SExp) (ast.TypedSymbol, []SyntaxError) {
+	if isNoSelector(element) {
+		return nil, nil
+	}
+	//
 	return p.parseColumnAccess(element, "malformed selector")
+}
+
+// Check whether a given S-expression is the placeholder used in place of the
+// selector for a lookup vector which has none.
+func isNoSelector(element sexp.SExp) bool {
+	symbol := element.AsSymbol()
+	//
+	return symbol != nil && symbol.Value == ast.NO_SELECTOR
 }
 
 // Parse a column access, as arises (for example) within a lookup or range

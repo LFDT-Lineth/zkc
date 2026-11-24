@@ -308,10 +308,10 @@ func (t *translator[F]) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	return errors
 }
 
-// translateDefLookupSources translates one side of a lookup (i.e. either its
-// sources or its targets) into a corresponding lookup vector.  Since a lookup
-// vector is made up of registers, this also returns the bitwidth of each
-// register in the vector.
+// translateDefLookupSources translates one vector of a lookup (i.e. one of its
+// sources or targets, along with its optional selector) into a corresponding
+// lookup vector.  Since a lookup vector is made up of registers, this also
+// returns the bitwidth of each register in the vector.
 func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 	sources []ast.TypedSymbol) (lookup.Vector, []uint, ast.Context, []SyntaxError) {
 	// Determine context of ith set of targets
@@ -339,17 +339,17 @@ func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 	module := t.moduleOf(context)
 	// Translate source columns
 	accesses, errors := t.translateLookupColumns(sources)
-	// handle selector
+	// Translate selector (when present)
 	if selector != nil {
-		s, errs := t.registerOfRegisterAccess(selector, 0)
+		var errs []SyntaxError
+		//
+		sel, errs = t.registerOfRegisterAccess(selector, 0)
 		errors = append(errors, errs...)
-		sel = s
-	}
-	// Sanity check vector
-	if len(errors) == 0 {
-		// NOTE: don't check vector if other errors, since we could have nil
-		// entries in the vector, etc.
-		errors = append(errors, t.checkLookupVector(sel, selector)...)
+		// Sanity check selector.  NOTE: don't check if other errors, since the
+		// selector may not have been translated.
+		if len(errors) == 0 {
+			errors = append(errors, t.checkLookupVector(sel, selector)...)
+		}
 	}
 	// Don't attempt to construct the vector if anything went wrong, since some
 	// of its registers may not have been translated.
@@ -359,7 +359,7 @@ func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 	//
 	registers, widths := registersOfAccesses(accesses)
 	// Done
-	if sel != nil {
+	if selector != nil {
 		return lookup.FilteredVector(module.Id(), sel.Register(), registers...), widths, context, errors
 	}
 	//
@@ -515,23 +515,17 @@ func registersOfAccesses[F field.Element[F]](accesses []*mir.RegisterAccess[F]) 
 
 // checkLookupVector sanity checks one side of a lookup.  Since the registers
 // making up a lookup vector are unsigned by construction, all that remains is
-// to check the selector (when present) is binary.
+// to check the selector is binary.
 func (t *translator[F]) checkLookupVector(sel *mir.RegisterAccess[F], selector ast.TypedSymbol) []SyntaxError {
-	//
-	var errors []SyntaxError
-	// Check selector is binary
-	if sel != nil {
-		// Determine value range of the selector
-		valrange := sel.ValueRange()
-		// Determine bitwidth for that range
-		bitwidth, _ := valrange.BitWidth()
-		// Check for non-binary selector
-		if bitwidth > 1 {
-			errors = append(errors, *t.srcmap.SyntaxError(selector, "non-binary selector encountered"))
-		}
+	// Determine bitwidth for the value range of the selector
+	valrange := sel.ValueRange()
+	bitwidth, _ := valrange.BitWidth()
+	// Check for non-binary selector
+	if bitwidth > 1 {
+		return t.srcmap.SyntaxErrors(selector, "non-binary selector encountered")
 	}
 	// Done
-	return errors
+	return nil
 }
 
 // Translate a "definrange" declaration.

@@ -308,9 +308,9 @@ func (r *resolver) finaliseDefSendReceiveInModule(enclosing Scope, decl *ast.Def
 	return errors
 }
 
-// Resolve one side of a lookup constraint (i.e. a set of source or target
-// columns, along with their optional selector) within a single scope.  Sharing
-// the scope ensures the columns (and selector) all reside in the same context.
+// Resolve one vector of a lookup constraint or bus port (i.e. a set of columns,
+// along with their optional selector) within a single scope.  Sharing the scope
+// ensures the columns (and selector) all reside in the same context.
 func (r *resolver) finaliseLookupColumnsInModule(enclosing Scope, selector ast.TypedSymbol,
 	columns []ast.TypedSymbol) []SyntaxError {
 	//

@@ -1,7 +1,7 @@
 (module m1)
-(defcolumns (X :i16))
+(defcolumns (X :i16) (one :i1 :constant 1))
 
 (module m2)
-(defcolumns (Y :i16))
+(defcolumns (Y :i16) (one :i1 :constant 1))
 ;;
-(deflookup test (Y) (m1.X))
+(deflookup test ((m1.one m1.X)) ((one Y)))

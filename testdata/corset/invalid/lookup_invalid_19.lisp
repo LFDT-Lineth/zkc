@@ -1,7 +1,7 @@
-;;error:7:13-17:duplicate handle
+;;error:7:12-16:duplicate handle
 (module m1)
-(defcolumns (X :i16) (Y :i16))
-(defclookup test (Y) 1 (X))
+(defcolumns (X :i16) (Y :i16) (one :i1 :constant 1))
+(deflookup test ((one X)) ((one Y)))
 
 (module m1)
-(defclookup test (X) 1 (Y))
+(deflookup test ((one Y)) ((one X)))

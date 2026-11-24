@@ -1,8 +1,8 @@
-;;error:8:30-34:conflicting context
+;;error:8:23-27:conflicting context
 (module m1)
-(defcolumns (X :i16) (Y :i16) (Z :i16))
+(defcolumns (X :i16) (Y :i16) (Z :i16) (one :i1 :constant 1))
 
 (module m2)
-(defcolumns (A :i16))
+(defcolumns (A :i16) (one :i1 :constant 1))
 
-(deflookup l1 (m1.X m1.Y) (A m1.Z))
+(deflookup l1 ((one A m1.Z)) ((m1.one m1.X m1.Y)))
