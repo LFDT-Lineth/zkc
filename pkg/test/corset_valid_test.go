@@ -565,6 +565,118 @@ func Test_Valid_Lookup_31(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_31", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
+// NOTE: lookups 32 -- 58 duplicate (in order) those lookups above which use a
+// constant selector column, except that some (or all) of their selectors are
+// omitted.  Each fixture identifies the lookup it duplicates.
+
+func Test_Valid_Lookup_32(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_32", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_33(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_33", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_34(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_34", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_35(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_35", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_36(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_36", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_37(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_37", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_38(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_38", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_39(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_39", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_40(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_40", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_41(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_41", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_42(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_42", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_43(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_43", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_44(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_44", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_45(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_45", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_46(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_46", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_47(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_47", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_48(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_48", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_49(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_49", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_50(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_50", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_51(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_51", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_52(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_52", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_53(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_53", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_54(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_54", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_55(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_55", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_56(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_56", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_57(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_57", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Lookup_58(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/lookup_58", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
 // ===================================================================
 // Bus (send / receive) Tests
 // ===================================================================

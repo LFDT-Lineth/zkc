@@ -1,7 +1,6 @@
 GOCORSET_VERSION:=$(shell git describe --always --tags)
 GOCORSET_VERSION_PATH:="github.com/LFDT-Lineth/zkc/pkg/cmd/corset"
 GOLANGCI_VERSION:=2.14.0
-PROJECT_NAME:=go-corset
 GOPATH_BIN:=$(shell go env GOPATH)/bin
 ZKC_LINTABLE_FILES=$(shell find testdata/zkc -name "*.zkc" -not -path "*/invalid/*")
 # Define set of unit tests
@@ -71,8 +70,8 @@ zkc-racer-test:
 	go test -v -race --timeout 0 -run "Test_ZkcBench_FastPow|Test_ZkcBench_Sort" pkg/test/zkc_bench_test.go
 
 build:
-	@echo ">>> Building ${PROJECT_NAME}... ${GOCORSET_VERSION}"
-	go build -ldflags="-X '${GOCORSET_VERSION_PATH}.Version=${GOCORSET_VERSION}'" -o bin/${PROJECT_NAME} cmd/${PROJECT_NAME}/main.go
+	@echo ">>> Building go-corset... ${GOCORSET_VERSION}"
+	go build -ldflags="-X '${GOCORSET_VERSION_PATH}.Version=${GOCORSET_VERSION}'" -o bin/go-corset cmd/corset/main.go
 
 clean:
 	@echo ">>> Removing old binaries and env files..."

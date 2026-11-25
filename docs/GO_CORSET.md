@@ -28,6 +28,12 @@ into an _Arithmetic Intermediate Representation (AIR)_ consisting of:
 (1) _vanishing constraints_; (2) _range constraints_; (3) _lookup
 arguments_; and (4) _bus constraints_.
 
+A lookup has the form `(deflookup HANDLE SOURCES TARGETS)`. Each side must list
+at least one vector. Every selected source tuple must occur among the selected
+target tuples; extra target tuples are allowed. For example,
+`(deflookup member ((EN X)) ((_ Y)))` requires each value of `X` on rows where
+`EN` is one to occur somewhere in `Y`. The `_` selects all target rows.
+
 A bus constraint requires that the multiset of messages sent on a named
 bus equals the multiset received on it. Modules participate through
 `defsend` / `defrecv` declarations of the form:

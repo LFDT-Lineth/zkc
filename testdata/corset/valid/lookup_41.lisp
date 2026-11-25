@@ -1,0 +1,6 @@
+;; As lookup_10, but without selectors.
+(module m1)
+(defcolumns (X :i16) (Y :i17) (X2 :i17))
+;; X2 holds the value of the expression (* X 2)
+(defconstraint x2_def () (== X2 (* X 2)))
+(deflookup test ((_ X2)) ((_ Y)))
