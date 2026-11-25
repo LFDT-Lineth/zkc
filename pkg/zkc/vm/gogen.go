@@ -28,8 +28,8 @@ type GoGenConfig = gogen.Config
 // GoGenBinary gives a handle to a compiled gogen binary executable.
 type GoGenBinary = gogen.Binary
 
-// GoGenExecutor manages compiled binaries efficiently allowing reuse.
-type GoGenExecutor = gogen.Executor
+// GoGenManager manages compiled binaries efficiently allowing reuse.
+type GoGenManager = gogen.Environment
 
 // GoGenMachineFailure is used to indicate when a gogen binary leads to a
 // machine failure, as opposed to any other kind of internal error.
@@ -39,9 +39,9 @@ var GoGenMachineFailure = gogen.ErrMachineFailure
 // generally sufficient for small, self-contained tests.
 var DEFAULT_GOGEN_CONFIG = gogen.DEFAULT_CONFIG
 
-// NewGoGenExecutor initialises an empty executor.
-func NewGoGenExecutor() *GoGenExecutor {
-	return gogen.NewExecutor()
+// NewGoGenManager initialises an empty executor.
+func NewGoGenManager() *GoGenManager {
+	return gogen.NewEnvironment()
 }
 
 // GoGenGenerate compiles a bytecode program into native Go source: the "fast
@@ -58,15 +58,9 @@ func GoGenGenerate(program Program[Uint], cfg GoGenConfig) (string, error) {
 	return gogen.Generate(program, cfg)
 }
 
-// GoGenCompile compiles a ZkC program into a GoGen program which can be
-// executed, or an error indicating some kind of compilation failure.
-func GoGenCompile(program Program[Uint]) (GoGenBinary, error) {
-	return gogen.Compile(program, gogen.DEFAULT_CONFIG)
-}
-
 // BootAndExecuteWithGogen executes the given program by generating native Go,
 // compiling it, and running the resulting binary as a subprocess.
-func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array, executor *gogen.Executor,
+func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array, executor *gogen.Environment,
 ) (map[string]bit.Array, bool, []error) {
 	var (
 		output map[string]bit.Array
@@ -99,7 +93,7 @@ func BootAndExecuteWithGogen(program Program[Uint], input map[string]bit.Array, 
 // according to the given strategy, and these are then passed on to the
 // checkpointing function.
 func BootAndCheckpointWithGogen(program Program[Uint], input map[string]bit.Array, cp CheckPointer,
-	executor *gogen.Executor) (map[string]bit.Array, bool, []error) {
+	executor *gogen.Environment) (map[string]bit.Array, bool, []error) {
 	var (
 		output       map[string]bit.Array
 		binary       gogen.Binary

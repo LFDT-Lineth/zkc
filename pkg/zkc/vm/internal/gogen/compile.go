@@ -29,7 +29,6 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/checkpoint"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
-	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 )
 
 // Binary interchange between a generated harness and its parent (i.e. Binary):
@@ -102,26 +101,9 @@ func (p Config) WithCheckPointing(strategy descriptor.ShardingStrategy) Config {
 // sufficient for small, self-contained tests.
 var DEFAULT_CONFIG = Config{}
 
-// Compile compiles a ZkC program into a GoGen program which can be
-// executed, or an error indicating some kind of compilation failure.  This
+// build a given source string into a Go executable using "go build".   This
 // requires a Go toolchain on the PATH, and fails if none is found.
-func Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
-	// Generate native Go source for the word machine.
-	var (
-		err error
-		src string
-	)
-	// Attempt to generate source
-	if src, err = Generate(program, config); err != nil {
-		return Binary{}, err
-	}
-	// Build source into executable
-	return Build(src)
-}
-
-// Build a given source string into a Go executable using "go build".   This
-// requires a Go toolchain on the PATH, and fails if none is found.
-func Build(src string) (Binary, error) {
+func build(src string) (Binary, error) {
 	var dir string
 	// Locate the Go toolchain up front, so its absence is reported clearly
 	// (rather than as an obscure build failure).
@@ -171,17 +153,6 @@ func Build(src string) (Binary, error) {
 type Binary struct {
 	// Path to the compiled executable
 	path string
-}
-
-// Free any resources used by this handle, such as a physical executable stored
-// on the file system.
-func (p *Binary) Free() error {
-	if p.path != "" {
-		// Remove temp directory
-		return os.RemoveAll(filepath.Dir(p.path))
-	}
-	//
-	return nil
 }
 
 // Path returns the path of this binary executable.

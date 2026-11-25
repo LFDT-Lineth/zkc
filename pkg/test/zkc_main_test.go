@@ -23,7 +23,7 @@ import (
 // TestMain manages resources for all tests
 func TestMain(m *testing.M) {
 	// Access default executor
-	var executor = test_util.GOGEN_EXECUTOR
+	var executor = test_util.GOGEN_MANAGER
 	// Register proper exit handler
 	util.RegisterExitHandler(executor.Close)
 	// Run all tests in the package

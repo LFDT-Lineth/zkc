@@ -33,7 +33,7 @@ type TestConfig struct {
 	// enable constraints checking, or not.
 	constraints bool
 	// enable the generated-Go ("native") executor
-	gogen util.Option[*vm.GoGenExecutor]
+	gogen util.Option[*vm.GoGenManager]
 	// enable verbose mode.
 	verbose bool
 	// optional sampling percentage
@@ -62,9 +62,9 @@ func (p TestConfig) MaxStaticHeights(heights ...uint) TestConfig {
 // rather than failed (see runGogenExecutionTest).
 func (p TestConfig) GoGen(flag bool) TestConfig {
 	if flag {
-		p.gogen = util.Some(GOGEN_EXECUTOR)
+		p.gogen = util.Some(GOGEN_MANAGER)
 	} else {
-		p.gogen = util.None[*vm.GoGenExecutor]()
+		p.gogen = util.None[*vm.GoGenManager]()
 	}
 	//
 	return p

@@ -62,10 +62,10 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		outputs map[string]bit.Array
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
-		// create fresh executor
-		executor = vm.NewGoGenExecutor()
+		// create fresh gogen manager
+		manager = vm.NewGoGenManager()
 		// register exit handler
-		release = util.RegisterExitHandler(executor.Close)
+		release = util.RegisterExitHandler(manager.Close)
 	)
 	// Ensure resources held by executor released.
 	defer release()
@@ -75,7 +75,7 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 	execConfig := vm.DEFAULT_EXECUTION_CONFIG
 	// Configure gogen
 	if build.gogen {
-		execConfig = execConfig.WithGoGen(util.Some(executor))
+		execConfig = execConfig.WithGoGen(util.Some(manager))
 	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binfile := Build[F, W](build, args[1:]...)

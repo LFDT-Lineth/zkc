@@ -36,8 +36,8 @@ import (
 )
 
 var (
-	// GOGEN_EXECUTOR is the default gogen executor used for all tests.
-	GOGEN_EXECUTOR = vm.NewGoGenExecutor()
+	// GOGEN_MANAGER is the default gogen executor used for all tests.
+	GOGEN_MANAGER = vm.NewGoGenManager()
 	// MIN_SAMPLE_SIZE determines the least number of test cases for which
 	// sampling is permitted.  Essentially, if sampling is enabled by there are
 	// less than 10 test vectors, then it automatically causes a test failure.
@@ -64,7 +64,7 @@ var (
 	DEFAULT_CONFIG = TestConfig{
 		fields:            DEFAULT_FIELDS,
 		constraints:       true,
-		gogen:             util.Some(GOGEN_EXECUTOR),
+		gogen:             util.Some(GOGEN_MANAGER),
 		verbose:           false,
 		sampling:          util.None[float64](),
 		maxStaticHeights:  []uint{codegen.DEFAULT_MAX_STATIC_HEIGHT},

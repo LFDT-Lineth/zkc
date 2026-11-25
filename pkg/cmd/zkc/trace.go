@@ -88,10 +88,10 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		sharding = GetString(cmd, "sharding")
 		//
 		includes = GetStringArray(cmd, "include")
-		// create fresh executor
-		executor = vm.NewGoGenExecutor()
+		// create fresh gogen manager
+		manager = vm.NewGoGenManager()
 		// register exit handler
-		release = util.RegisterExitHandler(executor.Close)
+		release = util.RegisterExitHandler(manager.Close)
 		// Indicate as to whether trace was fully computed or not.
 		computed = false
 		//
@@ -116,7 +116,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		WithParallelism(!GetFlag(cmd, "sequential"))
 	// Configure gogen
 	if build.gogen {
-		traceConfig = traceConfig.WithGoGen(util.Some(executor))
+		traceConfig = traceConfig.WithGoGen(util.Some(manager))
 	}
 	//
 	if sharding != "" {

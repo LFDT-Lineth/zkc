@@ -801,6 +801,10 @@ fn main() {
 
 // TestGenDifferential runs the shared corpus: see the comment on diffCase.
 func TestGenDifferential(t *testing.T) {
+	var gogenEnv = gogen.NewEnvironment()
+	// Ensure resources released
+	defer gogenCleanUp(t, gogenEnv)
+	//
 	for _, tc := range diffCases {
 		if tc.skip {
 			continue
@@ -808,14 +812,13 @@ func TestGenDifferential(t *testing.T) {
 		//
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
-				p := compileUint(t, tc.src, shape.fastMode)
-
-				binary, err := gogen.Compile(p, gogen.DEFAULT_CONFIG)
+				var p = compileUint(t, tc.src, shape.fastMode)
+				// Compile test program
+				binary, err := gogenEnv.Compile(p, gogen.DEFAULT_CONFIG)
+				//
 				if err != nil {
 					t.Fatalf("Compile: %v", err)
 				}
-				//
-				registerCleanUp(t, binary)
 				//
 				for _, in := range tc.vectors {
 					t.Run(inputName(in), func(t *testing.T) {
@@ -847,14 +850,17 @@ func TestGenDifferential(t *testing.T) {
 
 func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 	var (
-		data        = bit.NewArray(nil, 0, bit.BigEndian)
-		binary, err = gogen.Compile(compileUint(t, doubleSrc, false), gogen.DEFAULT_CONFIG)
+		data     = bit.NewArray(nil, 0, bit.BigEndian)
+		gogenEnv = gogen.NewEnvironment()
 	)
+	// Ensure resources released
+	defer gogenCleanUp(t, gogenEnv)
+	// Compile test program
+	binary, err := gogenEnv.Compile(compileUint(t, doubleSrc, false), gogen.DEFAULT_CONFIG)
+	//
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
-	//
-	registerCleanUp(t, binary)
 	//
 	for _, tc := range []struct {
 		name string
@@ -880,6 +886,12 @@ func TestMainHarnessRejectsBadInputNames(t *testing.T) {
 // message gogen reproduces, the message reaching the parent (within an error
 // still recognised as a machine failure) is identical to the interpreter's.
 func TestGenFailureMessages(t *testing.T) {
+	var (
+		gogenEnv = gogen.NewEnvironment()
+	)
+	// Ensure resources released
+	defer gogenCleanUp(t, gogenEnv)
+	//
 	for _, tc := range []struct {
 		name, src string
 		in        map[string][]uint64
@@ -925,17 +937,16 @@ fn main() {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var (
-				p           = compileUint(t, tc.src, false)
-				inBytes     = encodeInputs(p, tc.in)
-				binary, err = gogen.Compile(p, gogen.DEFAULT_CONFIG)
-				mf          *gogen.MachineFailure
+				p       = compileUint(t, tc.src, false)
+				inBytes = encodeInputs(p, tc.in)
+				mf      *gogen.MachineFailure
 			)
+			// Compile test program
+			binary, err := gogenEnv.Compile(p, gogen.DEFAULT_CONFIG)
 			//
 			if err != nil {
 				t.Fatalf("Compile: %v", err)
 			}
-			//
-			registerCleanUp(t, binary)
 			// Execute reference program
 			_, refErr := referenceExec(t, p, inBytes)
 			// Execute GoGen binary
@@ -1047,10 +1058,8 @@ func encodeInputs(p vm.Program[vm.Uint], in map[string][]uint64) map[string]bit.
 	return out
 }
 
-func registerCleanUp(t *testing.T, binary vm.GoGenBinary) {
-	t.Cleanup(func() {
-		if err := binary.Free(); err != nil {
-			t.Error(err)
-		}
-	})
+func gogenCleanUp(t *testing.T, manager *gogen.Environment) {
+	if err := manager.Close(); err != nil {
+		t.Error(err)
+	}
 }

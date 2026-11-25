@@ -36,8 +36,13 @@ import (
 // GOGEN_FUZZ_N sets the vectors per (fixture, shape); e.g. GOGEN_FUZZ_N=320
 // yields ≥ 10^4 total runs (the acceptance bar).
 func TestGenFuzz(t *testing.T) {
-	n := 25
-
+	var (
+		gogenEnv = gogen.NewEnvironment()
+		n        = 25
+	)
+	// Ensure resources released
+	defer gogenCleanUp(t, gogenEnv)
+	//
 	if s := os.Getenv("GOGEN_FUZZ_N"); s != "" {
 		if v, err := strconv.Atoi(s); err == nil {
 			n = v
@@ -53,15 +58,13 @@ func TestGenFuzz(t *testing.T) {
 		//
 		for _, shape := range shapes {
 			t.Run(tc.name+"/"+shape.name, func(t *testing.T) {
-				m := compileUint(t, tc.src, shape.fastMode)
-
-				binary, err := gogen.Compile(m, gogen.DEFAULT_CONFIG)
+				var m = compileUint(t, tc.src, shape.fastMode)
+				// Compile test program
+				binary, err := gogenEnv.Compile(m, gogen.DEFAULT_CONFIG)
 				//
 				if err != nil {
 					t.Fatalf("Compile: %v", err)
 				}
-				//
-				registerCleanUp(t, binary)
 				//
 				for i := 0; i < n; i++ {
 					in := randomInputs(rng, tc.vectors[0])

@@ -14,6 +14,9 @@
 package gogen
 
 import (
+	"os"
+	"path/filepath"
+
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/lazy"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
@@ -25,30 +28,30 @@ import (
 // GoGenExecutor
 // ============================================================================
 
-// Executor provides a means of reusing compiled binaries across different calls
+// Environment provides a means of reusing compiled binaries across different calls
 // to Compile().  Concurrent requests for the same program / configuration pair
 // share a single compilation, whilst those for different ones compile in
 // parallel.  Finally, resources are released when Close is called.
-type Executor struct {
+type Environment struct {
 	manager *lazy.ResourceManager[string, Binary]
 }
 
-// NewExecutor constructs a new gogen executor.
-func NewExecutor() *Executor {
-	return &Executor{
+// NewEnvironment constructs a new gogen executor.
+func NewEnvironment() *Environment {
+	return &Environment{
 		manager: lazy.NewResourceManager("gogen", compile, release),
 	}
 }
 
 // Handle implementation for Closeable interface.
-func (p *Executor) Handle() string {
+func (p *Environment) Handle() string {
 	return "gogen"
 }
 
 // Close implementable for Closeable interface.  This releases all cached
 // results and prevents anything more from being compiled.  This waits for any
 // compilations still in flight, so that their binaries are released as well.
-func (p *Executor) Close() error {
+func (p *Environment) Close() error {
 	var n, err = p.manager.Close()
 	//
 	log.Info("gogen: released ", n, " cached binaries")
@@ -62,7 +65,7 @@ func (p *Executor) Close() error {
 // of that compilation (whether a binary or a failure) is cached such that it is
 // reused on subsequent calls.  Once the executor is closed, this always fails
 // with a [lazy.ResourceManagerClosed] error.
-func (p *Executor) Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
+func (p *Environment) Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
 	var stats = util.NewPerfStats()
 	// Check whether manager is closed already, or not.
 	if p.manager.IsClosed() {
@@ -95,7 +98,7 @@ func compile(key string) (binary Binary, err error) {
 	if source, fmtErr := formatSource(key); fmtErr != nil {
 		err = fmtErr
 	} else {
-		binary, err = Build(source)
+		binary, err = build(source)
 	}
 	// Log stats
 	log.Info("Compiled gogen binary ", binary.path, " ", stats.String())
@@ -103,6 +106,13 @@ func compile(key string) (binary Binary, err error) {
 	return binary, err
 }
 
+// Free resources used by a given binary (e.g. a physical executable stored on
+// the file system).
 func release(b Binary) error {
-	return b.Free()
+	if b.path != "" {
+		// Remove temp directory
+		return os.RemoveAll(filepath.Dir(b.path))
+	}
+	//
+	return nil
 }
