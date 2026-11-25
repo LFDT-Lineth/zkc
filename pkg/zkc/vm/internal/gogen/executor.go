@@ -14,54 +14,46 @@
 package gogen
 
 import (
-	"errors"
-	"sync"
-
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/lazy"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/descriptor"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/vm/internal/word"
 	log "github.com/sirupsen/logrus"
 )
 
-// A compilation is the (possibly still in-flight) outcome of compiling a given
-// key, and is shared by every caller requesting that key.  The caller which
-// created the compilation is its owner: it alone runs the compiler, writes the
-// outcome and then closes done.  Everybody else must wait on done before
-// reading the outcome.
-type compilation struct {
-	// Closed by the owner once binary and err have been written.
-	done chan struct{}
-	// Compiled binary (only valid when err is nil).
-	binary Binary
-	// Compilation failure (if any).
-	err error
-}
-
 // ============================================================================
 // GoGenExecutor
 // ============================================================================
-
-// ErrExecutorClosed is returned by Compile once the executor has been closed.
-var ErrExecutorClosed = errors.New("gogen executor closed")
 
 // Executor provides a means of reusing compiled binaries across different calls
 // to Compile().  Concurrent requests for the same program / configuration pair
 // share a single compilation, whilst those for different ones compile in
 // parallel.  Finally, resources are released when Close is called.
 type Executor struct {
-	database map[string]*compilation
-	// Set by Close, after which no more compilations are accepted.
-	closed bool
-	// Protects database and closed (but not the compilations held in the
-	// database, see compilation).
-	mu sync.Mutex
+	manager *lazy.ResourceManager[string, Binary]
 }
 
 // NewExecutor constructs a new gogen executor.
 func NewExecutor() *Executor {
 	return &Executor{
-		database: make(map[string]*compilation),
+		manager: lazy.NewResourceManager("gogen", compile, release),
 	}
+}
+
+// Handle implementation for Closeable interface.
+func (p *Executor) Handle() string {
+	return "gogen"
+}
+
+// Close implementable for Closeable interface.  This releases all cached
+// results and prevents anything more from being compiled.  This waits for any
+// compilations still in flight, so that their binaries are released as well.
+func (p *Executor) Close() error {
+	var n, err = p.manager.Close()
+	//
+	log.Info("gogen: released ", n, " cached binaries")
+	//
+	return err
 }
 
 // Compile compiles a ZkC program into a GoGen program which can be executed, or
@@ -69,124 +61,48 @@ func NewExecutor() *Executor {
 // toolchain on the PATH, and fails if none is found.  Furthermore, the outcome
 // of that compilation (whether a binary or a failure) is cached such that it is
 // reused on subsequent calls.  Once the executor is closed, this always fails
-// with ErrExecutorClosed.
+// with a [lazy.ResourceManagerClosed] error.
 func (p *Executor) Compile(program descriptor.Program[word.Uint], config Config) (Binary, error) {
-	if p.isClosed() {
-		return Binary{}, ErrExecutorClosed
+	var stats = util.NewPerfStats()
+	// Check whether manager is closed already, or not.
+	if p.manager.IsClosed() {
+		return Binary{}, lazy.NewErrResourceManagerClosed("gogen")
 	}
-	// Generate the key without blocking other callers or Close.
+	// Generate unformatted source program as the resource key.
 	key, err := generateRaw(program, config)
+	// Sanity check
 	if err != nil {
 		return Binary{}, err
 	}
-	// Claim rechecks closure in case Close ran during generation.
-	entry, owner, err := p.claim(key)
-	if err != nil {
-		return Binary{}, err
-	}
-	// Check whether somebody else is (or was) responsible for compiling this.
-	if !owner {
-		// Yes, so wait for them to finish (if they haven't already).
-		<-entry.done
-		//
-		if entry.err == nil {
-			log.Info("Reusing cached gogen binary ", entry.binary.path)
-		}
-		//
-		return entry.binary, entry.err
-	}
-	// No, so compile program ourselves.  Waiters are released upon leaving this
-	// function, even if the compiler panics.
-	defer close(entry.done)
+	// Get the given resource from the manager, potentially compiling it from
+	// scratch as necessary.
+	binary, cached, err := p.manager.Get(key)
 	//
+	if err != nil {
+		return Binary{}, err
+	} else if cached {
+		log.Info("gogen: reusing cached binary ", binary.path)
+	} else {
+		log.Info("gogen: compiled gogen binary ", binary.path, " ", stats.String())
+	}
+	//
+	return binary, nil
+}
+
+func compile(key string) (binary Binary, err error) {
 	stats := util.NewPerfStats()
 	// Format source before building it
 	if source, fmtErr := formatSource(key); fmtErr != nil {
-		entry.err = fmtErr
+		err = fmtErr
 	} else {
-		entry.binary, entry.err = Build(source)
+		binary, err = Build(source)
 	}
 	// Log stats
-	log.Info("Compiled gogen binary ", entry.binary.path, " ", stats.String())
-	//
-	return entry.binary, entry.err
+	log.Info("Compiled gogen binary ", binary.path, " ", stats.String())
+	// Done
+	return binary, err
 }
 
-// Close releases all cached results and prevents anything more from being
-// compiled.  This waits for any compilations still in flight, so that their
-// binaries are released as well.  Thus, no binary outlives this call, even
-// when it races against calls to Compile.
-func (p *Executor) Close() error {
-	var (
-		errs    []error
-		entries = p.closeAndDetachAll()
-	)
-	//
-	log.Info("Releasing ", len(entries), " cached gogen binaries")
-	//
-	for _, entry := range entries {
-		// Wait for compilation to finish (if it hasn't already).
-		<-entry.done
-		// Failed compilations hold no resources.
-		if entry.err == nil {
-			// Release resources
-			errs = append(errs, entry.binary.Free())
-		}
-	}
-	// Return any errors arising
-	return errors.Join(errs...)
-}
-
-func (p *Executor) isClosed() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	return p.closed
-}
-
-// claim returns the compilation for a given key, creating it if there is none.
-// In the latter case this returns true to signal that the caller is now its
-// owner and, hence, is responsible for completing it.  No compilation can be
-// claimed once the executor is closed.
-func (p *Executor) claim(key string) (*compilation, bool, error) {
-	// Take lock
-	p.mu.Lock()
-	// Release lock upon leaving function
-	defer func() { p.mu.Unlock() }()
-	// Check whether or not executor still accepting compilations.
-	if p.closed {
-		return nil, false, ErrExecutorClosed
-	}
-	// Check whether or not this compilation already exists.
-	if entry, exists := p.database[key]; exists {
-		// Yes, return it.
-		return entry, false, nil
-	}
-	// No, so register it before anybody else does.
-	entry := &compilation{done: make(chan struct{})}
-	p.database[key] = entry
-	//
-	return entry, true, nil
-}
-
-// closeAndDetachAll closes the executor, then removes every compilation from
-// the database and returns them.  Doing both under the lock ensures every
-// compilation ever claimed is amongst those returned by some call to this.  The
-// lock is not held whilst the caller waits on them.
-func (p *Executor) closeAndDetachAll() []*compilation {
-	var entries []*compilation
-	// Take lock
-	p.mu.Lock()
-	// Release lock upon leaving function
-	defer func() { p.mu.Unlock() }()
-	// Refuse any further compilations
-	p.closed = true
-	//
-	for _, v := range p.database {
-		entries = append(entries, v)
-	}
-	// Reset database
-	clear(p.database)
-	//
-	return entries
+func release(b Binary) error {
+	return b.Free()
 }

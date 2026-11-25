@@ -65,7 +65,7 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		// create fresh executor
 		executor = vm.NewGoGenExecutor()
 		// register exit handler
-		release = RegisterExitHandler(executor)
+		release = util.RegisterExitHandler(executor.Close)
 	)
 	// Ensure resources held by executor released.
 	defer release()

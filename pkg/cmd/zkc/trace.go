@@ -91,7 +91,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		// create fresh executor
 		executor = vm.NewGoGenExecutor()
 		// register exit handler
-		release = RegisterExitHandler(executor)
+		release = util.RegisterExitHandler(executor.Close)
 		// Indicate as to whether trace was fully computed or not.
 		computed = false
 		//

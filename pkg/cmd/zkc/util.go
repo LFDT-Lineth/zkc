@@ -16,14 +16,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"os/signal"
 	"path"
 	"runtime"
 	"runtime/pprof"
 	"strings"
-	"sync"
-	"sync/atomic"
-	"syscall"
 
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/trace/json"
@@ -48,75 +44,6 @@ func filterInputs[W vm.Word[W], T any](p vm.Program[W], input map[string]T) map[
 	}
 	//
 	return inputs
-}
-
-// RegisterExitHandler returns a function closing a given gogen executor and,
-// hence, releasing its resources (e.g. compiled binaries on disk).  That
-// function is safe to call repeatedly and concurrently: the executor is closed
-// exactly once, and every caller returns only after that has completed.
-// Callers remain responsible for calling it upon returning normally, but it is
-// also called when the process:
-//
-//   - exits through log.Exit() or log.Fatal().  Such exits bypass deferred
-//     functions and, hence, commands in this package must not call os.Exit()
-//     directly.
-//
-//   - is interrupted (e.g. via ctrl-c) or asked to terminate.  The process then
-//     dies from that same signal, so that its parent (e.g. a shell script)
-//     observes an interrupt rather than a normal exit.
-func RegisterExitHandler(executor *vm.GoGenExecutor) func() {
-	var (
-		// Set upon catching a signal, which commits the process to dying from
-		// that signal.
-		interrupted atomic.Bool
-		//
-		clear = sync.OnceFunc(func() {
-			if err := executor.Close(); err != nil {
-				log.Warn("failed releasing gogen binaries: ", err)
-			}
-		})
-		//
-		release = func() {
-			clear()
-			// Leave termination to the signal handler (if it is running).
-			// Otherwise, the process could exit normally before the signal is
-			// raised again (e.g. upon a failure caused by the release itself).
-			if interrupted.Load() {
-				select {}
-			}
-		}
-		//
-		signals = make(chan os.Signal, 1)
-	)
-	//
-	log.RegisterExitHandler(release)
-	// Catch only signals which would otherwise terminate the process.  Those
-	// ignored when the process started (e.g. under nohup) must stay ignored.
-	for _, sig := range []os.Signal{os.Interrupt, syscall.SIGTERM} {
-		if !signal.Ignored(sig) {
-			signal.Notify(signals, sig)
-		}
-	}
-	//
-	go func() {
-		sig := <-signals
-		//
-		interrupted.Store(true)
-		// Restore the default behaviour (i.e. terminate the process), so that
-		// repeating the signal kills the process outright should the release
-		// block (e.g. waiting on a compilation still in flight).
-		signal.Stop(signals)
-		clear()
-		// Raise the signal again, now that nothing catches it.
-		if p, err := os.FindProcess(os.Getpid()); err == nil && p.Signal(sig) == nil {
-			// Wait for the signal to terminate the process.
-			select {}
-		}
-		// Signal could not be raised (e.g. unsupported on this platform).
-		os.Exit(1)
-	}()
-	//
-	return release
 }
 
 func startCpuProfiling(cmd *cobra.Command) *os.File {
