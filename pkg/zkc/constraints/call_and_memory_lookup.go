@@ -20,6 +20,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
@@ -369,13 +370,13 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F], ctx 
 		tgtIds = append(tgtIds, register.NewId(uint(i)))
 	}
 	// Build the source (caller) vector.
-	var source = lookup.FilteredVector(ctx, srcSelector, srcIds...)
+	var source = constraint.FilteredVector(ctx, srcSelector, srcIds...)
 	// Build the target (callee) vector.
 	var target mir.LookupVector
 	// Native module don't have a $ret function
 	// (do we need one ? see https://github.com/LFDT-Lineth/zkc/issues/2025)
 	if callee.IsNative() {
-		target = lookup.UnfilteredVector(uint(calleeId), tgtIds...)
+		target = constraint.UnfilteredVector(uint(calleeId), tgtIds...)
 	} else {
 		// Both multi-line and atomic (one-line) callees expose a $ret line which is 1
 		// on active rows; use it as the lookup selector.
@@ -384,7 +385,7 @@ func emitCallLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F], ctx 
 		// Atomic callees have $ret line as well. Only OLI that touches memmory should have one.
 		var retId = register.NewId(uint(len(calleeRegs)))
 		//
-		target = lookup.FilteredVector(uint(calleeId), retId, tgtIds...)
+		target = constraint.FilteredVector(uint(calleeId), retId, tgtIds...)
 	}
 	//
 	mod.AddConstraints(lookup.NewConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
@@ -477,21 +478,21 @@ func emitMemoryLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F],
 		tgtIds = append(tgtIds, register.NewId(uint(i)))
 	}
 	// Build the source (accessor) vector.
-	var source = lookup.FilteredVector(ctx, srcSelector, srcIds...)
+	var source = constraint.FilteredVector(ctx, srcSelector, srcIds...)
 	// Build the target (memory) vector.
 	var target mir.LookupVector
 	//
 	if mem.IsStatic() {
 		// Static tables enumerate their full contents, so every row is a valid
 		// table entry and the target side is unfiltered.
-		target = lookup.UnfilteredVector(uint(memId), tgtIds...)
+		target = constraint.UnfilteredVector(uint(memId), tgtIds...)
 	} else {
 		// ROM / WOM tables expose a $access_bit column which is 1 on active
 		// rows; use it as the lookup selector.  It is allocated immediately
 		// after the address/data registers (see translateAccessOnceMemory).
 		var accessId = register.NewId(uint(len(memRegs)))
 		//
-		target = lookup.FilteredVector(uint(memId), accessId, tgtIds...)
+		target = constraint.FilteredVector(uint(memId), accessId, tgtIds...)
 	}
 	//
 	mod.AddConstraints(lookup.NewConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))
@@ -547,8 +548,8 @@ func emitRamLookup[W vm.Word[W], F field.Element[F]](mod *schema.Table[F],
 	}
 	//
 	var (
-		source = lookup.FilteredVector(ctx, srcSelector, srcIds...)
-		target = lookup.FilteredVector(uint(rw.Id), kind, tgtIds...)
+		source = constraint.FilteredVector(ctx, srcSelector, srcIds...)
+		target = constraint.FilteredVector(uint(rw.Id), kind, tgtIds...)
 	)
 	//
 	mod.AddConstraints(lookup.NewConstraint[F](handle, []mir.LookupVector{target}, []mir.LookupVector{source}))

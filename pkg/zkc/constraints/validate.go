@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
@@ -95,13 +96,13 @@ func validateLookupConstraint[F field.Element[F]](c *lookup.Constraint[F], valid
 	validateLookupVectors(c.Sources, validations)
 }
 
-func validateLookupVectors(vs []lookup.Vector, validations []bit.Set) {
+func validateLookupVectors(vs []constraint.Vector, validations []bit.Set) {
 	for _, v := range vs {
 		validateLookupVector(v, validations)
 	}
 }
 
-func validateLookupVector(v lookup.Vector, validations []bit.Set) {
+func validateLookupVector(v constraint.Vector, validations []bit.Set) {
 	for _, rid := range v.Registers {
 		validations[v.Context()].Insert(rid.Unwrap())
 	}

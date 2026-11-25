@@ -85,6 +85,8 @@ func (p *MirPicusTranslator[F]) translateConstraint(c schema.Constraint[F],
 ) {
 	// Check what kind of constraint we have
 	switch v := c.(type) {
+	case *mir.PermutationConstraint[F]:
+		panic("permutation constraints are not supported by the Picus backend")
 	case *mir.RangeConstraint[F]:
 		p.translateRangeConstraint(v, picusModule, mirModule)
 	case *mir.VanishingConstraint[F]:

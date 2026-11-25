@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -65,6 +66,8 @@ type (
 	// level.  At the AIR level, lookup constraints are only permitted between
 	// columns (i.e. not arbitrary expressions).
 	LookupConstraint[F field.Element[F]] = lookup.Constraint[F]
+	// PermutationConstraint requires equal source and target multisets.
+	PermutationConstraint[F field.Element[F]] = permutation.Constraint[F]
 	// RangeConstraint captures the essence of a range constraints at the AIR level.
 	RangeConstraint[F field.Element[F]] = ranged.Constraint[F]
 	// VanishingConstraint captures the essence of a vanishing constraint at the AIR level.

@@ -510,10 +510,6 @@ func Test_Valid_Lookup_16(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_16", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_Lookup_17(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/lookup_17", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_Lookup_18(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_18", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
@@ -625,10 +621,6 @@ func Test_Valid_Lookup_45(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_45", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
-func Test_Valid_Lookup_46(t *testing.T) {
-	util.CheckCorset(t, "corset/valid/lookup_46", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
-}
-
 func Test_Valid_Lookup_47(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_47", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
@@ -675,6 +667,215 @@ func Test_Valid_Lookup_57(t *testing.T) {
 
 func Test_Valid_Lookup_58(t *testing.T) {
 	util.CheckCorset(t, "corset/valid/lookup_58", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+// ===================================================================
+// Permutations
+// ===================================================================
+
+func Test_Valid_Permutation_01(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_01", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_02(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_02", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_03(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_03", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_04(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_04", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_05(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_05", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_06(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_06", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_07(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_07", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_08(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_08", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_09(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_09", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_10(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_10", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_11(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_11", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_12(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_12", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_15(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_15", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_16(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_16", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_18(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_18", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_19(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_19", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_20(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_20", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_21(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_21", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_22(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_22", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_24(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_24", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Permutation_25(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_25", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Permutation_26(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_26", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Permutation_27(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_27", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Permutation_28(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_28", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Permutation_29(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_29", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Permutation_30(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_30", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+func Test_Valid_Permutation_31(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_31", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_32(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_32", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_33(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_33", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_34(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_34", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_35(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_35", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_36(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_36", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_37(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_37", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_38(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_38", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_39(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_39", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_40(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_40", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_41(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_41", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_42(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_42", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_43(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_43", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_44(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_44", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_45(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_45", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_47(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_47", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_48(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_48", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_49(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_49", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_50(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_50", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_51(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_51", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_52(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_52", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_53(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_53", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_54(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_54", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_55(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_55", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_56(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_56", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_57(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_57", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
+}
+
+func Test_Valid_Permutation_58(t *testing.T) {
+	util.CheckCorset(t, "corset/valid/permutation_58", field.BLS12_377, field.KOALABEAR_16, field.GF_8209)
 }
 
 // ===================================================================

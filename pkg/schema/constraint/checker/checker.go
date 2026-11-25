@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -277,6 +278,8 @@ func (cp ConstraintProcessor[F]) processConstraint(c Constraint[F]) (st State[F]
 		st, fails = processBusConstraint(cp, c)
 	case *lookup.Constraint[F]:
 		st, fails = processLookupConstraint(cp, c)
+	case *permutation.Constraint[F]:
+		st, fails = processPermutationConstraint(cp, c)
 	case *ranged.Constraint[F]:
 		st, fails = processRangeConstraint(cp, c)
 	case *vanishing.Constraint[F, air.LogicalTerm[F]]:

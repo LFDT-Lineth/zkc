@@ -77,6 +77,8 @@ func (p *AirPicusTranslator[F]) translateConstraint(c schema.Constraint[F],
 		p.translateVanishing(v, picusModule, airModule)
 	case *air.LookupConstraint[F]:
 		p.translateLookup(v, picusModule)
+	case *air.PermutationConstraint[F]:
+		panic("permutation constraints are not supported by the Picus backend")
 	case *air.RangeConstraint[F]:
 		p.translateRangeConstraint(v, picusModule, airModule)
 	case *air.BusConstraint[F]:

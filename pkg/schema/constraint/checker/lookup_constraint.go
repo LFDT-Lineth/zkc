@@ -128,7 +128,7 @@ func contains[F field.Element[F]](row uint, src SetId, mod trace.Module[F], sets
 }
 
 // Load those sets from the context corresponding to the given vectors.
-func loadSets[F field.Element[F]](ctx Context[F], vecs ...lookup.Vector) []collection.Set[[]F] {
+func loadSets[F field.Element[F]](ctx Context[F], vecs ...constraint.Vector) []collection.Set[[]F] {
 	var (
 		sets = make([]collection.Set[[]F], len(vecs))
 	)

@@ -429,6 +429,23 @@ func Test_Invalid_Lookup_38(t *testing.T) {
 }
 
 // ===================================================================
+// Permutations
+// ===================================================================
+
+func Test_Invalid_Permutation_01(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/permutation_invalid_01")
+}
+func Test_Invalid_Permutation_02(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/permutation_invalid_02")
+}
+func Test_Invalid_Permutation_03(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/permutation_invalid_03")
+}
+func Test_Invalid_Permutation_04(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/permutation_invalid_04")
+}
+
+// ===================================================================
 // Bus (send / receive) Tests
 // ===================================================================
 

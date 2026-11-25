@@ -22,8 +22,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -265,15 +267,15 @@ func (t *translator[F]) translateDefConstraint(decl *ast.DefConstraint) []Syntax
 	return errors
 }
 
-// Translate a "deflookup" declaration.
+// Translate a lookup or permutation declaration.
 func (t *translator[F]) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	var (
 		errors                 []SyntaxError
 		srcContext, tgtContext ast.Context
-		sources                []lookup.Vector
-		targets                []lookup.Vector
+		sources                []constraint.Vector
+		targets                []constraint.Vector
 	)
-	// Translate sources
+	// Translate targets
 	for i, ith := range decl.Targets {
 		ith_targets, _, ctx, errs := t.translateDefLookupSources(decl.TargetSelectors[i], ith)
 		targets = append(targets, ith_targets)
@@ -283,7 +285,7 @@ func (t *translator[F]) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 			tgtContext = ctx
 		}
 	}
-	// Translate targets
+	// Translate sources
 	for i, ith := range decl.Sources {
 		ith_sources, _, ctx, errs := t.translateDefLookupSources(decl.SourceSelectors[i], ith)
 		sources = append(sources, ith_sources)
@@ -302,7 +304,11 @@ func (t *translator[F]) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 			module = t.moduleOf(tgtContext)
 		}
 		// Add translated constraint
-		module.AddConstraint(lookup.NewConstraint[F](decl.Handle, targets, sources))
+		if decl.IsPermutation {
+			module.AddConstraint(permutation.NewConstraint[F](decl.Handle, targets, sources))
+		} else {
+			module.AddConstraint(lookup.NewConstraint[F](decl.Handle, targets, sources))
+		}
 	}
 	// Done
 	return errors
@@ -313,7 +319,7 @@ func (t *translator[F]) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 // lookup vector.  Since a lookup vector is made up of registers, this also
 // returns the bitwidth of each register in the vector.
 func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
-	sources []ast.TypedSymbol) (lookup.Vector, []uint, ast.Context, []SyntaxError) {
+	sources []ast.TypedSymbol) (constraint.Vector, []uint, ast.Context, []SyntaxError) {
 	// Determine context of ith set of targets
 	var (
 		context, j = ast.ContextOfSymbols(sources...)
@@ -333,7 +339,7 @@ func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 			source = sources[j]
 		}
 		//
-		return lookup.Vector{}, nil, context, t.srcmap.SyntaxErrors(source, "conflicting context")
+		return constraint.Vector{}, nil, context, t.srcmap.SyntaxErrors(source, "conflicting context")
 	}
 	// Determine enclosing module
 	module := t.moduleOf(context)
@@ -354,16 +360,16 @@ func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 	// Don't attempt to construct the vector if anything went wrong, since some
 	// of its registers may not have been translated.
 	if len(errors) > 0 {
-		return lookup.Vector{}, nil, context, errors
+		return constraint.Vector{}, nil, context, errors
 	}
 	//
 	registers, widths := registersOfAccesses(accesses)
 	// Done
 	if selector != nil {
-		return lookup.FilteredVector(module.Id(), sel.Register(), registers...), widths, context, errors
+		return constraint.FilteredVector(module.Id(), sel.Register(), registers...), widths, context, errors
 	}
 	//
-	return lookup.UnfilteredVector(module.Id(), registers...), widths, context, errors
+	return constraint.UnfilteredVector(module.Id(), registers...), widths, context, errors
 }
 
 // Translate a "defsend" or "defrecv" declaration into a pending bus port.
