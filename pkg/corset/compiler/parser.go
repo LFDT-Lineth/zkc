@@ -308,7 +308,7 @@ func (p *Parser) parseDefColumns(module file.Path, l *sexp.List) (ast.Declaratio
 	var errors []SyntaxError
 	// Process column declarations one by one.
 	for i := 1; i < len(l.Elements); i++ {
-		decl, err := p.parseColumnDeclaration(module, module, false, l.Elements[i])
+		decl, err := p.parseColumnDeclaration(module, module, l.Elements[i])
 		// Extract column name
 		if err != nil {
 			errors = append(errors, *err)
@@ -324,7 +324,7 @@ func (p *Parser) parseDefColumns(module file.Path, l *sexp.List) (ast.Declaratio
 	return ast.NewDefColumns(columns), nil
 }
 
-func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, computed bool,
+func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path,
 	e sexp.SExp) (*ast.DefColumn, *SyntaxError) {
 	//
 	var (
@@ -336,38 +336,26 @@ func (p *Parser) parseColumnDeclaration(context file.Path, path file.Path, compu
 			MustProve:     p.config.EnforceTypes,
 			Padding:       util.None[big.Int](),
 		}
+		//
+		list = e.AsList()
 	)
-	// Update computed status
-	if computed {
-		binding.Kind = ast.COMPUTED_COLUMN
-	}
 	// Check whether extended declaration or not.
-	if l := e.AsList(); l != nil {
-		// Check at least the name provided.
-		if len(l.Elements) == 0 {
-			return nil, p.translator.SyntaxError(l, "empty column declaration")
-		} else if !isIdentifier(l.Elements[0]) || isNoSelector(l.Elements[0]) {
-			// NOTE: the selector placeholder is reserved so that it is never
-			// ambiguous with a column access.
-			return nil, p.translator.SyntaxError(l.Elements[0], "invalid column name")
-		}
-		// Column name is always first
-		binding.Path = *path.Extend(l.Elements[0].String(false))
-		//	Parse type (if applicable)
-		if binding, error = p.parseColumnDeclarationAttributes(e, binding, l.Elements[1:]); error != nil {
-			return nil, error
-		}
-	} else if computed {
-		// Only computed columns can be given without attributes.
-		binding.Path = *path.Extend(e.String(false))
-	} else {
+	if list == nil {
 		return nil, p.translator.SyntaxError(e, "column is untyped")
 	}
-	// Final sanity checks
-	if computed && binding.DataType == nil {
-		// computed columns initially have no type, since this needs to be
-		// subsequently determined from context.
-		binding.DataType = ast.UINT_TYPE
+	// Check at least the name provided.
+	if len(list.Elements) == 0 {
+		return nil, p.translator.SyntaxError(list, "empty column declaration")
+	} else if !isIdentifier(list.Elements[0]) || isNoSelector(list.Elements[0]) {
+		// NOTE: the selector placeholder is reserved so that it is never
+		// ambiguous with a column access.
+		return nil, p.translator.SyntaxError(list.Elements[0], "invalid column name")
+	}
+	// Column name is always first
+	binding.Path = *path.Extend(list.Elements[0].String(false))
+	//	Parse type (if applicable)
+	if binding, error = p.parseColumnDeclarationAttributes(e, binding, list.Elements[1:]); error != nil {
+		return nil, error
 	} else if !binding.DataType.HasUnderlying() {
 		return nil, p.translator.SyntaxError(e, "invalid column type")
 	}
