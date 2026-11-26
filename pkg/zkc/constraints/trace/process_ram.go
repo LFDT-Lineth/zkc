@@ -132,7 +132,7 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeReadWriteMemory[W
 		// Timestamp limb widths, most-significant first (matches computeRamLayout).
 		tsWidths = array.Reverse(vm.LimbWidths(cfg.RegisterWidth, geometry.StampWidth().Unwrap()))
 		layout   = newRamTraceLayout(nAddr, nData, len(tsWidths))
-		accesses = groupRamAccesses[W](m.AccessLog(), nData)
+		accesses = groupRamAccesses(m.AccessLog(), nData)
 		//
 		width = module.Width()
 		// TEMPORAL_TS of the previous row; the first real row gets the shard's
@@ -141,7 +141,7 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeReadWriteMemory[W
 	)
 	// Initialise first row as padding row.
 	module.Append(paddingRow(scratch[:width])...)
-	// Padding rows hold zero in every column, which must be in range as well.
+	// Padding rows hold zero in every column, which must appears in the recursive range module.
 	addRangeRows(columns, scratch[:width])
 	// Iterate and process each access, one at a time.
 	for i, acc := range accesses {

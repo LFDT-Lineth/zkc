@@ -20,10 +20,17 @@ import (
 )
 
 // rangeModule tracks the trace of a recursive range module "$range_uN", so
-// that the values held in memory columns of width N can be added to it.  Such
-// columns are range-proved by a lookup into this module but, unlike function
-// registers, no call executed by the machine adds their values to it.  Hence,
-// they are added whilst the trace of the memory is built.
+// that the values held in memory columns of width N can be added to it.  Rows
+// reach this module from two sources:
+//
+//   - Calls executed by the machine.  A function register (or cast) of width N
+//     is range-checked by a call "$range_uN(r)" inserted by AddRangeChecks, as
+//     are the halves destructured by a wider range module.  Each such call is
+//     traced as a row, like that of any other function.
+//   - Memory columns.  A memory has no bytecode to host such a call, yet its
+//     columns of width N are range-proved by a lookup into this module all the
+//     same.  Hence, the values they hold are added whilst the trace of the
+//     memory is built.
 //
 // A value is added at most once: the values already present (whether traced
 // from a call, or added from a memory) are recorded, and adding one of them

@@ -161,9 +161,10 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 //
 // The source is unfiltered, so the padding rows of the memory are checked as
 // well.  Every column of a memory is zero on its padding rows, so this only
-// requires that zero is present in the range module.  No function call adds
-// the values held by a memory register to the range module; instead, they
-// (along with zero) are added when the trace of the memory is built.
+// requires that zero is present in the range module.  The range module is
+// still called directly for function registers and casts; since a memory has
+// no bytecode to host such a call, the values held by its registers (along
+// with zero) are instead added when the trace of the memory is built.
 func (p *constraintTranslator[W, F]) addRecursiveRangeLookup(mod *schema.Table[F], ctx schema.ModuleId,
 	regId register.Id, width uint) {
 	//

@@ -78,7 +78,7 @@ func traceAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W], mo
 	)
 	// Initialise first row as padding row
 	module.Append(paddingRow(scratch[:width])...)
-	// Padding rows hold zero in every column, which must be in range as well.
+	// Padding rows hold zero in every column, which must appears in the recursive range module.
 	addRangeRows(columns, scratch[:width])
 	// Iterate and process each row, one at a time.
 	for i := range height {
