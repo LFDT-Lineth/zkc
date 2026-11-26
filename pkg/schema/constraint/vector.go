@@ -21,7 +21,7 @@ import (
 )
 
 // Vector is a tuple of registers in one module, optionally filtered by a
-// selector. Lookup and permutation constraints use vectors on both sides.
+// selector. Lookup, permutation and bus constraints use vectors on both sides.
 type Vector struct {
 	// Module in which all registers are located.
 	Module schema.ModuleId

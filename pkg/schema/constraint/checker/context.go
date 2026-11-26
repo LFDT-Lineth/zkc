@@ -20,7 +20,9 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
@@ -132,7 +134,7 @@ func buildStaticSetChunk[F field.Element[F]](id SetId, sm schema.Module[F]) Set[
 	)
 	// Insert all selected rows within this chunk
 	for _, row := range contents {
-		if isStaticSelected(id, row) {
+		if isStaticSelected(id.Selector(), row) {
 			// Read each register of this vector
 			readStaticRegisters(id, row, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
@@ -154,7 +156,7 @@ func buildDynamicSetChunk[F field.Element[F]](id SetId, trModule trace.Module[F]
 	)
 	//
 	for i := range trModule.Height() {
-		if isSelected(i, id, trModule) {
+		if isRowSelected(i, id.Selector(), trModule) {
 			// Read each register of this vector
 			readRegisters(i, id, trModule, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
@@ -187,28 +189,28 @@ func readStaticRegisters[F field.Element[F]](id SetId, row []F, buffer []F) {
 	}
 }
 
-// isSelected determines whether or not the given row of the given vector is
+// isRowSelected determines whether or not the given row of the given vector is
 // selected.  A row without a selector is always selected; otherwise, it is
 // selected when its selector is non-zero.
-func isSelected[F field.Element[F]](k uint, id SetId, trModule trace.Module[F]) bool {
+func isRowSelected[F field.Element[F]](k uint, selector util.Option[register.Id], trModule trace.Module[F]) bool {
 	// If no selector, then always selected
-	if !id.HasSelector() {
+	if !selector.HasValue() {
 		return true
 	}
 	// Otherwise, selected when selector non-zero.
-	return !trModule.Column(id.Selector().Unwrap()).Get(k).IsZero()
+	return !trModule.Column(selector.Unwrap().Unwrap()).Get(k).IsZero()
 }
 
 // isStaticSelected determines whether or not the given row of the given vector
 // is selected.  A row without a selector is always selected; otherwise, it is
 // selected when its selector is non-zero.
-func isStaticSelected[F field.Element[F]](id SetId, row []F) bool {
+func isStaticSelected[F field.Element[F]](selector util.Option[register.Id], row []F) bool {
 	// If no selector, then always selected
-	if !id.HasSelector() {
+	if !selector.HasValue() {
 		return true
 	}
 	// Otherwise, selected when selector non-zero.
-	return !row[id.Selector().Unwrap()].IsZero()
+	return !row[selector.Unwrap().Unwrap()].IsZero()
 }
 
 // ============================================================================

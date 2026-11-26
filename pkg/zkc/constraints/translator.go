@@ -18,6 +18,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -77,7 +78,7 @@ type constraintTranslator[W vm.Word[W], F field.Element[F]] struct {
 	// keyed by the callee.  These are accumulated as each caller is translated,
 	// since a bus spans modules and, hence, can only be constructed once every
 	// module has been translated (see emitCallBus).
-	sendPorts map[vm.ModuleId][]mir.BusPort
+	sendPorts map[vm.ModuleId][]constraint.Vector
 	// maxStaticWidth determines the maximum register width for which a static table
 	// can be use to range-check it. Wider registers require recursive range
 	// modules, and the call is materialized by a function call during codegen.
@@ -95,14 +96,14 @@ func newConstraintTranslator[W vm.Word[W], F field.Element[F]](program vm.Progra
 		// range-proved by a lookup into the matching $range_un table.
 		rangeTables = indexRangeTables[W, F](program, maxStaticWidth)
 		// Accumulates the send port of every call into a global function.
-		sendPorts = make(map[vm.ModuleId][]mir.BusPort)
+		sendPorts = make(map[vm.ModuleId][]constraint.Vector)
 	)
 	//
 	return constraintTranslator[W, F]{program, rangeTables, sendPorts, maxStaticWidth}
 }
 
 // addSendPort records a send port for the bus of a given (global) callee.
-func (p *constraintTranslator[W, F]) addSendPort(calleeId vm.ModuleId, port mir.BusPort) {
+func (p *constraintTranslator[W, F]) addSendPort(calleeId vm.ModuleId, port constraint.Vector) {
 	p.sendPorts[calleeId] = append(p.sendPorts[calleeId], port)
 }
 

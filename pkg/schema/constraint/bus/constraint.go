@@ -14,65 +14,60 @@ package bus
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
-	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
-// Tally maps each message to its net count (sends minus receives).  A bus
-// balances exactly when every net count is zero.  Net counts halve the
-// memory of separate send / receive multisets; the per-side counts are
-// reconstructed by rescanning, on failure only.
-type Tally[F field.Element[F]] = hash.Map[hash.Array[F], int]
-
 // Constraint (a "bus") requires that the multiset of messages sent on the bus
-// equals the multiset received on it.
+// equals the multiset received on it across all shards. Each vector contributes
+// one message per selected row, or per row (including padding) if unfiltered.
 type Constraint[F field.Element[F]] struct {
 	// Handle is the bus name
 	Handle string
 	// Sends are the ports through which messages are sent
-	Sends []Port
+	Sends []constraint.Vector
 	// Receives are the ports through which messages are received
-	Receives []Port
+	Receives []constraint.Vector
 }
 
 // NewConstraint creates a bus constraint, requiring all ports share one width.
-func NewConstraint[F field.Element[F]](handle string, sends []Port, receives []Port) *Constraint[F] {
-	var width uint
-	// Take the width from whichever side has ports, rather than from the sends
-	// alone.  A bus missing one direction entirely is a user error reported by
-	// the Corset translator, so it must not panic here.
-	for i, ith := range slices.Concat(sends, receives) {
-		if i == 0 {
-			width = ith.Len()
-		} else if ith.Len() != width {
-			panic(fmt.Sprintf("inconsistent port widths on bus %q (%d vs %d)", handle, width, ith.Len()))
-		}
-	}
+func NewConstraint[F field.Element[F]](handle string, sends, receives []constraint.Vector) *Constraint[F] {
+	c := &Constraint[F]{Handle: handle, Sends: sends, Receives: receives}
+	c.checkWidths()
 
-	return &Constraint[F]{Handle: handle,
-		Sends:    sends,
-		Receives: receives,
-	}
+	return c
 }
 
 // Validate applies a number of internal consistency checks.
 func (p *Constraint[F]) Validate(sc schema.Schema[F]) {
-	var width uint
-	//
-	for i, port := range slices.Concat(p.Sends, p.Receives) {
-		var mod = sc.Module(port.Module)
-		//
-		if i == 0 {
-			width = port.Len()
+	p.checkWidths()
+
+	for _, side := range [2][]constraint.Vector{p.Sends, p.Receives} {
+		for _, port := range side {
+			if port.HasSelector() {
+				sel := sc.Module(port.Module).Register(port.Selector.Unwrap())
+				util.Assert(sel.Width() == 1, "bus %q has a non-binary selector", p.Handle)
+			}
 		}
-		//
-		util.Assert(port.Len() == width, "bus %q has ports of differing widths (%d vs %d)", p.Handle, width, port.Len())
-		util.Assert(mod.Register(port.Selector).Width() == 1, "bus %q has a non-binary selector", p.Handle)
+	}
+}
+
+func (p *Constraint[F]) checkWidths() {
+	width := -1
+
+	for _, side := range [2][]constraint.Vector{p.Sends, p.Receives} {
+		for _, port := range side {
+			n := len(port.Registers)
+			if width >= 0 && width != n {
+				panic(fmt.Sprintf("inconsistent port widths on bus %q (%d vs %d)", p.Handle, width, n))
+			}
+
+			width = n
+		}
 	}
 }
 

@@ -58,8 +58,8 @@ func (p SetId) HasSelector() bool {
 
 // Selector returns the selector line for this identifier, or panics if it has
 // none.
-func (p SetId) Selector() register.Id {
-	return p.sel.Unwrap()
+func (p SetId) Selector() util.Option[register.Id] {
+	return p.sel
 }
 
 // Width returns the number of data lines for this identifier.

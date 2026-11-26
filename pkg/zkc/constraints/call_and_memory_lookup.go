@@ -97,7 +97,7 @@ func (p *constraintTranslator[W, F]) addLookups(mod *schema.Table[F],
 						// Global function calls go "on the bus" rather than
 						// using shard-local lookups.
 						p.addSendPort(c.Target,
-							bus.NewPort(ctx, srcSelector, mirc.ToRegisterIds(c.Arguments)...))
+							constraint.FilteredVector(ctx, srcSelector, mirc.ToRegisterIds(c.Arguments)...))
 					} else {
 						// Local function calls use shard-local lookups
 						emitCallLookup(mod, ctx, uint(pc), c.Target,
@@ -429,7 +429,7 @@ func (p *constraintTranslator[W, F]) emitCallBus(mod *schema.Table[F],
 	}
 	//
 	mod.AddConstraints(bus.NewConstraint[F](handle, sends,
-		[]mir.BusPort{bus.NewPort(uint(calleeId), retId, tgtIds...)}))
+		[]constraint.Vector{constraint.FilteredVector(uint(calleeId), retId, tgtIds...)}))
 }
 
 // emitMemoryLookup constructs and adds a single lookup constraint mapping an

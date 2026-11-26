@@ -110,13 +110,13 @@ func validateLookupVector(v constraint.Vector, validations []bit.Set) {
 
 // validateBusConstraint marks all registers used by the given bus constraint.
 func validateBusConstraint[F field.Element[F]](c *bus.Constraint[F], validations []bit.Set) {
-	for _, ports := range [][]bus.Port{c.Sends, c.Receives} {
+	for _, ports := range [][]constraint.Vector{c.Sends, c.Receives} {
 		for _, port := range ports {
-			validations[port.Module].Insert(port.Selector.Unwrap())
-			//
-			for _, rid := range port.Registers {
-				validations[port.Module].Insert(rid.Unwrap())
+			if port.Selector.HasValue() {
+				validations[port.Module].Insert(port.Selector.Unwrap().Unwrap())
 			}
+			//
+			validateLookupVector(port, validations)
 		}
 	}
 }

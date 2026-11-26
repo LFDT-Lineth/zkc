@@ -14,12 +14,12 @@ package checker
 
 import (
 	"fmt"
-	"slices"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
@@ -63,114 +63,72 @@ type vecRowId struct {
 
 func processPermutationConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *permutation.Constraint[F],
 ) (state State[F], failures []Failure[F]) {
-	var (
-		left  = extractVectorsRows(c.Left, cp.shard)
-		right = extractVectorsRows(c.Right, cp.shard)
-	)
-	// Sort row vectors
-	sortVectorRows(left, cp.shard)
-	sortVectorRows(right, cp.shard)
-	// Check that vectors match exactly
-	if r := equateVectorRows(left, right, cp.shard); r.HasValue() {
-		var rowId = r.Unwrap()
-		// Construct failure
-		failures = append(failures, &PermutationFailure[F]{
-			newRowFailure(c.Handle, rowId.row, cp), rowId.vector,
-		})
-	}
-	// Check passed
-	return state, failures
+	return hashPermutationCheck(cp, c)
 }
 
-func extractVectorsRows[F field.Element[F]](vectors []constraint.Vector, shard trace.Shard[F]) []vecRowId {
-	var rows []vecRowId
-	//
-	for _, vec := range vectors {
-		rows = extractVectorRows(vec, shard, rows)
+// hashPermutationCheck checks a permutation by counting every tuple on the
+// left-hand side and discounting every tuple on the right-hand side.  The
+// permutation holds exactly when every count ends at zero.
+func hashPermutationCheck[F field.Element[F]](cp ConstraintProcessor[F], c *permutation.Constraint[F],
+) (state State[F], failures []Failure[F]) {
+	var tally = hash.NewMap[hash.Array[F], int](32)
+	// Apply left-hand side with positive tally
+	accumulate(cp.shard, c.Left, tally, 1)
+	// Apply right-hand side with negative tally
+	accumulate(cp.shard, c.Right, tally, -1)
+	// Only look for a witness when some tuple is unbalanced.
+	if isBalanced(tally) {
+		return state, nil
+	}
+	// Report the first row holding an unbalanced tuple.
+	for _, vectors := range [][]constraint.Vector{c.Left, c.Right} {
+		if r := unbalancedRow(vectors, cp.shard, tally); r.HasValue() {
+			var rowId = r.Unwrap()
+			//
+			return state, []Failure[F]{&PermutationFailure[F]{
+				newRowFailure(c.Handle, rowId.row, cp), rowId.vector,
+			}}
+		}
 	}
 	//
-	return rows
+	panic("unreachable")
 }
 
-func extractVectorRows[F field.Element[F]](vector constraint.Vector, shard trace.Shard[F], rows []vecRowId) []vecRowId {
-	var (
-		module = shard.Module(vector.Module)
-	)
+// isBalanced determines whether every tuple in the given tally has a count of
+// zero.
+func isBalanced[F field.Element[F]](tally *constraint.Tally[F]) bool {
+	for iter := tally.KeyValues(); iter.HasNext(); {
+		if iter.Next().Right != 0 {
+			return false
+		}
+	}
 	//
-	if vector.Selector.HasValue() {
+	return true
+}
+
+// unbalancedRow returns the first selected row of the given vectors whose tuple
+// has a non-zero count in the given tally (if any).  Unlike iterating the tally
+// itself, this gives the same witness on every run.
+func unbalancedRow[F field.Element[F]](vectors []constraint.Vector, shard trace.Shard[F], tally *constraint.Tally[F],
+) util.Option[vecRowId] {
+	for _, vector := range vectors {
 		var (
-			// Extract register ID for selector
-			selectorId = vector.Selector.Unwrap()
-			// Extract column data for selector
-			selector = module.Column(selectorId.Unwrap())
-		)
-		// conditional
-		for row := range module.Height() {
-			if !selector.Get(row).IsZero() {
-				rows = append(rows, vecRowId{vector, row})
-			}
-		}
-	} else {
-		// unconditional
-		for row := range module.Height() {
-			rows = append(rows, vecRowId{vector, row})
-		}
-	}
-	//
-	return rows
-}
-
-func sortVectorRows[F field.Element[F]](rows []vecRowId, shard trace.Shard[F]) {
-	slices.SortFunc(rows, func(l, r vecRowId) int {
-		return cmpVectorRow(l, r, shard)
-	})
-}
-
-func equateVectorRows[F field.Element[F]](lhs, rhs []vecRowId, shard trace.Shard[F]) util.Option[vecRowId] {
-	var (
-		n = min(len(lhs), len(rhs))
-	)
-	// Check all rows accounted for
-	for i := range n {
-		if c := cmpVectorRow(lhs[i], rhs[i], shard); c < 0 {
-			return util.Some(lhs[i])
-		} else if c > 0 {
-			return util.Some(rhs[i])
-		}
-	}
-	// Check overhang
-	if n < len(lhs) {
-		return util.Some(lhs[n])
-	} else if n < len(rhs) {
-		return util.Some(rhs[n])
-	}
-	// Matched!
-	return util.None[vecRowId]()
-}
-
-func cmpVectorRow[F field.Element[F]](lhs, rhs vecRowId, shard trace.Shard[F]) int {
-	var (
-		lhsRegs   = lhs.vector.Registers
-		rhsRegs   = rhs.vector.Registers
-		lhsModule = shard.Module(lhs.vector.Module)
-		rhsModule = shard.Module(rhs.vector.Module)
-		n         = uint(len(lhsRegs))
-	)
-	//
-	util.Assert(len(lhsRegs) == len(rhsRegs), "incompatible register vectors")
-	//
-	for i := range n {
-		var (
-			lhsCol = lhsModule.Column(lhsRegs[i].Unwrap())
-			rhsCol = rhsModule.Column(rhsRegs[i].Unwrap())
-			lhsVal = lhsCol.Get(lhs.row)
-			rhsVal = rhsCol.Get(rhs.row)
+			module = shard.Module(vector.Module)
+			buffer = make([]F, vector.Len())
 		)
 		//
-		if c := lhsVal.Cmp(rhsVal); c != 0 {
-			return c
+		for row := range module.Height() {
+			if isRowSelected(row, vector.Selector, module) {
+				for i, rid := range vector.Registers {
+					buffer[i] = module.Column(rid.Unwrap()).Get(row)
+				}
+				// A lookup never consumes the key, hence the buffer is reused.
+				if count, _ := tally.Get(hash.NewArray(buffer)); count != 0 {
+					return util.Some(vecRowId{vector, row})
+				}
+			}
 		}
 	}
 	//
-	return 0
+	return util.None[vecRowId]()
 }

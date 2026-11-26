@@ -55,8 +55,6 @@ type (
 	// level.  A bus requires that the multiset of all messages sent on it
 	// equals the multiset of all messages received on it.
 	BusConstraint[F field.Element[F]] = bus.Constraint[F]
-	// BusPort provides a convenient shorthand
-	BusPort = bus.Port
 	// LookupConstraint captures the essence of a lookup constraint at the MIR
 	// level.
 	LookupConstraint[F field.Element[F]] = lookup.Constraint[F]

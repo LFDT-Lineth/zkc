@@ -56,10 +56,14 @@ bus equals the multiset received on it. Modules participate through
 (defrecv HANDLE BUS SELECTOR (COLUMNS...))
 ```
 
-On every row where `SELECTOR` (a binary column, mandatory) is one, the
+On every row where `SELECTOR` (a binary column) is one, the
 values of `COLUMNS` form one message. Any number of senders and
 receivers may share a bus name; unlike a lookup, duplicates matter (two
 identical sends require two identical receives).
+
+Corset requires a selector on every `defsend` and `defrecv`. In MIR and
+AIR, a bus port is a `constraint.Vector` and may omit its selector. Such
+a port sends or receives once on every row, including padding rows.
 
 An example constraint set written in Corset is:
 

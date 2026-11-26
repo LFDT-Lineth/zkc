@@ -14,11 +14,10 @@ package checker
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
@@ -33,10 +32,6 @@ type BusFailure[F field.Element[F]] struct {
 	unbalanced []F
 	// tally is the overall send/receive tally
 	tally int
-	// sends are the send ports of the failing constraint
-	sends []bus.Port
-	// receives are the receive ports of the failing constraint
-	receives []bus.Port
 }
 
 // Handle implementation of schema.Failure interface
@@ -92,8 +87,6 @@ func finaliseBusConstraint[F field.Element[F]](c *bus.Constraint[F], state State
 				handle:     c.Handle,
 				unbalanced: pair.Left.Elements(),
 				tally:      pair.Right,
-				sends:      c.Sends,
-				receives:   c.Receives,
 			})
 		}
 	}
@@ -106,44 +99,39 @@ func processBusConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *bus.
 	var (
 		tally = hash.NewMap[hash.Array[F], int](32)
 	)
+	// Apply positive messages with positive tally
 	accumulate(cp.shard, c.Sends, tally, 1)
+	// Apply received messages with negative tally
 	accumulate(cp.shard, c.Receives, tally, -1)
 	//
 	return State[F]{tally}, nil
 }
 
-func accumulate[F field.Element[F]](tr trace.Shard[F], ports []bus.Port, tally *bus.Tally[F], sign int) {
+func accumulate[F field.Element[F]](tr trace.Shard[F], vecs []constraint.Vector, tally *constraint.Tally[F], sign int) {
 	// add is the tally update applied to each selected row.
 	var add = func(count int) int { return count + sign }
 	//
-	for _, port := range ports {
-		var trModule = tr.Module(port.Module)
-		// Allocate scratch space for this port.
-		var buffer = make([]F, port.Len())
+	for _, vector := range vecs {
+		var (
+			id       = constraint.NewSetId(vector.Module, vector.Selector, vector.Registers)
+			trModule = tr.Module(vector.Module)
+			buffer   []F
+		)
 		//
 		for row := range trModule.Height() {
-			if isRowSelected(row, port.Selector, trModule) {
-				//
-				for i, rid := range port.Registers {
-					buffer[i] = trModule.Column(rid.Unwrap()).Get(row)
-				}
-				//
-				var key = hash.NewArray(buffer)
-				// Insert item whilst checking whether the buffer was consumed or not
-				if !tally.Update(key, add, sign) {
-					// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
-					// aliasing the value now stored in the hash set.
-					buffer = slices.Clone(buffer)
-				}
+			if !isRowSelected(row, id.Selector(), trModule) {
+				continue
+			}
+			// A new key takes ownership of the buffer; repeated keys reuse it.
+			if buffer == nil {
+				buffer = make([]F, id.Width())
+			}
+
+			readRegisters(row, id, trModule, buffer)
+
+			if !tally.Update(hash.NewArray(buffer), add, sign) {
+				buffer = nil
 			}
 		}
 	}
-}
-
-// isSelected determines whether or not the given row of the given vector is
-// selected.  A row without a selector is always selected; otherwise, it is
-// selected when its selector is non-zero.
-func isRowSelected[F field.Element[F]](k uint, id register.Id, trModule trace.Module[F]) bool {
-	// Otherwise, selected when selector non-zero.
-	return !trModule.Column(id.Unwrap()).Get(k).IsZero()
 }

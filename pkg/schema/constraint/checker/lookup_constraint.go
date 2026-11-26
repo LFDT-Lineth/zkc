@@ -86,8 +86,8 @@ func processLookupConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *l
 // to this fact (i.e. a row not found in any of the target sets).
 func inclusionCheck[F field.Element[F]](mod trace.Module[F], src SetId, sets []collection.Set[[]F],
 	buffer []F) util.Option[uint] {
-	if src.HasSelector() {
-		var selector = src.Selector().Unwrap()
+	if src.Selector().HasValue() {
+		var selector = src.Selector().Unwrap().Unwrap()
 		//
 		for row := range mod.Height() {
 			if !mod.Column(selector).Get(row).IsZero() && !contains(row, src, mod, sets, buffer) {

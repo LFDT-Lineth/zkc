@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
@@ -42,7 +43,7 @@ type Shard[F field.Element[F]] = trace.Shard[F]
 // State is used to hold state which persists across the entire trace for a
 // given constraint.
 type State[F field.Element[F]] struct {
-	data *bus.Tally[F]
+	data *constraint.Tally[F]
 }
 
 // Checker provides an API for trace checking which abstracts various challenges
