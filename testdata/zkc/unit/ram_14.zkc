@@ -1,0 +1,15 @@
+// A read-write memory whose address and data are both u32.  On fields with
+// 32-bit registers these columns are too wide for a static range table (at any
+// supported height), so they are range-proved by lookups into $range_u32, which
+// is populated from the memory itself when its trace is built (issue #2106).
+pub input data(address:u8) -> (word:u32)
+memory ram[u32](address:u32) -> (word:u32)
+
+fn main<ram>() {
+    var addr:u32 = data[0]
+    var value:u32 = data[1]
+    ram[addr] = value
+    if ram[addr] != value {
+        fail
+    }
+}

@@ -111,6 +111,12 @@ type Builder[W Word[W], F Element[F]] struct {
 	descriptors []vm.Module[W]
 	// set of modules actively being traced
 	modules []*trace.ModuleBuilder[F]
+	// ranges identifies the recursive range modules, indexed by module (nil for
+	// every other module).
+	ranges []*rangeModule[F]
+	// rangeColumns identifies, for each memory, the columns whose values must be
+	// added to a recursive range module (see rangeModule).
+	rangeColumns [][]rangeColumn[F]
 	// scratch memory area, used to avoid memory allocation.
 	scratch []F
 }
@@ -139,8 +145,11 @@ func (p Builder[W, F]) Init(program vm.Program[W]) Builder[W, F] {
 		// Update maximum width
 		maxWidth = max(maxWidth, modules[i].Width())
 	}
+	// Locate the recursive range modules, and the memory columns checked
+	// against them.
+	ranges, rangeColumns := initRangeModules(program, modules)
 	// allocate scratch memory
-	return Builder[W, F]{program.Modules(), modules, make([]F, maxWidth)}
+	return Builder[W, F]{program.Modules(), modules, ranges, rangeColumns, make([]F, maxWidth)}
 }
 
 // Build implementation for TraceBuilder interface.
@@ -166,21 +175,29 @@ func (p Builder[W, F]) TraceFunctionLine(state vm.State[W]) {
 	} else {
 		traceMultiLineFunction(mod, state, p.scratch)
 	}
+	// Record the values checked by calls into a recursive range module, so
+	// they are not added again from a memory.
+	if r := p.ranges[state.Fid()]; r != nil && r.tracked {
+		r.observe(state.Frame()[r.fn.Value].Uint64())
+	}
 }
 
 // TraceMemory implementation for the vm.TraceBuilder interface.
 func (p Builder[W, F]) TraceMemory(mid uint16, m vm.RuntimeMemory[W], field field.Config) {
-	var module = p.modules[mid]
+	var (
+		module  = p.modules[mid]
+		columns = p.rangeColumns[mid]
+	)
 	//
 	switch m.Descriptor().Kind() {
 	case vm.PRIVATE_STATIC_MEMORY, vm.PUBLIC_STATIC_MEMORY:
 		// skip
 	case vm.PRIVATE_READ_ONLY_MEMORY, vm.PUBLIC_READ_ONLY_MEMORY:
-		traceAccessOnceMemory(m, module, p.scratch)
+		traceAccessOnceMemory(m, module, columns, p.scratch)
 	case vm.PRIVATE_WRITE_ONCE_MEMORY, vm.PUBLIC_WRITE_ONCE_MEMORY:
-		traceAccessOnceMemory(m, module, p.scratch)
+		traceAccessOnceMemory(m, module, columns, p.scratch)
 	default:
-		traceReadWriteMemory(m.(vm.RuntimeReadWriteMemory[W]), module, field, p.scratch)
+		traceReadWriteMemory(m.(vm.RuntimeReadWriteMemory[W]), module, columns, field, p.scratch)
 	}
 }
 

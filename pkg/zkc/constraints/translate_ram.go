@@ -138,7 +138,7 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	// (value-read, timestamp-read, deltas, carries) which — unlike the address /
 	// value / timestamp-written columns pinned by the caller lookup — are not
 	// otherwise constrained.  1-bit columns (phase bits, carries) get an r*r==r
-	// constraint; wider columns a range-table lookup.
+	// constraint; wider columns a lookup into the range module of their width.
 	p.addRangeProofConstraints(mod, ctx)
 	//
 	return mod

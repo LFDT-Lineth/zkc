@@ -58,9 +58,10 @@ func initAccessOnceMemory[W Word[W], F Element[F]](m vm.Memory[W]) (module *trac
 }
 
 // traceAccessOnceMemory materialises the trace rows for a read-only (ROM) or
-// write-once (WOM) memory
+// write-once (WOM) memory.  The values held in the given columns are added to
+// the recursive range modules they are checked against.
 func traceAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W], module *trace.ModuleBuilder[F],
-	scratch []F) {
+	columns []rangeColumn[F], scratch []F) {
 	var (
 		one      = field.Uint64[F](1)
 		geometry = m.Descriptor()
@@ -77,6 +78,8 @@ func traceAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W], mo
 	)
 	// Initialise first row as padding row
 	module.Append(paddingRow(scratch[:width])...)
+	// Padding rows hold zero in every column, which must be in range as well.
+	addRangeRows(columns, scratch[:width])
 	// Iterate and process each row, one at a time.
 	for i := range height {
 		var row = scratch[:width]
@@ -97,6 +100,7 @@ func traceAccessOnceMemory[W vm.Word[W], F Element[F]](m vm.RuntimeMemory[W], mo
 		}
 		// Done
 		module.Append(row...)
+		addRangeRows(columns, row)
 	}
 }
 
