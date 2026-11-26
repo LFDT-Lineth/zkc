@@ -342,6 +342,18 @@ func Test_Invalid_Lookup_05(t *testing.T) {
 func Test_Invalid_Lookup_06(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_06")
 }
+func Test_Invalid_Lookup_10(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_10")
+}
+func Test_Invalid_Lookup_11(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_11")
+}
+func Test_Invalid_Lookup_12(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_12")
+}
+func Test_Invalid_Lookup_13(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_13")
+}
 func Test_Invalid_Lookup_14(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_14")
 }
@@ -353,6 +365,67 @@ func Test_Invalid_Lookup_18(t *testing.T) {
 }
 func Test_Invalid_Lookup_19(t *testing.T) {
 	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_19")
+}
+func Test_Invalid_Lookup_20(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_20")
+}
+func Test_Invalid_Lookup_21(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_21")
+}
+
+// NOTE: lookups 22 -- 35 duplicate (in order) those lookups above which use a
+// constant selector column (i.e. 01 -- 06, 10 -- 15, 18 and 19), except that
+// their selectors are omitted.
+func Test_Invalid_Lookup_22(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_22")
+}
+func Test_Invalid_Lookup_23(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_23")
+}
+func Test_Invalid_Lookup_24(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_24")
+}
+func Test_Invalid_Lookup_25(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_25")
+}
+func Test_Invalid_Lookup_26(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_26")
+}
+func Test_Invalid_Lookup_27(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_27")
+}
+func Test_Invalid_Lookup_28(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_28")
+}
+func Test_Invalid_Lookup_29(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_29")
+}
+func Test_Invalid_Lookup_30(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_30")
+}
+func Test_Invalid_Lookup_31(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_31")
+}
+func Test_Invalid_Lookup_32(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_32")
+}
+func Test_Invalid_Lookup_33(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_33")
+}
+func Test_Invalid_Lookup_34(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_34")
+}
+func Test_Invalid_Lookup_35(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_35")
+}
+func Test_Invalid_Lookup_36(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_36")
+}
+func Test_Invalid_Lookup_37(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_37")
+}
+func Test_Invalid_Lookup_38(t *testing.T) {
+	checkCorsetInvalid(t, "corset/invalid/lookup_invalid_38")
 }
 
 // ===================================================================

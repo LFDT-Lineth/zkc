@@ -1,3 +1,3 @@
-;;error:3:29-36:signed term encountered
-(defcolumns (X :u16) (Y :u16))
-(deflookup (l1 :unchecked) ((- 1 X)) (Y))
+;;error:3:44-51:malformed target column
+(defcolumns (X :u16) (Y :u16) (one :i1 :constant 1))
+(deflookup (l1 :unchecked) ((one Y)) ((one (- 1 X))))

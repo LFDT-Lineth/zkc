@@ -14,7 +14,6 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/cmd/corset/debug"
@@ -154,7 +153,7 @@ func buildMetadata(items []string) []byte {
 		//
 		if !ok {
 			fmt.Printf("malformed definition \"%s\"\n", item)
-			os.Exit(2)
+			log.Exit(2)
 		}
 		//
 		metadata[key] = value
@@ -165,7 +164,7 @@ func buildMetadata(items []string) []byte {
 	bytes, err := m.ToJsonBytes()
 	if err != nil {
 		fmt.Printf("error encoding metadata: %s\n", err)
-		os.Exit(2)
+		log.Exit(2)
 	}
 	//
 	return bytes
@@ -183,7 +182,7 @@ func validateArtifacts[F field.Element[F], W vm.Word[W]](bf *constraints.BinaryF
 			log.Errorf("%v", err)
 		}
 		// Exit with error if any errors triggered
-		os.Exit(1)
+		log.Exit(1)
 	}
 }
 
@@ -220,10 +219,10 @@ func printArtifacts[F field.Element[F], W vm.Word[W]](ast *ast.Program, bf *cons
 	if config.stats {
 		if !ValidStatsOrder(config.order) {
 			log.Errorf("invalid --order %q (expected name|total|complexity|lookups)", config.order)
-			os.Exit(1)
+			log.Exit(1)
 		} else if config.packedLookups == 0 {
 			log.Errorf("invalid --packed-lookup (must be at least 1)")
-			os.Exit(1)
+			log.Exit(1)
 		}
 		// Register counts are reported before register splitting.  Splitting is
 		// the only field-specific transform that changes register widths, so

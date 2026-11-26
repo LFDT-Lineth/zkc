@@ -14,8 +14,8 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 
+	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -62,12 +62,21 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 		outputs map[string]bit.Array
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
+		// create fresh gogen manager
+		manager = vm.NewGoGenManager()
+		// register exit handler
+		release = util.RegisterExitHandler(manager.Close)
 	)
+	// Ensure resources held by executor released.
+	defer release()
 	// Sanity permitted flag combinations
 	checkFlags(cmd, executeFlags)
 	//
-	execConfig := vm.DEFAULT_EXECUTION_CONFIG.
-		WithGoGen(build.gogen)
+	execConfig := vm.DEFAULT_EXECUTION_CONFIG
+	// Configure gogen
+	if build.gogen {
+		execConfig = execConfig.WithGoGen(util.Some(manager))
+	}
 	// Build artifacts (compiles source files or loads a prebuilt binary).
 	_, binfile := Build[F, W](build, args[1:]...)
 	// Include sharding configuration (if this makes sense).
@@ -109,7 +118,7 @@ func runExecuteCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []
 			log.Error(fmt.Sprintf("%s", e))
 		}
 		//
-		os.Exit(4)
+		log.Exit(4)
 	}
 }
 

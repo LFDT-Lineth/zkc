@@ -13,7 +13,6 @@
 package zkc
 
 import (
-	"os"
 	"path"
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
@@ -55,7 +54,7 @@ func Build[F field.Element[F], W vm.Word[W]](build BuildConfig, args ...string,
 		// Sanity check exactly one prebuilt binary provide.
 		if len(args) != 1 {
 			log.Error("require exactly one prebuilt binary")
-			os.Exit(6)
+			log.Exit(6)
 		}
 		//
 		var (
@@ -79,7 +78,7 @@ func Build[F field.Element[F], W vm.Word[W]](build BuildConfig, args ...string,
 			printSyntaxError(&err)
 		}
 		//
-		os.Exit(4)
+		log.Exit(4)
 	}
 	//
 	return &prog, constraints.NewBinaryFile[F, W](build.metadata.UnwrapOr(nil), nil, raw).

@@ -473,17 +473,25 @@ func (p *DefInRange) Lisp() sexp.SExp {
 // deflookup
 // ============================================================================
 
-// DefLookup represents a lookup constraint between a set N of source columns
-// and a set of N target columns.  The source columns must have a single context
-// (i.e. all be in the same module) and likewise for the target columns (though
-// the source and target contexts can differ).  The constraint can be viewed as
-// a "subset constraint".  Let the set of "source tuples" be those obtained by
-// reading the source columns over all rows in the source context, and likewise
-// the "target tuples" those for the target columns in the target context.  Then
-// the lookup constraint holds if the set of source tuples is a subset of the
-// target tuples.  This does not need to be a strict subset, so the two sets can
-// be identical.  Furthermore, these are not treated as multi-sets, hence the
-// number of occurrences of a given tuple is not relevant.
+// NO_SELECTOR is the placeholder written in place of the selector for a lookup
+// vector which has none.  To avoid ambiguity, this is reserved and cannot be
+// used as a column name.
+const NO_SELECTOR = "_"
+
+// DefLookup represents a lookup constraint between one or more source vectors
+// and one or more target vectors.  Each vector consists of an optional selector
+// column along with N columns, all of which must have a single context (i.e.
+// all be in the same module), though the contexts of different vectors can
+// differ.  A vector is said to be "active" on those rows where its selector is
+// non-zero or, when it has no selector, on all rows.
+// The constraint can be viewed as a "subset constraint".  Let the set of
+// "source tuples" be those obtained by reading the columns of each source
+// vector over all rows on which it is active, and likewise the "target tuples"
+// those for the target vectors.  Then the lookup constraint holds if the set of
+// source tuples is a subset of the target tuples.  This does not need to be a
+// strict subset, so the two sets can be identical.  Furthermore, these are not
+// treated as multi-sets, hence the number of occurrences of a given tuple is
+// not relevant.
 //
 // NOTE: sources and targets (along with their selectors) are column accesses
 // rather than arbitrary expressions.  This reflects what the underlying
@@ -500,7 +508,7 @@ type DefLookup struct {
 	// Source columns for lookup (i.e. these values must all be contained within
 	// the targets).
 	Sources [][]TypedSymbol
-	// Target selectors (nil entries mean no selector for corresponding source).
+	// Target selectors (nil entries mean no selector for corresponding target).
 	TargetSelectors []TypedSymbol
 	// Target columns for lookup (i.e. these values must contain all of the
 	// source values, but may contain more).
@@ -567,51 +575,37 @@ func (p *DefLookup) Finalise() {
 // Lisp converts this node into its lisp representation.  This is primarily used
 // for debugging purposes.
 func (p *DefLookup) Lisp() sexp.SExp {
-	targets := make([]sexp.SExp, len(p.Targets))
-	targetSelectors := make([]sexp.SExp, len(p.Targets))
-	sources := make([]sexp.SExp, len(p.Sources))
-	sourceSelectors := make([]sexp.SExp, len(p.Targets))
-	// Targets
-	for i, target := range p.Targets {
-		ith := make([]sexp.SExp, len(target))
-		//
-		for j, t := range target {
-			ith[j] = t.Lisp()
-		}
-		//
-		targets[i] = sexp.NewList(ith)
-		//
-		if p.TargetSelectors[i] != nil {
-			targetSelectors[i] = p.TargetSelectors[i].Lisp()
-		} else {
-			targetSelectors[i] = sexp.NewSymbol("_")
-		}
-	}
-	// Targets
-	for i, source := range p.Sources {
-		ith := make([]sexp.SExp, len(source))
-		//
-		for j, t := range source {
-			ith[j] = t.Lisp()
-		}
-		//
-		sources[i] = sexp.NewList(ith)
-		//
-		if p.SourceSelectors[i] != nil {
-			sourceSelectors[i] = p.SourceSelectors[i].Lisp()
-		} else {
-			sourceSelectors[i] = sexp.NewSymbol("_")
-		}
-	}
-	//
 	return sexp.NewList([]sexp.SExp{
 		sexp.NewSymbol("deflookup"),
 		sexp.NewSymbol(p.Handle),
-		sexp.NewList(targetSelectors),
-		sexp.NewList(targets),
-		sexp.NewList(sourceSelectors),
-		sexp.NewList(sources),
+		lispOfLookupVectors(p.SourceSelectors, p.Sources),
+		lispOfLookupVectors(p.TargetSelectors, p.Targets),
 	})
+}
+
+// lispOfLookupVectors converts one side of a lookup (i.e. its source or target
+// vectors) into its lisp representation, where each vector begins with its
+// selector (or the placeholder when it has none).
+func lispOfLookupVectors(selectors []TypedSymbol, vectors [][]TypedSymbol) sexp.SExp {
+	list := make([]sexp.SExp, len(vectors))
+	//
+	for i, vector := range vectors {
+		ith := make([]sexp.SExp, 1+len(vector))
+		//
+		if selectors[i] != nil {
+			ith[0] = selectors[i].Lisp()
+		} else {
+			ith[0] = sexp.NewSymbol(NO_SELECTOR)
+		}
+		//
+		for j, column := range vector {
+			ith[j+1] = column.Lisp()
+		}
+		//
+		list[i] = sexp.NewList(ith)
+	}
+	//
+	return sexp.NewList(list)
 }
 
 // ============================================================================

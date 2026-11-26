@@ -1,0 +1,13 @@
+;; TODO: see https://github.com/LFDT-Lineth/zkc/issues/2364
+;; { "data": "0x0000", "result": "0x0000" }
+;; { "data": "0x0001", "result": "0x0001" }
+;; { "data": "0x007f", "result": "0x007f" }
+;; { "data": "0x00ff", "result": "0x00ff" }
+{ "data": "0x0100", "result": "0xff00" }
+{ "data": "0x0101", "result": "0xff01" }
+{ "data": "0x017f", "result": "0xff7f" }
+{ "data": "0x01ff", "result": "0xffff" }
+{ "data": "0xff00", "result": "0xff00" }
+{ "data": "0xff01", "result": "0xff01" }
+{ "data": "0xff7f", "result": "0xff7f" }
+{ "data": "0xffff", "result": "0xffff" }

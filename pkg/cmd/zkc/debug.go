@@ -14,7 +14,6 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -72,7 +71,7 @@ func runDebugCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 			log.Error(e)
 		}
 		//
-		os.Exit(4)
+		log.Exit(4)
 	}
 	//
 	fmt.Println()

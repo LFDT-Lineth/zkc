@@ -1208,6 +1208,15 @@ func Test_ZkcUnit_Cast_11(t *testing.T) {
 	checkZkcUnit(t, "zkc/unit/cast_11", DEFAULT_UNIT_CONFIG)
 }
 
+func Test_ZkcUnit_Cast_12(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/cast_12", DEFAULT_UNIT_CONFIG)
+}
+
+// like cast_12 but with a cast overflowing register splitting
+func Test_ZkcUnit_Cast_13(t *testing.T) {
+	checkZkcUnit(t, "zkc/unit/cast_13", DEFAULT_UNIT_CONFIG)
+}
+
 // ===================================================================
 // Division Tests
 // ===================================================================

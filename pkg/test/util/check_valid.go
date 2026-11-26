@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field/gf251"
@@ -35,6 +36,8 @@ import (
 )
 
 var (
+	// GOGEN_MANAGER is the default gogen executor used for all tests.
+	GOGEN_MANAGER = vm.NewGoGenManager()
 	// MIN_SAMPLE_SIZE determines the least number of test cases for which
 	// sampling is permitted.  Essentially, if sampling is enabled by there are
 	// less than 10 test vectors, then it automatically causes a test failure.
@@ -61,7 +64,7 @@ var (
 	DEFAULT_CONFIG = TestConfig{
 		fields:            DEFAULT_FIELDS,
 		constraints:       true,
-		gogen:             true,
+		gogen:             util.Some(GOGEN_MANAGER),
 		verbose:           false,
 		sampling:          util.None[float64](),
 		maxStaticHeights:  []uint{codegen.DEFAULT_MAX_STATIC_HEIGHT},
@@ -77,7 +80,6 @@ func CheckValid(t *testing.T, zkcfile string, config TestConfig) {
 	// binary, none of which is parallelised internally.  Without this, that
 	// work is serialised across every file in the suite.
 	t.Parallel()
-	//
 	// Check for each field requested
 	for _, test := range config.GenerateTests(t, zkcfile) {
 		t.Run(fmt.Sprintf("%s", test.Handle()), func(t *testing.T) {
@@ -108,10 +110,13 @@ func checkValidInternal(t *testing.T, test TestCase) {
 	}
 	// Run (fast mode) execution test
 	if test.fastMode {
-		runExecutionTests(t, p, test.vector)
+		var (
+			execConfig = vm.DEFAULT_EXECUTION_CONFIG
+		)
+		runExecutionTests(t, p, test.vector, execConfig)
 		// Run gogen (if requested)
-		if test.gogen.HasValue() {
-			runGogenExecutionTest(t, p, test.gogen.Unwrap(), test.vector)
+		if gogen := test.gogen; gogen.HasValue() {
+			runExecutionTests(t, p, test.vector, execConfig.WithGoGen(gogen))
 		}
 	}
 	// Run constraint check (if requested)
@@ -127,10 +132,10 @@ func checkValidInternal(t *testing.T, test TestCase) {
 		}
 		// Run the test (without gogen)
 		runConstraintTest(t, p, test.vector, field, traceConfig)
-		//
-		if test.gogen.HasValue() {
+		// Run GoGen constraint test (if requested)
+		if gogen := test.gogen; gogen.HasValue() {
 			// Rerun test (with gogen)
-			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(true))
+			runConstraintTest(t, p, test.vector, field, traceConfig.WithGoGen(gogen))
 		}
 	}
 }
@@ -149,21 +154,21 @@ func moduleKind(t *testing.T, mod vm.Module[vm.Uint]) any {
 	}
 }
 
-func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
+func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector, cfg vm.ExecutionConfig) {
 	// Dispatch based on field config
 	switch p.Field() {
 	case field.GF_251:
-		runExecutionTest[gf251.Element, vm.Uint32](t, p, test)
+		runExecutionTest[gf251.Element, vm.Uint32](t, p, test, cfg)
 	case field.GF_8209:
-		runExecutionTest[gf8209.Element, vm.Uint32](t, p, test)
+		runExecutionTest[gf8209.Element, vm.Uint32](t, p, test, cfg)
 	case field.KOALABEAR_16, field.KOALABEAR_24:
-		runExecutionTest[koalabear.Element, vm.Uint32](t, p, test)
+		runExecutionTest[koalabear.Element, vm.Uint32](t, p, test, cfg)
 	case field.GOLDILOCKS_32:
-		runExecutionTest[goldilocks.Element, vm.Uint64](t, p, test)
+		runExecutionTest[goldilocks.Element, vm.Uint64](t, p, test, cfg)
 	case field.MAMABEAR_32:
-		runExecutionTest[mamabear.Element, vm.Uint64](t, p, test)
+		runExecutionTest[mamabear.Element, vm.Uint64](t, p, test, cfg)
 	case field.MAMABEAR2_32:
-		runExecutionTest[mamabear2.Element, vm.Uint64](t, p, test)
+		runExecutionTest[mamabear2.Element, vm.Uint64](t, p, test, cfg)
 	case field.BLS12_377:
 		//testConstraintsWithField[bls12_377.Element](t, p, test, paddingStrategy)
 		panic("BLS12_377 not currently supported for execution")
@@ -172,7 +177,8 @@ func runExecutionTests(t *testing.T, p vm.Program[vm.Uint], test TestVector) {
 	}
 }
 
-func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Program[vm.Uint], test TestVector) {
+func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Program[vm.Uint], test TestVector,
+	cfg vm.ExecutionConfig) {
 	//
 	var (
 		// decode inputs / outputs
@@ -180,27 +186,16 @@ func runExecutionTest[F field.Element[F], W vm.Word[W]](t *testing.T, p vm.Progr
 		// construct binary file
 		binf = constraints.NewBinaryFile[F, W](nil, nil, p)
 		// Execute the test
-		actuals, errs = binf.Execute(inputs, vm.DEFAULT_EXECUTION_CONFIG)
+		actuals, errs = binf.Execute(inputs, cfg)
 		// Record whether test accepted or not.
 		accepted = len(errs) == 0
 	)
+	// Fail automatically on any internal error arising during execution
+	failIfNot[*vm.Failure](t, errs...)
 	// Check what happened
-	if accepted {
+	if accepted && test.expected {
 		// Check outputs line up
-		for name, actual := range actuals {
-			if expected, ok := test.data[name]; ok {
-				//
-				if !expected.Equals(actual) {
-					t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
-						test.filename, test.line, expected.String(), actual.String())
-				}
-			}
-		}
-		// Sanity check enough outputs
-		if uint(len(actuals)) != p.Outputs().Count() {
-			t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
-				test.filename, test.line, p.Outputs().Count(), len(actuals))
-		}
+		checkMatchingOutputs(t, p, actuals, test)
 	}
 	// Process what happened versus what was supposed to happen.
 	if !accepted && test.expected {
@@ -243,7 +238,7 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 		// decode inputs / outputs
 		inputs, _ = vm.FilterInputs(p, test.data)
 		// generate trace
-		_, tr, traceErrors = binf.Trace(inputs, traceCfg)
+		traceOutputs, tr, traceErrors = binf.Trace(inputs, traceCfg)
 	)
 	// Check whether a trace was actually generated.
 	if tr.IsEmpty() {
@@ -265,6 +260,9 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 			test.line, failures, traceErrors, checkErrors)
 	} else if !test.expected && (traceAccepted || constraintsAccepted) {
 		t.Errorf("Trace accepted incorrectly (%s:%d)", test.filename, test.line)
+	} else if test.expected {
+		// Check matching outputs
+		checkMatchingOutputs(t, p, traceOutputs, test)
 	}
 	// Run duplication check
 	if len(traceErrors) == 0 {
@@ -312,6 +310,31 @@ func runFunctionDedupTest[F field.Element[F], W vm.Word[W]](t *testing.T, fn *vm
 			// Yes, found a duplicate instance
 			t.Errorf("Trace has duplicate function call (%s:%d:%s)", test.filename, test.line, fn.Name())
 		}
+	}
+}
+
+// Check outputs generated during the given execution match exactly those in the
+// given test vector.
+func checkMatchingOutputs(t *testing.T, p vm.Program[vm.Uint], actuals map[string]bit.Array, test TestVector) {
+	// Sanity check correct outputs produced
+	for iter := p.Outputs(); iter.HasNext(); {
+		var output = iter.Next()
+		// Check output
+		if actual, ok := actuals[output.Name()]; !ok {
+			t.Errorf("test (%s:%d) did not produce output (\"%s\")",
+				test.filename, test.line, output.Name())
+		} else if expected, ok := test.data[output.Name()]; !ok {
+			t.Errorf("test (%s:%d) vector is missing output (\"%s\")",
+				test.filename, test.line, output.Name())
+		} else if !expected.Equals(actual) {
+			t.Errorf("test (%s:%d) has incorrect output (expected 0x%s, actual 0x%s)",
+				test.filename, test.line, expected.String(), actual.String())
+		}
+	}
+	// Sanity check enough outputs produced
+	if uint(len(actuals)) != p.Outputs().Count() {
+		t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
+			test.filename, test.line, p.Outputs().Count(), len(actuals))
 	}
 }
 

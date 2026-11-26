@@ -14,10 +14,10 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -46,7 +46,7 @@ func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
 	n, err := cmd.Flags().GetCount("verbose")
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(4)
+		log.Exit(4)
 	}
 	//
 	var verboseLevel VerboseLevel
@@ -62,7 +62,7 @@ func GetVerboseLevel(cmd *cobra.Command) VerboseLevel {
 		verboseLevel = VERBOSE_PRINTF
 	default:
 		fmt.Printf("error: invalid --verbose %d (expected 0, 1, 2 or 3)\n", n)
-		os.Exit(2)
+		log.Exit(2)
 	}
 
 	return verboseLevel
@@ -95,7 +95,7 @@ func checkFlags(cmd *cobra.Command, checks FlagChecks) {
 		second := cmd.Flags().Changed(check.Right)
 		if first && !second {
 			fmt.Printf("error: \"--%s\" requires \"--%s\"\n", check.Left, check.Right)
-			os.Exit(1)
+			log.Exit(1)
 		}
 	}
 	// Check excludes
@@ -105,7 +105,7 @@ func checkFlags(cmd *cobra.Command, checks FlagChecks) {
 		second := cmd.Flags().Changed(check.Right)
 		if first && second {
 			fmt.Printf("error: \"--%s\" and \"--%s\" cannot be used together\n", check.Left, check.Right)
-			os.Exit(1)
+			log.Exit(1)
 		}
 	}
 }
@@ -115,7 +115,7 @@ func GetFlag(cmd *cobra.Command, flag string) bool {
 	r, err := cmd.Flags().GetBool(flag)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(2)
+		log.Exit(2)
 	}
 
 	return r
@@ -126,7 +126,7 @@ func GetInt(cmd *cobra.Command, flag string) int {
 	r, err := cmd.Flags().GetInt(flag)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(3)
+		log.Exit(3)
 	}
 
 	return r
@@ -137,7 +137,7 @@ func GetUint(cmd *cobra.Command, flag string) uint {
 	r, err := cmd.Flags().GetUint(flag)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(4)
+		log.Exit(4)
 	}
 
 	return r
@@ -148,7 +148,7 @@ func GetString(cmd *cobra.Command, flag string) string {
 	r, err := cmd.Flags().GetString(flag)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(4)
+		log.Exit(4)
 	}
 
 	return r
@@ -159,7 +159,7 @@ func GetStringArray(cmd *cobra.Command, flag string) []string {
 	r, err := cmd.Flags().GetStringArray(flag)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(4)
+		log.Exit(4)
 	}
 
 	return r
@@ -170,7 +170,7 @@ func GetIntArray(cmd *cobra.Command, flag string) []int {
 	tmp, err := cmd.Flags().GetStringArray(flag)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(4)
+		log.Exit(4)
 	}
 	//
 	r := make([]int, len(tmp))

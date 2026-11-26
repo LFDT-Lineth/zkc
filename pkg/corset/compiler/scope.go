@@ -398,12 +398,21 @@ func (p LocalScope) IsWithin(path file.Path) bool {
 }
 
 // FixContext fixes the context for this scope.  Since every scope requires
-// exactly one context, this fails if we fix it to incompatible contexts.
+// exactly one context, this fails if we fix it to incompatible contexts.  In
+// such case, the scope retains its existing context so that only those accesses
+// which actually conflict with it are reported (i.e. rather than every access
+// following the first conflict).
 func (p LocalScope) FixContext(context ast.Context) bool {
 	// Join contexts together
-	*p.context = p.context.Join(context)
+	joined := p.context.Join(context)
 	// Check they were compatible
-	return !p.context.IsConflicted()
+	if joined.IsConflicted() {
+		return false
+	}
+	//
+	*p.context = joined
+	//
+	return true
 }
 
 // Bind looks up a given variable being referenced either within the enclosing

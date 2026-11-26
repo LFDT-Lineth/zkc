@@ -1,8 +1,8 @@
-(defcolumns (X :i16) (Y :i16) (P :i16) (SEL :binary))
+(defcolumns (X :i16) (Y :i16) (P :i16) (SEL :binary) (one :i1 :constant 1))
 ;; SEL holds the value of the expression (- P (prev P))
 (defconstraint sel_def () (== SEL (- P (shift P -1))))
 ;; example use of selector
-(defclookup l1 (Y) SEL (X))
+(deflookup l1 ((SEL X)) ((one Y)))
 
 ;; enforce (P - (prev P)) is binary.
 (defconstraint inc ()
