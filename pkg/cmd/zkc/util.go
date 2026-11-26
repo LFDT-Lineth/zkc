@@ -115,7 +115,7 @@ func ParseInputFile(filename string) map[string]bit.Array {
 	// Handle error (if applicable)
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(2)
+		log.Exit(2)
 	}
 	// Done
 	return inputFile
@@ -137,7 +137,7 @@ func CompileSourceFiles(field field.Config, maxStaticHeight uint, filenames ...s
 		// Sanity check for errors
 		if err != nil {
 			fmt.Println(err)
-			os.Exit(3)
+			log.Exit(3)
 		}
 		//
 		srcfiles[i] = *source.NewSourceFile(n, bytes)
@@ -151,7 +151,7 @@ func CompileSourceFiles(field field.Config, maxStaticHeight uint, filenames ...s
 			printSyntaxError(&err)
 		}
 		// Fail
-		os.Exit(4)
+		log.Exit(4)
 	}
 	// Done
 	return macroProgram
@@ -196,7 +196,7 @@ func WriteTraceFile[F field.Element[F]](filename string, trace trace.Trace[F]) {
 	}
 	// Handle error
 	fmt.Println(err)
-	os.Exit(4)
+	log.Exit(4)
 }
 
 // WriteBinaryFile writes a binary file (e.g. zkvm.bin) to disk using the given
@@ -211,7 +211,7 @@ func WriteBinaryFile[F field.Element[F], W vm.Word[W]](binfile *constraints.Bina
 	// Encode binary file as bytes
 	if bytes, err = binfile.MarshalBinary(); err != nil {
 		fmt.Println(err.Error())
-		os.Exit(1)
+		log.Exit(1)
 	} else if path.Ext(filename) == ".hex" {
 		h := fmt.Sprintf("0x%s", hex.EncodeToString(bytes))
 		bytes = []byte(h)
@@ -219,7 +219,7 @@ func WriteBinaryFile[F field.Element[F], W vm.Word[W]](binfile *constraints.Bina
 	// Write file
 	if err := os.WriteFile(filename, bytes, 0644); err != nil {
 		fmt.Println(err.Error())
-		os.Exit(1)
+		log.Exit(1)
 	}
 }
 
@@ -238,7 +238,7 @@ func ReadBinaryFile[F field.Element[F], W vm.Word[W]](filename string) *constrai
 	}
 	// Handle error & exit
 	fmt.Println(err)
-	os.Exit(2)
+	log.Exit(2)
 	// unreachable
 	return &binf
 }

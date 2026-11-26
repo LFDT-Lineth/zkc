@@ -111,8 +111,13 @@ func fieldTestProgram[W vm.Word[W]]() vm.Program[W] {
 // executor, including operands at and above the modulus.
 func TestGenFieldOps(t *testing.T) {
 	const koalabear = 0x7f000001 // 2^31 - 2^24 + 1
-
-	binary, err := gogen.Compile(fieldTestProgram[vm.Uint](), gogen.DEFAULT_CONFIG)
+	// Construct gogen gogenEnv
+	var gogenEnv = gogen.NewEnvironment()
+	//
+	binary, err := gogenEnv.Compile(fieldTestProgram[vm.Uint](), gogen.DEFAULT_CONFIG)
+	// Ensure resources released
+	defer gogenCleanUp(t, gogenEnv)
+	//
 	if err != nil {
 		t.Fatalf("Compile: %v", err)
 	}
@@ -125,8 +130,6 @@ func TestGenFieldOps(t *testing.T) {
 		{"data": {koalabear, 1}},                 // operand equal to p (reduces to 0)
 		{"data": {0xFFFFFFFF, 0xFFFFFFFF}},       // operands above p (reduced by the ops)
 	}
-	//
-	registerCleanUp(t, binary)
 	//
 	for _, in := range vectors {
 		t.Run(inputName(in), func(t *testing.T) {

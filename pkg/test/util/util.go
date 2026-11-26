@@ -14,6 +14,7 @@ package util
 
 import (
 	"fmt"
+	"maps"
 	"testing"
 
 	cmd_util "github.com/LFDT-Lineth/zkc/pkg/cmd/zkc"
@@ -174,7 +175,7 @@ func failIfNot[S, T any](t *testing.T, errs ...T) {
 		var e = any(err)
 		//
 		if _, ok := e.(S); !ok {
-			t.Errorf("unexpected tracing failure: %v", err)
+			t.Errorf("unexpected test failure: %v", err)
 
 			failNow = true
 		}
@@ -198,21 +199,6 @@ func compileTestProgram(testfile, ext string, cfg codegen.Config) (vm vm.Program
 	}
 	//
 	return vm, nil
-}
-
-func decodeInputsOutputs[W vm.Word[W]](t *testing.T, p vm.Program[W], data map[string]bit.Array,
-) (inputs map[string][]W, outputs map[string][]W) {
-	inputs, outputs, errs := vm.DecodeInputsOutputs(p, data)
-	//
-	if len(errs) > 0 {
-		for _, err := range errs {
-			t.Errorf("%s", err.Error())
-		}
-
-		t.FailNow()
-	}
-	//
-	return inputs, outputs
 }
 
 // Marshall / Unmarshall takes a machine and constructs a suitable BinaryFile
@@ -257,4 +243,56 @@ func roundTripMachine[F field.Element[F], W vm.Word[W]](prog vm.Program[vm.Uint]
 	}
 	//
 	return decoded.RawProgram()
+}
+
+func validTestVector(t *testing.T, prog vm.Program[vm.Uint], vector TestVector) bool {
+	var n = prog.Inputs().Count() + prog.Outputs().Count()
+	// Check inputs
+	for iter := prog.Inputs(); iter.HasNext(); {
+		var mem = iter.Next()
+		//
+		if _, ok := vector.data[mem.Name()]; !ok {
+			t.Errorf("test (%s:%d) missing input %s", vector.filename, vector.line, mem.Name())
+			return false
+		}
+	}
+	// Check outputs
+	for iter := prog.Outputs(); iter.HasNext(); {
+		var mem = iter.Next()
+		//
+		if _, ok := vector.data[mem.Name()]; !ok {
+			t.Errorf("test (%s:%d) missing output %s", vector.filename, vector.line, mem.Name())
+			return false
+		}
+	}
+	// Final check
+	if n != uint(len(vector.data)) {
+		var spurious = findSpuriousEntry(prog, vector)
+		t.Errorf("test (%s:%d) has spurious input/output \"%s\"", vector.filename, vector.line, spurious)
+
+		return false
+	}
+	//
+	return true
+}
+
+func findSpuriousEntry(prog vm.Program[vm.Uint], vector TestVector) string {
+	var clone = maps.Clone(vector.data)
+	// Remove inputs
+	for iter := prog.Inputs(); iter.HasNext(); {
+		var mem = iter.Next()
+		delete(clone, mem.Name())
+	}
+	// Remove outputs
+	for iter := prog.Outputs(); iter.HasNext(); {
+		var mem = iter.Next()
+		delete(clone, mem.Name())
+	}
+	// Return first remaining entry
+	for k := range clone {
+		return k
+	}
+	// Should be unreachable since caller guarantees there is at least one
+	// spurious entry.
+	panic("unreachable")
 }

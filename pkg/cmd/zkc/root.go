@@ -14,7 +14,6 @@ package zkc
 
 import (
 	"fmt"
-	"os"
 	"runtime/debug"
 	"slices"
 
@@ -73,7 +72,7 @@ var rootCmd = &cobra.Command{
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		os.Exit(1)
+		log.Exit(1)
 	}
 }
 
@@ -93,7 +92,7 @@ func runFieldAgnosticCmd(cmd *cobra.Command, args []string, cmds []FieldAgnostic
 	// Sanity check
 	if config == nil {
 		fmt.Printf("unknown field \"%s\"\n", fieldName)
-		os.Exit(3)
+		log.Exit(3)
 	}
 	// find command to dispatch
 	c := findFieldAgnosticCmd(*config, cmds)
@@ -124,7 +123,7 @@ func GetBuildConfig[F field.Element[F]](cmd *cobra.Command, field field.Config) 
 	//
 	if !strategy_ok {
 		fmt.Printf("padding strategy %s unsupported\n", padding)
-		os.Exit(2)
+		log.Exit(2)
 	}
 	//
 	validateIgnores(ignores)
@@ -171,7 +170,7 @@ func findFieldAgnosticCmd(config field.Config, cmds []FieldAgnosticCmd) (cmd Fie
 	}
 	//
 	fmt.Printf("field %s unsupported\n", config.Name)
-	os.Exit(2)
+	log.Exit(2)
 	//
 	return cmd
 }
@@ -180,7 +179,7 @@ func validateIgnores(ignores []string) {
 	for _, ignore := range ignores {
 		if !slices.Contains(vm.VALID_TRANSFORMS, ignore) {
 			fmt.Printf("unknown transform \"%s\"\n", ignore)
-			os.Exit(1)
+			log.Exit(1)
 		}
 	}
 }

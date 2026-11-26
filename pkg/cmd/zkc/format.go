@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/util/source"
 	"github.com/LFDT-Lineth/zkc/pkg/zkc/compiler/format"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -40,7 +41,7 @@ var formatCmd = &cobra.Command{
 		}
 
 		if check && different {
-			os.Exit(1)
+			log.Exit(1)
 		}
 	},
 }
@@ -53,7 +54,7 @@ func runFormatFile(filename string, check bool, tabs bool, spaces uint) bool {
 	// Report error as necessary
 	if err != nil {
 		fmt.Println(err)
-		os.Exit(3)
+		log.Exit(3)
 	}
 	//
 	var (
@@ -70,7 +71,7 @@ func runFormatFile(filename string, check bool, tabs bool, spaces uint) bool {
 			printSyntaxError(&e)
 		}
 
-		os.Exit(4)
+		log.Exit(4)
 	}
 	// Apply indentation style: --tabs takes priority over --spaces.
 	if tabs {
@@ -81,7 +82,7 @@ func runFormatFile(filename string, check bool, tabs bool, spaces uint) bool {
 	// Run the formatter (finally)
 	if err := formatter.Format(); err != nil {
 		fmt.Println(err)
-		os.Exit(3)
+		log.Exit(3)
 	}
 	// Extract formatted bytes
 	formatted := buf.Bytes()
@@ -98,7 +99,7 @@ func runFormatFile(filename string, check bool, tabs bool, spaces uint) bool {
 	// Write out formatted file
 	if err := os.WriteFile(filename, formatted, 0600); err != nil {
 		fmt.Println(err)
-		os.Exit(3)
+		log.Exit(3)
 	}
 
 	return false

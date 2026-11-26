@@ -15,7 +15,6 @@ package zkc
 import (
 	"fmt"
 	"math"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -89,12 +88,18 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		sharding = GetString(cmd, "sharding")
 		//
 		includes = GetStringArray(cmd, "include")
+		// create fresh gogen manager
+		manager = vm.NewGoGenManager()
+		// register exit handler
+		release = util.RegisterExitHandler(manager.Close)
 		// Indicate as to whether trace was fully computed or not.
 		computed = false
 		//
 		tr      trace.LazyTrace[F]
 		outputs map[string]bit.Array
 	)
+	// Ensure resources held by executor released.
+	defer release()
 	// Sanity permitted flag combinations
 	checkFlags(cmd, traceFlags)
 	// Configure stats
@@ -108,8 +113,11 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	traceConfig := vm.DEFAULT_TRACE_CONFIG.
 		WithPadding(build.padding).
 		WithBatchSize(GetUint(cmd, "batch")).
-		WithParallelism(!GetFlag(cmd, "sequential")).
-		WithGoGen(build.gogen)
+		WithParallelism(!GetFlag(cmd, "sequential"))
+	// Configure gogen
+	if build.gogen {
+		traceConfig = traceConfig.WithGoGen(util.Some(manager))
+	}
 	//
 	if sharding != "" {
 		traceConfig = traceConfig.WithSharding(parseShardingConfig(sharding))
@@ -258,7 +266,7 @@ func handleErrors(errors []error) {
 			log.Error(fmt.Sprintf("%s", e))
 		}
 		//
-		os.Exit(4)
+		log.Exit(4)
 	}
 }
 
@@ -289,7 +297,7 @@ func parseShardingConfig(spec string) vm.ShardingStrategy {
 	//
 	if colon < 0 {
 		fmt.Printf("invalid sharding spec \"%s\" (expected \"<function>:<n>[K|M|G]\")\n", spec)
-		os.Exit(1)
+		log.Exit(1)
 	}
 	//
 	fn, istr := spec[:colon], spec[colon+1:]
@@ -297,7 +305,7 @@ func parseShardingConfig(spec string) vm.ShardingStrategy {
 	//
 	if err != nil {
 		fmt.Printf("invalid sharding spec \"%s\": %s\n", spec, err.Error())
-		os.Exit(1)
+		log.Exit(1)
 	}
 	//
 	return vm.NewShardingStrategy(fn, n)
