@@ -13,15 +13,21 @@
 package constraint
 
 import (
+	"cmp"
+	"fmt"
+	"strings"
+
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
 )
 
-// Vector is a tuple of registers in one module, optionally filtered by a
-// selector. Lookup, permutation and bus constraints use vectors on both sides.
+// Vector identifies a tuple of registers in one module, optionally filtered
+// by a selector. Lookup, permutation and bus constraints use vectors on both
+// sides.
 type Vector struct {
 	// Module in which all registers are located.
 	Module schema.ModuleId
@@ -59,27 +65,55 @@ func FilteredVector(mid schema.ModuleId, selector register.Id, registers ...regi
 }
 
 // Context returns the module containing the vector's registers.
-func (p *Vector) Context() schema.ModuleId {
+func (p Vector) Context() schema.ModuleId {
 	return p.Module
 }
 
+// Cmp implementation for set.Comparable inteface.
+func (p Vector) Cmp(o Vector) int {
+	if c := cmp.Compare(p.Module, o.Module); c != 0 {
+		return c
+	} else if c := array.Compare(p.Registers, o.Registers); c != 0 {
+		return c
+	}
+	//
+	return compareSelectors(p.Selector, o.Selector)
+}
+
 // HasSelector reports whether the vector has a selector.
-func (p *Vector) HasSelector() bool {
+func (p Vector) HasSelector() bool {
 	return p.Selector.HasValue()
 }
 
 // Ith returns the ith register in this vector.
-func (p *Vector) Ith(index uint) register.Id {
+func (p Vector) Ith(index uint) register.Id {
 	return p.Registers[index]
 }
 
 // Len returns the number of registers in the tuple, excluding the selector.
-func (p *Vector) Len() uint {
+func (p Vector) Len() uint {
 	return uint(len(p.Registers))
 }
 
+// String returns a (unique) string representation for this set.
+func (p Vector) String() string {
+	var builder strings.Builder
+	//
+	if p.HasSelector() {
+		fmt.Fprintf(&builder, "%x:%x", p.Module, p.Selector.Unwrap())
+	} else {
+		fmt.Fprintf(&builder, "%x", p.Module)
+	}
+	//
+	for _, r := range p.Registers {
+		fmt.Fprintf(&builder, ";%x", r.Unwrap())
+	}
+	//
+	return builder.String()
+}
+
 // Lisp returns a textual representation of this vector.
-func (p *Vector) Lisp[F field.Element[F]](mapping register.Map[F]) sexp.SExp {
+func (p Vector) Lisp[F field.Element[F]](mapping register.Map[F]) sexp.SExp {
 	var terms = sexp.EmptyList()
 	//
 	if p.HasSelector() {
@@ -99,4 +133,17 @@ func (p *Vector) Lisp[F field.Element[F]](mapping register.Map[F]) sexp.SExp {
 // given module.
 func lispOfRegister[F field.Element[F]](rid register.Id, mapping register.Map[F]) sexp.SExp {
 	return sexp.NewSymbol(mapping.Register(rid).QualifiedName(mapping))
+}
+
+func compareSelectors(l, r util.Option[register.Id]) int {
+	switch {
+	case l.IsEmpty() && r.IsEmpty():
+		return 0
+	case l.IsEmpty():
+		return -1
+	case r.IsEmpty():
+		return 1
+	default:
+		return l.Unwrap().Cmp(r.Unwrap())
+	}
 }

@@ -355,8 +355,7 @@ func (t *translator[F]) translateVector(selector ast.TypedSymbol,
 	// of its registers may not have been translated.
 	if len(errors) > 0 {
 		return constraint.Vector{}, nil, errors
-	}
-	if selector != nil {
+	} else if selector != nil {
 		return constraint.FilteredVector(module.Id(), sel.Register(), registers...), module, nil
 	}
 	//

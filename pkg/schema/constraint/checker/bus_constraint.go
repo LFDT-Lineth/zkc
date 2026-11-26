@@ -107,27 +107,26 @@ func processBusConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *bus.
 	return State[F]{tally}, nil
 }
 
-func accumulate[F field.Element[F]](tr trace.Shard[F], vecs []constraint.Vector, tally *constraint.Tally[F], sign int) {
+func accumulate[F field.Element[F]](tr trace.Shard[F], vecs []VecId, tally *constraint.Tally[F], sign int) {
 	// add is the tally update applied to each selected row.
 	var add = func(count int) int { return count + sign }
 	//
 	for _, vector := range vecs {
 		var (
-			id       = constraint.NewSetId(vector.Module, vector.Selector, vector.Registers)
 			trModule = tr.Module(vector.Module)
 			buffer   []F
 		)
 		//
 		for row := range trModule.Height() {
-			if !isRowSelected(row, id.Selector(), trModule) {
+			if !isRowSelected(row, vector.Selector, trModule) {
 				continue
 			}
 			// A new key takes ownership of the buffer; repeated keys reuse it.
 			if buffer == nil {
-				buffer = make([]F, id.Width())
+				buffer = make([]F, vector.Len())
 			}
 
-			readRegisters(row, id, trModule, buffer)
+			readRegisters(row, vector, trModule, buffer)
 
 			if !tally.Update(hash.NewArray(buffer), add, sign) {
 				buffer = nil

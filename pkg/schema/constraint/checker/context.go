@@ -33,8 +33,8 @@ import (
 // Set provides a convenient alias
 type Set[F field.Element[F]] = *hash.Set[hash.Array[F]]
 
-// SetId provides a convenient alias
-type SetId = constraint.SetId
+// VecId provides a convenient alias
+type VecId = constraint.Vector
 
 // Schema provides a convenient alias
 type Schema[F field.Element[F]] = schema.Schema[F]
@@ -45,7 +45,7 @@ type Schema[F field.Element[F]] = schema.Schema[F]
 type Context[F any] interface {
 	// Get returns a given module viewed in a given shard as a set from the
 	// perspective of a given set of columns, with an optional selector.
-	Get(id SetId) collection.Set[[]F]
+	Get(id VecId) collection.Set[[]F]
 }
 
 // seqBuildContext constructs the context from a given schema and trace.
@@ -73,7 +73,7 @@ func parBuildContext[F field.Element[F]](tr trace.Shard[F], sc Schema[F]) Contex
 		// Determine sets to build
 		sids = determineSets(sc)
 		// build every chunk in parallel
-		sets = array.ParallelMap(sids, func(_ uint, c SetId) Set[F] {
+		sets = array.ParallelMap(sids, func(_ uint, c VecId) Set[F] {
 			return buildSetChunk(c, tr, sc)
 		})
 	)
@@ -86,8 +86,8 @@ func parBuildContext[F field.Element[F]](tr trace.Shard[F], sc Schema[F]) Contex
 }
 
 // DetermineSets extracts all unique set identifiers from lookup constraints.
-func determineSets[F field.Element[F]](sc Schema[F]) []SetId {
-	var sets set.AnySortedSet[SetId]
+func determineSets[F field.Element[F]](sc Schema[F]) []VecId {
+	var sets set.AnySortedSet[VecId]
 	//
 	for iter := sc.Constraints(); iter.HasNext(); {
 		var ith = iter.Next()
@@ -101,11 +101,9 @@ func determineSets[F field.Element[F]](sc Schema[F]) []SetId {
 }
 
 // Determine whether given constraint encodes any sets
-func targetSetsOf[F field.Element[F]](c Constraint[F]) (sets []SetId) {
+func targetSetsOf[F field.Element[F]](c Constraint[F]) (sets []VecId) {
 	if c, ok := c.(*lookup.Constraint[F]); ok {
-		for _, v := range c.Targets {
-			sets = append(sets, constraint.NewSetId(v.Module, v.Selector, v.Registers))
-		}
+		return c.Targets
 	}
 	//
 	return sets
@@ -113,10 +111,10 @@ func targetSetsOf[F field.Element[F]](c Constraint[F]) (sets []SetId) {
 
 // buildSetChunk constructs the (partial) set of rows determined by a given
 // chunk.
-func buildSetChunk[F field.Element[F]](id SetId, tr trace.Shard[F], sc Schema[F]) Set[F] {
+func buildSetChunk[F field.Element[F]](id VecId, tr trace.Shard[F], sc Schema[F]) Set[F] {
 	var (
-		scModule = sc.Module(id.Module())
-		trModule = tr.Module(id.Module())
+		scModule = sc.Module(id.Module)
+		trModule = tr.Module(id.Module)
 	)
 	//
 	if scModule.IsStatic() {
@@ -126,15 +124,15 @@ func buildSetChunk[F field.Element[F]](id SetId, tr trace.Shard[F], sc Schema[F]
 	return buildDynamicSetChunk(id, trModule)
 }
 
-func buildStaticSetChunk[F field.Element[F]](id SetId, sm schema.Module[F]) Set[F] {
+func buildStaticSetChunk[F field.Element[F]](id VecId, sm schema.Module[F]) Set[F] {
 	var (
-		buffer   = make([]F, id.Width())
+		buffer   = make([]F, id.Len())
 		contents = sm.StaticContents()
 		data     = hash.NewSet[hash.Array[F]](uint(len(contents)))
 	)
 	// Insert all selected rows within this chunk
 	for _, row := range contents {
-		if isStaticSelected(id.Selector(), row) {
+		if isStaticSelected(id.Selector, row) {
 			// Read each register of this vector
 			readStaticRegisters(id, row, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
@@ -149,14 +147,14 @@ func buildStaticSetChunk[F field.Element[F]](id SetId, sm schema.Module[F]) Set[
 	return data
 }
 
-func buildDynamicSetChunk[F field.Element[F]](id SetId, trModule trace.Module[F]) Set[F] {
+func buildDynamicSetChunk[F field.Element[F]](id VecId, trModule trace.Module[F]) Set[F] {
 	var (
-		buffer = make([]F, id.Width())
+		buffer = make([]F, id.Len())
 		data   = hash.NewSet[hash.Array[F]](trModule.Height() >> 4)
 	)
 	//
 	for i := range trModule.Height() {
-		if isRowSelected(i, id.Selector(), trModule) {
+		if isRowSelected(i, id.Selector, trModule) {
 			// Read each register of this vector
 			readRegisters(i, id, trModule, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
@@ -173,8 +171,8 @@ func buildDynamicSetChunk[F field.Element[F]](id SetId, trModule trace.Module[F]
 
 // readRegisters reads the value held in each register of the given vector on
 // the given row into the temporary buffer.
-func readRegisters[F field.Element[F]](k uint, id SetId, trModule trace.Module[F], buffer []F) {
-	for i := range id.Width() {
+func readRegisters[F field.Element[F]](k uint, id VecId, trModule trace.Module[F], buffer []F) {
+	for i := range id.Len() {
 		rid := id.Ith(i)
 		buffer[i] = trModule.Column(rid.Unwrap()).Get(k)
 	}
@@ -182,8 +180,8 @@ func readRegisters[F field.Element[F]](k uint, id SetId, trModule trace.Module[F
 
 // readStaticRegisters reads the value held in each register of the given vector
 // on the given row into the temporary buffer.
-func readStaticRegisters[F field.Element[F]](id SetId, row []F, buffer []F) {
-	for i := range id.Width() {
+func readStaticRegisters[F field.Element[F]](id VecId, row []F, buffer []F) {
+	for i := range id.Len() {
 		rid := id.Ith(i)
 		buffer[i] = row[rid.Unwrap()]
 	}
@@ -223,7 +221,7 @@ type contextImpl[F field.Element[F]] struct {
 }
 
 // Get implementation of Context interface.
-func (p contextImpl[F]) Get(id SetId) collection.Set[[]F] {
+func (p contextImpl[F]) Get(id VecId) collection.Set[[]F] {
 	if set, ok := p.sets[id.String()]; ok {
 		return contextSet[F]{set}
 	}

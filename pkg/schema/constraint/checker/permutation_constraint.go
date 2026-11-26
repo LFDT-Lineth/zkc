@@ -28,7 +28,7 @@ import (
 type PermutationFailure[F field.Element[F]] struct {
 	rowFailure[F]
 	// Constrained vector
-	vector constraint.Vector
+	vector VecId
 }
 
 // Message provides a suitable error message
@@ -81,7 +81,7 @@ func hashPermutationCheck[F field.Element[F]](cp ConstraintProcessor[F], c *perm
 		return state, nil
 	}
 	// Report the first row holding an unbalanced tuple.
-	for _, vectors := range [][]constraint.Vector{c.Left, c.Right} {
+	for _, vectors := range [][]VecId{c.Left, c.Right} {
 		if r := unbalancedRow(vectors, cp.shard, tally); r.HasValue() {
 			var rowId = r.Unwrap()
 			//
@@ -109,7 +109,7 @@ func isBalanced[F field.Element[F]](tally *constraint.Tally[F]) bool {
 // unbalancedRow returns the first selected row of the given vectors whose tuple
 // has a non-zero count in the given tally (if any).  Unlike iterating the tally
 // itself, this gives the same witness on every run.
-func unbalancedRow[F field.Element[F]](vectors []constraint.Vector, shard trace.Shard[F], tally *constraint.Tally[F],
+func unbalancedRow[F field.Element[F]](vectors []VecId, shard trace.Shard[F], tally *constraint.Tally[F],
 ) util.Option[vecRowId] {
 	for _, vector := range vectors {
 		var (
