@@ -116,8 +116,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	mod.AddRegisters(regs...)
 	// Append the synthetic columns, in the order fixed by computeRamLayout.
 	mod.AddRegisters(
-		register.NewComputed[F](tracer.RAM_EXEC_NAME, 1, padding),
-		register.NewComputed[F](tracer.RAM_IS_WRITE_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_EXEC_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_IS_WRITE_NAME, 1, padding),
 	)
 	addLimbRegisters(mod, tracer.RAM_VALUE_READ_PREFIX, layout.dataWidths)
 	addLimbRegisters(mod, tracer.RAM_TS_WRITTEN_PREFIX, layout.tsWidths)
@@ -125,8 +125,8 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	addLimbRegisters(mod, tracer.RAM_TS_DELTA_PREFIX, layout.tsWidths)
 	addCarryRegisters(mod, tracer.RAM_TS_CARRY_PREFIX, len(layout.tsCarry))
 	mod.AddRegisters(
-		register.NewComputed[F](tracer.RAM_EXEC_WRITE_NAME, 1, padding),
-		register.NewComputed[F](tracer.RAM_EXEC_READ_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_EXEC_WRITE_NAME, 1, padding),
+		register.NewComputed(tracer.RAM_EXEC_READ_NAME, 1, padding),
 	)
 	addLimbRegisters(mod, tracer.RAM_TEMPORAL_TS_PREFIX, layout.tsWidths)
 	addCarryRegisters(mod, tracer.RAM_TEMPORAL_TS_CARRY_PREFIX, len(layout.temporalTsCarry))
@@ -138,7 +138,7 @@ func (p *constraintTranslator[W, F]) translateReadWriteMemory(ctx schema.ModuleI
 	// (value-read, timestamp-read, deltas, carries) which — unlike the address /
 	// value / timestamp-written columns pinned by the caller lookup — are not
 	// otherwise constrained.  1-bit columns (phase bits, carries) get an r*r==r
-	// constraint; wider columns a range-table lookup.
+	// constraint; wider columns a lookup into the range module of their width.
 	p.addRangeProofConstraints(mod, ctx)
 	//
 	return mod
@@ -235,7 +235,7 @@ func addLimbRegisters[F field.Element[F]](mod *schema.Table[F],
 	)
 	//
 	for k, w := range widths {
-		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), w, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), w, padding))
 	}
 }
 
@@ -250,7 +250,7 @@ func addCarryRegisters[F field.Element[F]](mod *schema.Table[F],
 	)
 	//
 	for k := 0; k < n; k++ {
-		mod.AddRegisters(register.NewComputed[F](tracer.RamLimbName(prefix, uint(k)), 1, padding))
+		mod.AddRegisters(register.NewComputed(tracer.RamLimbName(prefix, uint(k)), 1, padding))
 	}
 }
 
@@ -270,8 +270,8 @@ func ramGeneralConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout)
 	//
 	return []schema.Constraint[F]{
 		// binary columns
-		binaryConstraint[F]("exec_is_binary", ctx, exec),
-		binaryConstraint[F]("is_write_is_binary", ctx, isWrite),
+		binaryConstraint("exec_is_binary", ctx, exec),
+		binaryConstraint("is_write_is_binary", ctx, isWrite),
 		// leading padding row: EXEC[0] == 0.
 		vanishing.NewConstraint("exec_vanishes_in_padding", ctx, util.Some(0),
 			exec.Equals(zero).AsLogical()),
@@ -301,7 +301,7 @@ func ramExecConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayout) []
 		cs      []schema.Constraint[F]
 	)
 	// TIMESTAMP_WRITTEN = TIMESTAMP_READ + 1 + TIMESTAMP_DELTA
-	cs = append(cs, multiLimbIncrement[F](ctx, "ts", l.tsWritten, l.tsRead, l.tsDelta,
+	cs = append(cs, multiLimbIncrement(ctx, "ts", l.tsWritten, l.tsRead, l.tsDelta,
 		l.tsCarry, l.tsWidths, 0, execOn)...)
 	// read (IS_WRITE == 0) => []VALUE_READ == []VALUE_WRITTEN
 	readOn := execOn.And(isWrite.Equals(zero))
@@ -330,7 +330,7 @@ func ramChronologyConstraints[F field.Element[F]](ctx schema.ModuleId, l ramLayo
 		bothExec = prevExec.Equals(one).And(exec.Equals(one))
 	)
 	//
-	return multiLimbIncrement[F](ctx, "temporal_ts_increment", l.temporalTs, l.temporalTs, nil,
+	return multiLimbIncrement(ctx, "temporal_ts_increment", l.temporalTs, l.temporalTs, nil,
 		l.temporalTsCarry, l.tsWidths, -1, bothExec)
 }
 

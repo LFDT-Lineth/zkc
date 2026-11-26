@@ -73,6 +73,10 @@ type constraintTranslator[W vm.Word[W], F field.Element[F]] struct {
 	// register can be range-proved by a lookup into the matching $range_un
 	// table.
 	rangeTables map[uint]rangeTable
+	// rangeFunctions indexes the recursive range modules by width, so each
+	// memory column too wide for a static table can be range-proved by a lookup
+	// into the matching $range_un function.
+	rangeFunctions map[uint]vm.RangeFunction
 	// sendPorts records the send port of every call into a global function,
 	// keyed by the callee.  These are accumulated as each caller is translated,
 	// since a bus spans modules and, hence, can only be constructed once every
@@ -94,11 +98,13 @@ func newConstraintTranslator[W vm.Word[W], F field.Element[F]](program vm.Progra
 		// Index the static range-check tables by width, so each register can be
 		// range-proved by a lookup into the matching $range_un table.
 		rangeTables = indexRangeTables[W, F](program, maxStaticWidth)
+		// Index the recursive range modules by width, likewise.
+		rangeFunctions = vm.RangeFunctions(program)
 		// Accumulates the send port of every call into a global function.
 		sendPorts = make(map[vm.ModuleId][]mir.BusPort)
 	)
 	//
-	return constraintTranslator[W, F]{program, rangeTables, sendPorts, maxStaticWidth}
+	return constraintTranslator[W, F]{program, rangeTables, rangeFunctions, sendPorts, maxStaticWidth}
 }
 
 // addSendPort records a send port for the bus of a given (global) callee.

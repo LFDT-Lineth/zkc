@@ -15,6 +15,7 @@ package transform
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/stack"
@@ -29,10 +30,52 @@ import (
 // the lookup recipient in both static tables and recursive modules, so callers
 // wiring the (deferred) lookups can rely on a single, uniform target name.
 const (
-	rangeValueName = "value"
-	rangeLoName    = "lo"
-	rangeHiName    = "hi"
+	rangeModulePrefix = "$range_u"
+	rangeValueName    = "value"
+	rangeLoName       = "lo"
+	rangeHiName       = "hi"
 )
+
+// RangeFunction locates the recursive range module "$range_uN" generated for a
+// width N > maxStaticWidth.
+type RangeFunction struct {
+	// Module identifies the range module itself.
+	Module bytecode.ModuleId
+	// Value, Lo and Hi identify the registers holding the value being checked,
+	// and its low / high halves.
+	Value, Lo, Hi bytecode.RegisterId
+	// LoWidth and HiWidth are the bitwidths of the low / high halves.
+	LoWidth, HiWidth uint
+}
+
+// RangeFunctions indexes, by width, the recursive range modules of a given
+// program.  Widths at or below maxStaticWidth are checked against a static
+// table (or a vanishing constraint) instead and, hence, have no entry.
+func RangeFunctions[W Word[W]](program descriptor.Program[W]) map[uint]RangeFunction {
+	var fns = make(map[uint]RangeFunction)
+	//
+	for id, m := range program.Modules() {
+		fn, ok := m.(*Function[W])
+		if !ok || !strings.HasPrefix(fn.Name(), rangeModulePrefix) {
+			continue
+		}
+		//
+		var value, lo, hi = fn.HasRegister(rangeValueName), fn.HasRegister(rangeLoName), fn.HasRegister(rangeHiName)
+		//
+		util.Assert(value.HasValue() && lo.HasValue() && hi.HasValue(), "malformed range module \"%s\"", fn.Name())
+		//
+		fns[fn.Register(value.Unwrap()).Bitwidth().Unwrap()] = RangeFunction{
+			Module:  util.Cast[bytecode.ModuleId](uint(id)),
+			Value:   value.Unwrap(),
+			Lo:      lo.Unwrap(),
+			Hi:      hi.Unwrap(),
+			LoWidth: fn.Register(lo.Unwrap()).Bitwidth().Unwrap(),
+			HiWidth: fn.Register(hi.Unwrap()).Bitwidth().Unwrap(),
+		}
+	}
+	//
+	return fns
+}
 
 // AddRangeChecks adds, for every distinct register width occurring in the
 // program, a "range" module which acts as the recipient of a range-proof lookup
@@ -152,23 +195,40 @@ func neededRangeWidths[W Word[W]](modules []descriptor.Module[W], field field.Co
 			// (narrower) width rather than that of its target register.
 			worklist.AddCasts(mod.Vectors()...)
 		case *descriptor.Memory[W]:
-			// TODO: the need for this highlights some problems with the current
-			// implementation of memory.  Specifically, that some columns are
-			// omitted from the memory descriptor, leading to awkward situations
-			// like this.  See #2106.
-			if width := mod.StampWidth(); width.HasValue() && mod.IsReadWrite() {
-				for _, w := range descriptor.LimbWidths(field.RegisterWidth, width.Unwrap()) {
-					worklist.AddStaticWidth(w)
-				}
+			// Seed from every checked column of the memory's table. This include
+			// registers of the memory (address, data, timestamp) and any other columns that are range-checked.
+			// Note that there won't be vm vall for those columns, and that the range_uN module will be fed
+			// at the end of the tracing.
+			for _, w := range memoryColumnWidths(mod, field) {
+				worklist.AddWidth(w)
 			}
-			// NOTE: memory registers are only range checked when their width is
-			// maxStaticWidth or less.  Registers above this are currently not
-			// range-proved at all; closing that gap is tracked by #2106.
-			worklist.AddStatic(mod.Registers()...)
 		}
 	}
 	// Destructure each width wider than the static limit, pulling in its halves.
 	return decomposeAll(worklist)
+}
+
+// memoryColumnWidths returns the width of every column of a given memory's
+// table which is range-proved when generating constraints.
+// Static memories have no range-checked columns, so return nil for them.
+func memoryColumnWidths[W Word[W]](mem *descriptor.Memory[W], field field.Config) []uint {
+	var widths []uint
+	//
+	if mem.IsStatic() {
+		return nil
+	}
+	//
+	for _, reg := range mem.Registers() {
+		if !reg.IsNative() {
+			widths = append(widths, reg.Bitwidth().Unwrap())
+		}
+	}
+	//
+	if width := mem.StampWidth(); width.HasValue() && mem.IsReadWrite() {
+		widths = append(widths, descriptor.LimbWidths(field.RegisterWidth, width.Unwrap())...)
+	}
+	//
+	return widths
 }
 
 func decomposeAll(worklist *BitwidthSet) map[uint]rangeSplit {
@@ -313,7 +373,7 @@ func appendRangeCheck[W Word[W]](codes []Bytecode[W], r bytecode.RegisterId, w u
 // rangeModuleName returns the canonical module name for the range module of a
 // given width.
 func rangeModuleName(w uint) string {
-	return fmt.Sprintf("$range_u%d", w)
+	return fmt.Sprintf("%s%d", rangeModulePrefix, w)
 }
 
 // rangeCheck builds a single range-check of register r of width w > maxStaticWidth.
@@ -488,28 +548,6 @@ func (p *BitwidthSet) AddCasts[W word.Word[W]](vectors ...BytecodeVector[W]) {
 			if cast, ok := code.(*bytecode.CheckCast[W]); ok {
 				p.Push(uint(cast.Bitwidth))
 			}
-		}
-	}
-}
-
-// AddStaticWidth adds a given bitwidth to this worklist, except when it is
-// above the maximum static width.  This function should be eliminated by #2106.
-func (p *BitwidthSet) AddStaticWidth(width uint) {
-	if width <= p.maxStaticWidth {
-		p.Push(width)
-	}
-}
-
-// AddStatic adds the bitwidth of all checked registers to this worklist, except
-// when that width is above the maximum static width.  This function should be
-// eliminated by #2106.
-func (p *BitwidthSet) AddStatic[W word.Word[W]](registers ...descriptor.Register[W]) {
-	for _, reg := range registers {
-		bitwidth := reg.Bitwidth()
-		// NOTE: a native registers cannot be range checked, hence Unwrap()
-		// here is safe.
-		if reg.IsRangeChecked() && bitwidth.Unwrap() <= p.maxStaticWidth {
-			p.Push(bitwidth.Unwrap())
 		}
 	}
 }

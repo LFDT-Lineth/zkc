@@ -119,8 +119,10 @@ func initReadWriteMemory[W Word[W], F Element[F]](cfg field.Config, m vm.Memory[
 // traceReadWriteMemory materialises the trace of a read-write (RAM) memory: one
 // row per logical access (grouped from the per-lane access log), in access order,
 // preceded by a padding row.  Column order follows constraints.computeRamLayout.
+// The values held in the given columns are added to the recursive range modules
+// they are checked against.
 func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeReadWriteMemory[W], module *trace.ModuleBuilder[F],
-	cfg field.Config, scratch []F) {
+	columns []rangeColumn[F], cfg field.Config, scratch []F) {
 	//
 	var (
 		geometry = m.Descriptor()
@@ -130,7 +132,7 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeReadWriteMemory[W
 		// Timestamp limb widths, most-significant first (matches computeRamLayout).
 		tsWidths = array.Reverse(vm.LimbWidths(cfg.RegisterWidth, geometry.StampWidth().Unwrap()))
 		layout   = newRamTraceLayout(nAddr, nData, len(tsWidths))
-		accesses = groupRamAccesses[W](m.AccessLog(), nData)
+		accesses = groupRamAccesses(m.AccessLog(), nData)
 		//
 		width = module.Width()
 		// TEMPORAL_TS of the previous row; the first real row gets the shard's
@@ -139,6 +141,8 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeReadWriteMemory[W
 	)
 	// Initialise first row as padding row.
 	module.Append(paddingRow(scratch[:width])...)
+	// Padding rows hold zero in every column, which must appears in the recursive range module.
+	addRangeRows(columns, scratch[:width])
 	// Iterate and process each access, one at a time.
 	for i, acc := range accesses {
 		var (
@@ -186,6 +190,7 @@ func traceReadWriteMemory[W Word[W], F Element[F]](m vm.RuntimeReadWriteMemory[W
 		prevTemporal = temporal
 		//
 		module.Append(row...)
+		addRangeRows(columns, row)
 	}
 }
 

@@ -48,9 +48,9 @@ type rangeTable struct {
 // indexRangeTables indexes, by register width, the static range-check tables
 // present in the machine.  A static $range_un table fully enumerates the values
 // of an n-bit register and is generated for exactly the widths
-// n <= maxStaticWidth; wider registers are range-checked recursively by
-// a call (lowered via addCallLookups), so only the static tables are collected
-// here.
+// n <= maxStaticWidth; wider registers are range-checked by a recursive range
+// module (see addRangeProofConstraints), so only the static tables are
+// collected here.
 func indexRangeTables[W vm.Word[W], F field.Element[F]](program vm.Program[W], maxStaticWidth uint,
 ) map[uint]rangeTable {
 	//
@@ -76,15 +76,18 @@ func indexRangeTables[W vm.Word[W], F field.Element[F]](program vm.Program[W], m
 	return tables
 }
 
-// addRangeProofConstraints emits, for every register of the given function whose
+// addRangeProofConstraints emits, for every register of the given module whose
 // width is covered by a static range table, an unfiltered lookup asserting the
 // register's value lies in that table — i.e. it fits within its declared bit
 // width.  Both sides are unfiltered: the source ranges over every row (each row
 // holds a value which must be in range) and the target over the whole enumeration.
 //
-// Registers wider than maxStaticWidth have no static table; they are
-// range-checked at runtime by a recursive call which addCallLookups lowers into
-// a lookup.  Native (field-element) registers are not range-checked at all.
+// Registers wider than maxStaticWidth have no static table, and are
+// range-checked by the recursive range module of their width instead.  For a
+// function, AddRangeChecks has already inserted a call into that module, which
+// addLookups lowers into a lookup.  A memory has no bytecode to host such a
+// call, so its wide registers are looked up here (see addRecursiveRangeLookup).
+// Native (field-element) registers are not range-checked at all.
 //
 // Zero-width registers (e.g. the shared zero register used to pad lookups
 // against wider memories / callees) are constrained to be exactly zero.  This
@@ -94,16 +97,18 @@ func indexRangeTables[W vm.Word[W], F field.Element[F]](program vm.Program[W], m
 // thereby bypass the implied range check on the narrower side of the lookup.
 func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[F], ctx schema.ModuleId,
 	regs ...vm.Register[W]) {
+	// A schema module is translated from the program module of the same
+	// identifier, which tells us whether this is a memory.
+	_, isMemory := p.program.Module(util.Cast[uint16](ctx)).(*vm.Memory[W])
 	// TODO: lots of perf possible here, see
 	// https://github.com/LFDT-Lineth/zkc/issues/1907
-	// https://github.com/LFDT-Lineth/zkc/issues/1911
 	for i, reg := range mod.Registers() {
 		if reg.IsNative() {
-			// Native registers are not range-checked.
+			// Native registers are obviously not range-checked.
 			continue
 		} else if i < len(regs) && !regs[i].IsRangeChecked() {
-			// The condition "if i < len(regs)" ensures that ALL registers (like PC, etc)
-			// added are range-checked. Note that len(mod.Registers()) >= len(regs)
+			// We have len(regs) <= len(mod.Registers()), where the diff is corset-added registers
+			// ($ret, IS_PC, etc). We may skip only the first ones, but will always range-checked the later.
 			continue
 		}
 		// Registers of width <= MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK are not
@@ -118,16 +123,20 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 
 			continue
 		}
-		//
-		table, ok := p.rangeTables[reg.Width()]
-		if !ok {
-			// a width <= maxStaticWidth must always have a static table.
-			if reg.Width() <= p.maxStaticWidth {
-				panic(fmt.Sprintf("missing static range table for width %d", reg.Width()))
+		// Registers wider than maxStaticWidth have no static table.
+		if reg.Width() > p.maxStaticWidth {
+			// Those of a function are range-checked recursively via a call
+			// lookup that has been inserted in the vm previously.  Those of a
+			// memory have no such call, so need a dedicated lookup.
+			if isMemory {
+				p.addRecursiveRangeLookup(mod, ctx, register.NewId(uint(i)), reg.Width())
 			}
-			// Wider registers are range-checked recursively via a call lookup.
+			//
 			continue
 		}
+		// a width <= maxStaticWidth must always have a static table.
+		table, ok := p.rangeTables[reg.Width()]
+		util.Assert(ok, "missing static range table for width %d", reg.Width())
 		//
 		var (
 			regId  = register.NewId(uint(i))
@@ -141,6 +150,33 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 		mod.AddConstraints(lookup.NewConstraint[F](handle,
 			[]mir.LookupVector{target}, []mir.LookupVector{source}))
 	}
+}
+
+// addRecursiveRangeLookup emits a lookup to the range_u$width module.
+// The source is unfiltered, so the padding rows of the memory are checked as well.
+// The values held by its registers are instead added when the trace of the memory is built,
+// as we can't add a proper vm call to the range module from a memory.
+func (p *constraintTranslator[W, F]) addRecursiveRangeLookup(mod *schema.Table[F], ctx schema.ModuleId,
+	regId register.Id, width uint) {
+	//
+	fn, ok := p.rangeFunctions[width]
+	// Sanity check a recursive range module was generated for this width.
+	util.Assert(ok, "missing recursive range module for width %d", width)
+	//
+	var (
+		callee = p.program.Module(fn.Module).(*vm.Function[W])
+		handle = fmt.Sprintf("range_u%d_%d", width, regId.Unwrap())
+		// $ret is allocated immediately after the callee's registers (see
+		// translateFunction).
+		retId = register.NewId(uint(len(callee.Registers())))
+		// Source: the register's value on the current row.
+		source = lookup.UnfilteredVector(ctx, regId)
+		// Target: the values checked by the matching $range_un function.
+		target = lookup.FilteredVector(uint(fn.Module), retId, register.NewId(uint(fn.Value)))
+	)
+	//
+	mod.AddConstraints(lookup.NewConstraint[F](handle,
+		[]mir.LookupVector{target}, []mir.LookupVector{source}))
 }
 
 // emitCastCheck lowers a cast "check r:uN" into a range check of r against N
