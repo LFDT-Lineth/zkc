@@ -40,9 +40,7 @@ const MAX_BITWIDTH_POLYNOMIAL_RANGE_CHECK = transform.MAX_BITWIDTH_POLYNOMIAL_RA
 type RangeFunction = transform.RangeFunction
 
 // RangeFunctions indexes, by width, the recursive range modules "$range_uN" of
-// a program transformed for tracing.  Such a module exists for exactly those
-// widths N which are too wide for a static range table, and range-checks a
-// value by destructuring it into a low half and a high half.
+// a program transformed for tracing.
 func RangeFunctions[W Word[W]](p Program[W]) map[uint]RangeFunction {
 	return transform.RangeFunctions(p)
 }

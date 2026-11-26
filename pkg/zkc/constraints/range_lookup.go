@@ -152,19 +152,10 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 	}
 }
 
-// addRecursiveRangeLookup emits a lookup asserting that a memory register too
-// wide for a static range table fits within its declared bit width.  The target
-// is the "value" column of the recursive range module of that width, filtered
-// on its $ret line (which is 1 exactly on the rows where the module's own
-// constraints destructure and range-check the value).  This is the lookup which
-// a call "$range_uN(r)" is lowered into (see emitCallLookup).
-//
-// The source is unfiltered, so the padding rows of the memory are checked as
-// well.  Every column of a memory is zero on its padding rows, so this only
-// requires that zero is present in the range module.  The range module is
-// still called directly for function registers and casts; since a memory has
-// no bytecode to host such a call, the values held by its registers (along
-// with zero) are instead added when the trace of the memory is built.
+// addRecursiveRangeLookup emits a lookup to the range_u$width module.
+// The source is unfiltered, so the padding rows of the memory are checked as well.
+// The values held by its registers are instead added when the trace of the memory is built,
+// as we can't add a proper vm call to the range module from a memory.
 func (p *constraintTranslator[W, F]) addRecursiveRangeLookup(mod *schema.Table[F], ctx schema.ModuleId,
 	regId register.Id, width uint) {
 	//

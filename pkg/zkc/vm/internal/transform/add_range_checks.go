@@ -37,8 +37,7 @@ const (
 )
 
 // RangeFunction locates the recursive range module "$range_uN" generated for a
-// width N > maxStaticWidth, which range-checks a value by destructuring it into
-// a low half and a high half (see newRecursiveRangeModule).
+// width N > maxStaticWidth.
 type RangeFunction struct {
 	// Module identifies the range module itself.
 	Module bytecode.ModuleId
@@ -196,8 +195,10 @@ func neededRangeWidths[W Word[W]](modules []descriptor.Module[W], field field.Co
 			// (narrower) width rather than that of its target register.
 			worklist.AddCasts(mod.Vectors()...)
 		case *descriptor.Memory[W]:
-			// Seed from every range-proved column of the memory's table (see
-			// memoryColumnWidths).
+			// Seed from every checked column of the memory's table. This include
+			// registers of the memory (address, data, timestamp) and any other columns that are range-checked.
+			// Note that there won't be vm vall for those columns, and that the range_uN module will be fed
+			// at the end of the tracing.
 			for _, w := range memoryColumnWidths(mod, field) {
 				worklist.AddWidth(w)
 			}
@@ -208,13 +209,8 @@ func neededRangeWidths[W Word[W]](modules []descriptor.Module[W], field field.Co
 }
 
 // memoryColumnWidths returns the width of every column of a given memory's
-// table which is range-proved when generating constraints.  A static memory is
-// a fully enumerated reference table, hence none of its columns are.  For any
-// other memory, these are its (non-native) address / data registers along
-// with, for a read-write memory, the limbs of its timestamp columns (which are
-// not declared by the memory's descriptor).  Columns wider than maxStaticWidth
-// are looked up in a recursive range module, which is populated from the
-// memory's contents when its trace is built.
+// table which is range-proved when generating constraints.
+// Static memories have no range-checked columns, so return nil for them.
 func memoryColumnWidths[W Word[W]](mem *descriptor.Memory[W], field field.Config) []uint {
 	var widths []uint
 	//
