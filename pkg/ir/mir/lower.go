@@ -170,6 +170,9 @@ func (p *AirLowering[F]) lowerConstraintToAir(c schema.Constraint[F], airModule 
 		p.lowerBusConstraintToAir(v, airModule)
 	case *LookupConstraint[F]:
 		p.lowerLookupConstraintToAir(v, airModule)
+	case *PermutationConstraint[F]:
+		// Both layers use the same register vectors; no lowering is needed.
+		airModule.AddConstraint(v)
 	case *RangeConstraint[F]:
 		p.lowerRangeConstraintToAir(v, airModule)
 	case *VanishingConstraint[F]:

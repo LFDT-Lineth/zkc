@@ -15,7 +15,6 @@ package checker
 import (
 	"fmt"
 
-	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
@@ -28,7 +27,7 @@ import (
 type LookupFailure[F field.Element[F]] struct {
 	rowFailure[F]
 	// sourceId gives the set identifier of the source
-	sourceId constraint.SetId
+	sourceId VecId
 }
 
 // Message provides a suitable error message
@@ -44,10 +43,10 @@ func (p *LookupFailure[F]) String() string {
 func (p *LookupFailure[F]) RequiredCells() set.AnySortedSet[trace.CellRef] {
 	res := set.NewAnySortedSet[trace.CellRef]()
 	// Handle registers
-	for i := range p.sourceId.Width() {
+	for i := range p.sourceId.Len() {
 		var rid = p.sourceId.Ith(i)
 		//
-		ref := trace.NewColumnRef(p.sourceId.Module(), rid)
+		ref := trace.NewColumnRef(p.sourceId.Module, rid)
 		res.Insert(trace.NewCellRef(ref, int(p.row)))
 	}
 	//
@@ -66,15 +65,14 @@ func processLookupConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *l
 		failures []Failure[F]
 	)
 	// Subset check
-	for _, source := range c.Sources {
+	for _, src := range c.Sources {
 		var (
-			srcId = constraint.NewSetId(source.Module, source.Selector, source.Registers)
 			// Determine first failing row (if any)
-			witness = inclusionCheck(cp.shard.Module(source.Module), srcId, targets, buffer)
+			witness = inclusionCheck(cp.shard.Module(src.Module), src, targets, buffer)
 		)
 		//
 		if witness.HasValue() {
-			failures = append(failures, &LookupFailure[F]{newRowFailure(c.Handle, witness.Unwrap(), cp), srcId})
+			failures = append(failures, &LookupFailure[F]{newRowFailure(c.Handle, witness.Unwrap(), cp), src})
 		}
 	}
 	//
@@ -84,10 +82,10 @@ func processLookupConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *l
 // inclusionCheck checks whether all (selected) rows of the given source set are
 // contained within any of the given target sets and, if not, returns a witness
 // to this fact (i.e. a row not found in any of the target sets).
-func inclusionCheck[F field.Element[F]](mod trace.Module[F], src SetId, sets []collection.Set[[]F],
+func inclusionCheck[F field.Element[F]](mod trace.Module[F], src VecId, sets []collection.Set[[]F],
 	buffer []F) util.Option[uint] {
-	if src.HasSelector() {
-		var selector = src.Selector().Unwrap()
+	if src.Selector.HasValue() {
+		var selector = src.Selector.Unwrap().Unwrap()
 		//
 		for row := range mod.Height() {
 			if !mod.Column(selector).Get(row).IsZero() && !contains(row, src, mod, sets, buffer) {
@@ -109,10 +107,10 @@ func inclusionCheck[F field.Element[F]](mod trace.Module[F], src SetId, sets []c
 // check whether the given source row is contained within any of the given sets.
 // A temporary buffer of sufficient width is provided to avoid memory
 // allocation.
-func contains[F field.Element[F]](row uint, src SetId, mod trace.Module[F], sets []collection.Set[[]F],
+func contains[F field.Element[F]](row uint, src VecId, mod trace.Module[F], sets []collection.Set[[]F],
 	buffer []F) bool {
 	// Read registers into buffer
-	for i := range src.Width() {
+	for i := range src.Len() {
 		var rid = src.Ith(i).Unwrap()
 		// Read given row
 		buffer[i] = mod.Column(rid).Get(row)
@@ -128,15 +126,13 @@ func contains[F field.Element[F]](row uint, src SetId, mod trace.Module[F], sets
 }
 
 // Load those sets from the context corresponding to the given vectors.
-func loadSets[F field.Element[F]](ctx Context[F], vecs ...lookup.Vector) []collection.Set[[]F] {
+func loadSets[F field.Element[F]](ctx Context[F], vecs ...VecId) []collection.Set[[]F] {
 	var (
 		sets = make([]collection.Set[[]F], len(vecs))
 	)
 	// Load target sets
 	for i, v := range vecs {
-		var setId = constraint.NewSetId(v.Module, v.Selector, v.Registers)
-		//
-		sets[i] = ctx.Get(setId)
+		sets[i] = ctx.Get(v)
 	}
 	//
 	return sets

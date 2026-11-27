@@ -1,0 +1,2 @@
+;; No trace can be accepted: every target selects all of its rows, hence
+;; together they always hold more rows than the source.

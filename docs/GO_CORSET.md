@@ -26,13 +26,26 @@ The purpose of Corset is to provide a human-friendly language for
 writing arithmetic constraints. Corset constraints are compiled down
 into an _Arithmetic Intermediate Representation (AIR)_ consisting of:
 (1) _vanishing constraints_; (2) _range constraints_; (3) _lookup
-arguments_; and (4) _bus constraints_.
+arguments_; (4) _permutation constraints_; and (5) _bus constraints_.
 
 A lookup has the form `(deflookup HANDLE SOURCES TARGETS)`. Each side must list
 at least one vector. Every selected source tuple must occur among the selected
 target tuples; extra target tuples are allowed. For example,
 `(deflookup member ((EN X)) ((_ Y)))` requires each value of `X` on rows where
 `EN` is one to occur somewhere in `Y`. The `_` selects all target rows.
+
+A permutation has the form `(defpermutation HANDLE SOURCES TARGETS)` and uses
+the same vectors, selectors, and optional `:unchecked` handle attribute as a
+lookup. It requires the selected source and target tuples to form the same
+multiset: order does not matter, but the number of occurrences of each tuple
+does. For example, `(defpermutation shuffle ((P X)) ((Q Y)))` requires the
+values of `X` on rows where `P` is one to be a rearrangement of the values of
+`Y` on rows where `Q` is one. A permutation is checked within each shard of a
+trace separately: tuples in one shard are never matched against those in
+another. Padding rows count like any other row: a vector with no selector (or
+a constant one) selects them whilst a vector whose selector is zero on them
+does not, so a permutation which mixes the two only holds when no padding is
+added.
 
 A bus constraint requires that the multiset of messages sent on a named
 bus equals the multiset received on it. Modules participate through
@@ -43,10 +56,14 @@ bus equals the multiset received on it. Modules participate through
 (defrecv HANDLE BUS SELECTOR (COLUMNS...))
 ```
 
-On every row where `SELECTOR` (a binary column, mandatory) is one, the
+On every row where `SELECTOR` (a binary column) is one, the
 values of `COLUMNS` form one message. Any number of senders and
 receivers may share a bus name; unlike a lookup, duplicates matter (two
 identical sends require two identical receives).
+
+Corset requires a selector on every `defsend` and `defrecv`. In MIR and
+AIR, a bus port is a `constraint.Vector` and may omit its selector. Such
+a port sends or receives once on every row, including padding rows.
 
 An example constraint set written in Corset is:
 

@@ -16,8 +16,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -53,13 +55,13 @@ type (
 	// level.  A bus requires that the multiset of all messages sent on it
 	// equals the multiset of all messages received on it.
 	BusConstraint[F field.Element[F]] = bus.Constraint[F]
-	// BusPort provides a convenient shorthand
-	BusPort = bus.Port
 	// LookupConstraint captures the essence of a lookup constraint at the MIR
 	// level.
 	LookupConstraint[F field.Element[F]] = lookup.Constraint[F]
 	// LookupVector provides a convenient shorthand
-	LookupVector = lookup.Vector
+	LookupVector = constraint.Vector
+	// PermutationConstraint requires equal source and target multisets.
+	PermutationConstraint[F field.Element[F]] = permutation.Constraint[F]
 	// RangeConstraint captures the essence of a range constraints at the MIR level.
 	RangeConstraint[F field.Element[F]] = ranged.Constraint[F]
 	// VanishingConstraint captures the essence of a vanishing constraint at the MIR

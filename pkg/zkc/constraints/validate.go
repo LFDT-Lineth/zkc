@@ -19,8 +19,11 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -71,13 +74,23 @@ func validateConstraints[F field.Element[F]](schema sc.Schema[F]) (errs []error)
 func validateConstraint[F field.Element[F]](c sc.Constraint[F], validations []bit.Set) {
 	switch c := c.(type) {
 	case *air.VanishingConstraint[F]:
-		validateVanishingConstraint(c, validations)
+		var regs = *c.Constraint.RequiredRegisters()
+		validateConstraintRegisters(c.Context, validations, regs...)
 	case *mir.VanishingConstraint[F]:
 		validateVanishingConstraint(c, validations)
 	case *lookup.Constraint[F]:
-		validateLookupConstraint(c, validations)
+		validateConstraintVectors(c.Targets, validations)
+		validateConstraintVectors(c.Sources, validations)
 	case *bus.Constraint[F]:
-		validateBusConstraint(c, validations)
+		validateConstraintVectors(c.Sends, validations)
+		validateConstraintVectors(c.Receives, validations)
+	case *permutation.Constraint[F]:
+		validateConstraintVectors(c.Left, validations)
+		validateConstraintVectors(c.Right, validations)
+	case *ranged.Constraint[F]:
+		validateConstraintRegisters(c.Context, validations, c.Source.Unwrap())
+	default:
+		panic("unknown constraint encountered")
 	}
 }
 
@@ -89,34 +102,25 @@ func validateVanishingConstraint[F field.Element[F], T term.Testable[F]](c *vani
 	}
 }
 
-func validateLookupConstraint[F field.Element[F]](c *lookup.Constraint[F], validations []bit.Set) {
-	//
-	validateLookupVectors(c.Targets, validations)
-	validateLookupVectors(c.Sources, validations)
-}
-
-func validateLookupVectors(vs []lookup.Vector, validations []bit.Set) {
-	for _, v := range vs {
-		validateLookupVector(v, validations)
+func validateConstraintRegisters(ctx sc.ModuleId, validations []bit.Set, regs ...uint) {
+	for _, rid := range regs {
+		validations[ctx].Insert(rid)
 	}
 }
 
-func validateLookupVector(v lookup.Vector, validations []bit.Set) {
+func validateConstraintVectors(vs []constraint.Vector, validations []bit.Set) {
+	for _, v := range vs {
+		validateConstraintVector(v, validations)
+	}
+}
+
+func validateConstraintVector(v constraint.Vector, validations []bit.Set) {
+	if v.Selector.HasValue() {
+		validations[v.Module].Insert(v.Selector.Unwrap().Unwrap())
+	}
+	//
 	for _, rid := range v.Registers {
 		validations[v.Context()].Insert(rid.Unwrap())
-	}
-}
-
-// validateBusConstraint marks all registers used by the given bus constraint.
-func validateBusConstraint[F field.Element[F]](c *bus.Constraint[F], validations []bit.Set) {
-	for _, ports := range [][]bus.Port{c.Sends, c.Receives} {
-		for _, port := range ports {
-			validations[port.Module].Insert(port.Selector.Unwrap())
-			//
-			for _, rid := range port.Registers {
-				validations[port.Module].Insert(rid.Unwrap())
-			}
-		}
 	}
 }
 
@@ -163,6 +167,8 @@ func UnreachableModules[F field.Element[F]](schema sc.Schema[F]) (unreachable []
 		switch c := iter.Next().(type) {
 		case *lookup.Constraint[F]:
 			indexLookupEdges(c, outgoing)
+		case *permutation.Constraint[F]:
+			indexPermutationEdges(c, outgoing)
 		case *bus.Constraint[F]:
 			indexBusEdges(c, outgoing)
 		}
@@ -195,6 +201,20 @@ func indexLookupEdges[F field.Element[F]](c *lookup.Constraint[F], outgoing map[
 	for _, src := range c.Sources {
 		for _, tgt := range c.Targets {
 			outgoing[src.Context()] = append(outgoing[src.Context()], tgt.Context())
+		}
+	}
+}
+
+// indexPermutationEdges records an edge between each module on the left with
+// each module on the right (i.e. unlike for a lookup, a permutation is
+// considered a bi-directional constraint).
+func indexPermutationEdges[F field.Element[F]](c *permutation.Constraint[F], outgoing map[sc.ModuleId][]sc.ModuleId) {
+	for _, left := range c.Left {
+		for _, right := range c.Right {
+			// left --> right
+			outgoing[left.Context()] = append(outgoing[left.Context()], right.Context())
+			// right --> left
+			outgoing[right.Context()] = append(outgoing[right.Context()], left.Context())
 		}
 	}
 }

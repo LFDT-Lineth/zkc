@@ -19,8 +19,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
@@ -41,7 +43,7 @@ type Shard[F field.Element[F]] = trace.Shard[F]
 // State is used to hold state which persists across the entire trace for a
 // given constraint.
 type State[F field.Element[F]] struct {
-	data *bus.Tally[F]
+	data *constraint.Tally[F]
 }
 
 // Checker provides an API for trace checking which abstracts various challenges
@@ -277,6 +279,8 @@ func (cp ConstraintProcessor[F]) processConstraint(c Constraint[F]) (st State[F]
 		st, fails = processBusConstraint(cp, c)
 	case *lookup.Constraint[F]:
 		st, fails = processLookupConstraint(cp, c)
+	case *permutation.Constraint[F]:
+		st, fails = processPermutationConstraint(cp, c)
 	case *ranged.Constraint[F]:
 		st, fails = processRangeConstraint(cp, c)
 	case *vanishing.Constraint[F, air.LogicalTerm[F]]:

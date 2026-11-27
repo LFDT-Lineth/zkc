@@ -14,11 +14,11 @@ package checker
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
+	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
-	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/set"
@@ -33,10 +33,6 @@ type BusFailure[F field.Element[F]] struct {
 	unbalanced []F
 	// tally is the overall send/receive tally
 	tally int
-	// sends are the send ports of the failing constraint
-	sends []bus.Port
-	// receives are the receive ports of the failing constraint
-	receives []bus.Port
 }
 
 // Handle implementation of schema.Failure interface
@@ -92,8 +88,6 @@ func finaliseBusConstraint[F field.Element[F]](c *bus.Constraint[F], state State
 				handle:     c.Handle,
 				unbalanced: pair.Left.Elements(),
 				tally:      pair.Right,
-				sends:      c.Sends,
-				receives:   c.Receives,
 			})
 		}
 	}
@@ -106,44 +100,76 @@ func processBusConstraint[F field.Element[F]](cp ConstraintProcessor[F], c *bus.
 	var (
 		tally = hash.NewMap[hash.Array[F], int](32)
 	)
-	accumulate(cp.shard, c.Sends, tally, 1)
-	accumulate(cp.shard, c.Receives, tally, -1)
+	// Apply positive messages with positive tally
+	accumulate(cp.shard, cp.parent.schema, c.Sends, tally, 1)
+	// Apply received messages with negative tally
+	accumulate(cp.shard, cp.parent.schema, c.Receives, tally, -1)
 	//
 	return State[F]{tally}, nil
 }
 
-func accumulate[F field.Element[F]](tr trace.Shard[F], ports []bus.Port, tally *bus.Tally[F], sign int) {
-	// add is the tally update applied to each selected row.
-	var add = func(count int) int { return count + sign }
+func accumulate[F field.Element[F]](tr trace.Shard[F], sc schema.Schema[F], vecs []VecId,
+	tally *constraint.Tally[F], sign int) {
 	//
-	for _, port := range ports {
-		var trModule = tr.Module(port.Module)
-		// Allocate scratch space for this port.
-		var buffer = make([]F, port.Len())
-		//
-		for row := range trModule.Height() {
-			if isRowSelected(row, port.Selector, trModule) {
-				//
-				for i, rid := range port.Registers {
-					buffer[i] = trModule.Column(rid.Unwrap()).Get(row)
-				}
-				//
-				var key = hash.NewArray(buffer)
-				// Insert item whilst checking whether the buffer was consumed or not
-				if !tally.Update(key, add, sign) {
-					// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
-					// aliasing the value now stored in the hash set.
-					buffer = slices.Clone(buffer)
-				}
-			}
+	for _, vector := range vecs {
+		var trModule = tr.Module(vector.Module)
+		// Distinguish between static and dynamic modules
+		if scModule := sc.Module(vector.Module); scModule.IsStatic() {
+			accumulateStatic(scModule, vector, tally, sign)
+		} else {
+			accumulateDynamic(trModule, vector, tally, sign)
 		}
 	}
 }
 
-// isSelected determines whether or not the given row of the given vector is
-// selected.  A row without a selector is always selected; otherwise, it is
-// selected when its selector is non-zero.
-func isRowSelected[F field.Element[F]](k uint, id register.Id, trModule trace.Module[F]) bool {
-	// Otherwise, selected when selector non-zero.
-	return !trModule.Column(id.Unwrap()).Get(k).IsZero()
+func accumulateStatic[F field.Element[F]](scModule schema.Module[F], vec VecId, tally *constraint.Tally[F], sign int) {
+	var (
+		// add is the tally update applied to each selected row.
+		add = func(count int) int { return count + sign }
+		// Extract contents of static module
+		contents = scModule.StaticContents()
+		// Ruseable buffer
+		buffer []F
+	)
+	//
+	for row := range len(contents) {
+		if !isStaticRowSelected(vec.Selector, contents[row]) {
+			continue
+		}
+		// A new key takes ownership of the buffer; repeated keys reuse it.
+		if buffer == nil {
+			buffer = make([]F, vec.Len())
+		}
+		//
+		readStaticRegisters(vec, contents[row], buffer)
+
+		if !tally.Update(hash.NewArray(buffer), add, sign) {
+			buffer = nil
+		}
+	}
+}
+
+func accumulateDynamic[F field.Element[F]](trModule trace.Module[F], vec VecId, tally *constraint.Tally[F], sign int) {
+	var (
+		// add is the tally update applied to each selected row.
+		add = func(count int) int { return count + sign }
+		// Ruseable buffer
+		buffer []F
+	)
+	//
+	for row := range trModule.Height() {
+		if !isTraceRowSelected(row, vec.Selector, trModule) {
+			continue
+		}
+		// A new key takes ownership of the buffer; repeated keys reuse it.
+		if buffer == nil {
+			buffer = make([]F, vec.Len())
+		}
+
+		readTraceRegisters(row, vec, trModule, buffer)
+
+		if !tally.Update(hash.NewArray(buffer), add, sign) {
+			buffer = nil
+		}
+	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/assignment"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	sc "github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/module"
@@ -144,8 +145,8 @@ func (p *BitwidthGadget[F]) applyRecursiveBitwidthGadget(ref register.Ref, bitwi
 	// type proof always assumed to hold the full value, with others
 	// representing limbs, etc.
 	var (
-		targets = []lookup.Vector{lookup.UnfilteredVector(mid, register.NewId(0))}
-		sources = []lookup.Vector{lookup.UnfilteredVector(mod.Id(), ref.Register())}
+		targets = []constraint.Vector{constraint.UnfilteredVector(mid, register.NewId(0))}
+		sources = []constraint.Vector{constraint.UnfilteredVector(mod.Id(), ref.Register())}
 	)
 	//
 	mod.AddConstraint(lookup.NewConstraint[F](lookupHandle, targets, sources))

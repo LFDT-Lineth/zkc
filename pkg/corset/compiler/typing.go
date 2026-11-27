@@ -196,7 +196,11 @@ func (p *typeChecker) typeCheckDefLookup(decl *ast.DefLookup) []SyntaxError {
 	// Check the types (if checking is enabled and no other upstream errors)
 	if decl.Checked && len(srcTypes) == len(dstTypes) {
 		for i := range srcTypes {
-			if !srcTypes[i].SubtypeOf(dstTypes[i]) {
+			var (
+				sub = srcTypes[i].SubtypeOf(dstTypes[i])
+				sup = dstTypes[i].SubtypeOf(srcTypes[i])
+			)
+			if !sub || (decl.IsPermutation && !sup) {
 				msg := fmt.Sprintf("expected %s, found %s", dstTypes[i].String(), srcTypes[i].String())
 				err := p.srcmap.SyntaxError(decl.Sources[0][i], msg)
 				errors = append(errors, *err)

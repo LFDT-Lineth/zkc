@@ -16,6 +16,7 @@ import (
 	"fmt"
 
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 	"github.com/LFDT-Lineth/zkc/pkg/util/source/sexp"
@@ -42,14 +43,14 @@ type Constraint[F field.Element[F]] struct {
 	Handle string
 	// Targets returns the target registers which are used to lookup into the
 	// target registers.
-	Targets []Vector
+	Targets []constraint.Vector
 	// Sources returns the source registers which are used to lookup into the
 	// target registers.
-	Sources []Vector
+	Sources []constraint.Vector
 }
 
 // NewConstraint creates a new lookup *Constraint with a given handle.
-func NewConstraint[F field.Element[F]](handle string, targets []Vector, sources []Vector) *Constraint[F] {
+func NewConstraint[F field.Element[F]](handle string, targets, sources []constraint.Vector) *Constraint[F] {
 	var width uint
 	// Check sources
 	for i, ith := range sources {
@@ -65,11 +66,8 @@ func NewConstraint[F field.Element[F]](handle string, targets []Vector, sources 
 			panic("inconsistent number of target lookup columns")
 		}
 	}
-
-	return &Constraint[F]{Handle: handle,
-		Targets: targets,
-		Sources: sources,
-	}
+	// Done
+	return &Constraint[F]{Handle: handle, Targets: targets, Sources: sources}
 }
 
 // Validate applies a number of internal consistency checks.  Whilst not
@@ -135,7 +133,7 @@ func (p *Constraint[F]) Lisp(mapping schema.Schema[F]) sexp.SExp {
 	return sexp.NewList([]sexp.SExp{
 		sexp.NewSymbol("lookup"),
 		sexp.NewSymbol(fmt.Sprintf("\"%s\"", p.Handle)),
-		targets,
 		sources,
+		targets,
 	})
 }

@@ -280,7 +280,9 @@ func (p *Parser) parseDeclaration(module file.Path, s *sexp.List) (ast.Declarati
 	} else if s.Len() == 3 && s.MatchSymbols(1, "definrange") {
 		decl, errors = p.parseDefInRange(s.Elements)
 	} else if s.Len() == 4 && s.MatchSymbols(1, "deflookup") {
-		decl, errors = p.parseDefLookup(module, s.Elements)
+		decl, errors = p.parseDefLookup(module, s.Elements, false)
+	} else if s.Len() == 4 && s.MatchSymbols(1, "defpermutation") {
+		decl, errors = p.parseDefLookup(module, s.Elements, true)
 	} else if s.Len() == 5 && s.MatchSymbols(1, "defsend") {
 		decl, errors = p.parseDefSendReceive(module, s.Elements, true)
 	} else if s.Len() == 5 && s.MatchSymbols(1, "defrecv") {
@@ -578,10 +580,10 @@ func (p *Parser) parseDefConstraint(module file.Path, elements []sexp.SExp) (ast
 	return ast.NewDefConstraint(handle, domain, guard, expr), nil
 }
 
-// Parse a lookup declaration of the form "(deflookup HANDLE (SOURCES...)
-// (TARGETS...))", where each source / target is a vector of the form "(SELECTOR
-// COLUMNS...)".
-func (p *Parser) parseDefLookup(module file.Path, elements []sexp.SExp) (ast.Declaration, []SyntaxError) {
+// Parse a lookup or permutation declaration of the form "(KEYWORD HANDLE
+// (SOURCES...) (TARGETS...))", where each vector has the form "(SELECTOR COLUMNS...)".
+func (p *Parser) parseDefLookup(module file.Path, elements []sexp.SExp,
+	isPermutation bool) (ast.Declaration, []SyntaxError) {
 	// Extract items
 	handle, checked, errors := p.parseLookupHandle(module, elements[1])
 	n, sourceSelectors, sources, srcErrors := p.parseDefLookupVectors("source", elements[2])
@@ -599,7 +601,7 @@ func (p *Parser) parseDefLookup(module file.Path, elements []sexp.SExp) (ast.Dec
 		return nil, errors
 	}
 	// Done
-	return ast.NewDefLookup(handle, checked, sourceSelectors, sources, targetSelectors, targets), nil
+	return ast.NewDefLookup(handle, checked, isPermutation, sourceSelectors, sources, targetSelectors, targets), nil
 }
 
 func (p *Parser) parseLookupHandle(module file.Path, element sexp.SExp) (string, bool, []SyntaxError) {

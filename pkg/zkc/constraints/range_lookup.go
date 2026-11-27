@@ -19,6 +19,7 @@ import (
 
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -133,9 +134,9 @@ func (p *constraintTranslator[W, F]) addRangeProofConstraints(mod *schema.Table[
 			regId  = register.NewId(uint(i))
 			handle = fmt.Sprintf("range_u%d_%d", reg.Width(), regId.Unwrap())
 			// Source: the register's value on the current row.
-			source = lookup.UnfilteredVector(ctx, regId)
+			source = constraint.UnfilteredVector(ctx, regId)
 			// Target: the enumerated value column of the matching $range_un table.
-			target = lookup.UnfilteredVector(table.module, table.value)
+			target = constraint.UnfilteredVector(table.module, table.value)
 		)
 		//
 		mod.AddConstraints(lookup.NewConstraint[F](handle,
@@ -192,9 +193,9 @@ func (p *constraintTranslator[W, F]) emitCastCheck(mod *schema.Table[F], ctx sch
 		//
 		var (
 			// Source: the cast's target on the rows executing the cast.
-			source = lookup.FilteredVector(ctx, srcSelector, regId)
+			source = constraint.FilteredVector(ctx, srcSelector, regId)
 			// Target: the enumerated value column of the matching $range_un table.
-			target = lookup.UnfilteredVector(table.module, table.value)
+			target = constraint.UnfilteredVector(table.module, table.value)
 		)
 		//
 		mod.AddConstraints(lookup.NewConstraint[F](handle,

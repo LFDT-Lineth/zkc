@@ -15,8 +15,14 @@ package constraint
 import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
+
+// Tally maps each message to its net count (sends minus receives).  A bus
+// balances exactly when every net count is zero, without needing separate
+// send and receive multisets.
+type Tally[F field.Element[F]] = hash.Map[hash.Array[F], int]
 
 // DetermineHandle is a very simple helper which determines a suitable qualified
 // name for the given constraint handle.

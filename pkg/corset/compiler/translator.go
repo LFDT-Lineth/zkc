@@ -22,8 +22,10 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/term"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/bus"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/lookup"
+	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/permutation"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/ranged"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint/vanishing"
 	"github.com/LFDT-Lineth/zkc/pkg/schema/register"
@@ -112,9 +114,7 @@ type busPort[F field.Element[F]] struct {
 	// module in which the port resides.
 	module mir.ModuleBuilder[F]
 	// port as it will appear in the bus constraint.
-	port mir.BusPort
-	// widths of the port's registers, for regularity checking.
-	widths []uint
+	port constraint.Vector
 }
 
 func (t *translator[F]) translateModules(circuit *ast.Circuit) {
@@ -265,56 +265,56 @@ func (t *translator[F]) translateDefConstraint(decl *ast.DefConstraint) []Syntax
 	return errors
 }
 
-// Translate a "deflookup" declaration.
+// Translate a lookup or permutation declaration.
 func (t *translator[F]) translateDefLookup(decl *ast.DefLookup) []SyntaxError {
 	var (
-		errors                 []SyntaxError
-		srcContext, tgtContext ast.Context
-		sources                []lookup.Vector
-		targets                []lookup.Vector
+		errors               []SyntaxError
+		srcModule, tgtModule mir.ModuleBuilder[F]
+		sources, targets     []constraint.Vector
 	)
-	// Translate sources
+	// Translate targets
 	for i, ith := range decl.Targets {
-		ith_targets, _, ctx, errs := t.translateDefLookupSources(decl.TargetSelectors[i], ith)
+		ith_targets, mod, errs := t.translateVector(decl.TargetSelectors[i], ith)
 		targets = append(targets, ith_targets)
 		errors = append(errors, errs...)
 		//
 		if i == 0 {
-			tgtContext = ctx
+			tgtModule = mod
 		}
 	}
-	// Translate targets
+	// Translate sources
 	for i, ith := range decl.Sources {
-		ith_sources, _, ctx, errs := t.translateDefLookupSources(decl.SourceSelectors[i], ith)
+		ith_sources, mod, errs := t.translateVector(decl.SourceSelectors[i], ith)
 		sources = append(sources, ith_sources)
 		errors = append(errors, errs...)
 		//
 		if i == 0 {
-			srcContext = ctx
+			srcModule = mod
 		}
 	}
 	// Sanity check whether we can construct the constraint, or not.
 	if len(errors) == 0 {
 		// Default to adding constraint to source module
-		var module = t.moduleOf(srcContext)
+		module := srcModule
 		// However, if external add to target module instead.
 		if module.IsExtern() {
-			module = t.moduleOf(tgtContext)
+			module = tgtModule
 		}
 		// Add translated constraint
-		module.AddConstraint(lookup.NewConstraint[F](decl.Handle, targets, sources))
+		if decl.IsPermutation {
+			module.AddConstraint(permutation.NewConstraint[F](decl.Handle, targets, sources))
+		} else {
+			module.AddConstraint(lookup.NewConstraint[F](decl.Handle, targets, sources))
+		}
 	}
 	// Done
 	return errors
 }
 
-// translateDefLookupSources translates one vector of a lookup (i.e. one of its
-// sources or targets, along with its optional selector) into a corresponding
-// lookup vector.  Since a lookup vector is made up of registers, this also
-// returns the bitwidth of each register in the vector.
-func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
-	sources []ast.TypedSymbol) (lookup.Vector, []uint, ast.Context, []SyntaxError) {
-	// Determine context of ith set of targets
+// translateVector translates a register tuple and its optional selector for a
+// lookup, permutation or bus, and returns its enclosing module.
+func (t *translator[F]) translateVector(selector ast.TypedSymbol,
+	sources []ast.TypedSymbol) (constraint.Vector, mir.ModuleBuilder[F], []SyntaxError) {
 	var (
 		context, j = ast.ContextOfSymbols(sources...)
 		sel        *mir.RegisterAccess[F]
@@ -333,12 +333,12 @@ func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 			source = sources[j]
 		}
 		//
-		return lookup.Vector{}, nil, context, t.srcmap.SyntaxErrors(source, "conflicting context")
+		return constraint.Vector{}, nil, t.srcmap.SyntaxErrors(source, "conflicting context")
 	}
 	// Determine enclosing module
 	module := t.moduleOf(context)
 	// Translate source columns
-	accesses, errors := t.translateLookupColumns(sources)
+	registers, errors := t.translateVectorColumns(sources)
 	// Translate selector (when present)
 	if selector != nil {
 		var errs []SyntaxError
@@ -348,70 +348,34 @@ func (t *translator[F]) translateDefLookupSources(selector ast.TypedSymbol,
 		// Sanity check selector.  NOTE: don't check if other errors, since the
 		// selector may not have been translated.
 		if len(errors) == 0 {
-			errors = append(errors, t.checkLookupVector(sel, selector)...)
+			errors = append(errors, t.checkVectorSelector(sel, selector)...)
 		}
 	}
 	// Don't attempt to construct the vector if anything went wrong, since some
 	// of its registers may not have been translated.
 	if len(errors) > 0 {
-		return lookup.Vector{}, nil, context, errors
+		return constraint.Vector{}, nil, errors
+	} else if selector != nil {
+		return constraint.FilteredVector(module.Id(), sel.Register(), registers...), module, nil
 	}
 	//
-	registers, widths := registersOfAccesses(accesses)
-	// Done
-	if selector != nil {
-		return lookup.FilteredVector(module.Id(), sel.Register(), registers...), widths, context, errors
-	}
-	//
-	return lookup.UnfilteredVector(module.Id(), registers...), widths, context, errors
+	return constraint.UnfilteredVector(module.Id(), registers...), module, nil
 }
 
 // Translate a "defsend" or "defrecv" declaration into a pending bus port.
 // The bus constraints themselves are only constructed once every port is
 // known (see translateBuses).
 func (t *translator[F]) translateDefSendReceive(decl *ast.DefSendReceive) []SyntaxError {
-	var (
-		context, j = ast.ContextOfSymbols(decl.Columns...)
-		sel        *mir.RegisterAccess[F]
-	)
-	//
-	context = context.Join(ast.ContextOfSymbol(decl.Selector))
-	// Check for a conflicting context.
-	if context.IsConflicted() {
-		var source ast.TypedSymbol
-		// Determine offending column
-		if j >= uint(len(decl.Columns)) {
-			source = decl.Selector
-		} else {
-			source = decl.Columns[j]
-		}
-		//
-		return t.srcmap.SyntaxErrors(source, "conflicting context")
-	}
-	// Determine enclosing module
-	module := t.moduleOf(context)
-	// Translate message columns
-	accesses, errors := t.translateLookupColumns(decl.Columns)
-	// Translate selector
-	sel, errs := t.registerOfRegisterAccess(decl.Selector, 0)
-	errors = append(errors, errs...)
-	//
-	if len(errors) == 0 {
-		errors = append(errors, t.checkLookupVector(sel, decl.Selector)...)
-	}
-	//
+	port, module, errors := t.translateVector(decl.Selector, decl.Columns)
 	if len(errors) > 0 {
 		return errors
 	}
-	//
-	registers, widths := registersOfAccesses(accesses)
-	port := mir.BusPort{Module: module.Id(), Selector: sel.Register(), Registers: registers}
 	// Record port under its bus, tracking first-use order of bus names.
 	if _, ok := t.busPorts[decl.Bus]; !ok {
 		t.busOrder = append(t.busOrder, decl.Bus)
 	}
 	//
-	t.busPorts[decl.Bus] = append(t.busPorts[decl.Bus], busPort[F]{decl, module, port, widths})
+	t.busPorts[decl.Bus] = append(t.busPorts[decl.Bus], busPort[F]{decl, module, port})
 	//
 	return nil
 }
@@ -437,7 +401,7 @@ func (t *translator[F]) translateBuses() []SyntaxError {
 func (t *translator[F]) translateBus(busName string, ports []busPort[F]) []SyntaxError {
 	var (
 		errors          []SyntaxError
-		sends, receives []mir.BusPort
+		sends, receives []constraint.Vector
 		first           = ports[0]
 	)
 	//
@@ -475,48 +439,27 @@ func (t *translator[F]) translateBus(busName string, ports []busPort[F]) []Synta
 	return nil
 }
 
-// translateLookupColumns translates the column accesses making up one side of a
-// lookup into their corresponding register accesses.
-func (t *translator[F]) translateLookupColumns(columns []ast.TypedSymbol) ([]*mir.RegisterAccess[F], []SyntaxError) {
+// translateVectorColumns resolves a vector's columns to register IDs.
+func (t *translator[F]) translateVectorColumns(columns []ast.TypedSymbol) ([]register.Id, []SyntaxError) {
 	var (
-		errors   []SyntaxError
-		accesses = make([]*mir.RegisterAccess[F], len(columns))
+		errors    []SyntaxError
+		registers = make([]register.Id, len(columns))
 	)
 	//
 	for i, column := range columns {
-		if column == nil {
-			continue
-		}
-		//
 		reg, errs := t.registerOfRegisterAccess(column, 0)
 		errors = append(errors, errs...)
-		accesses[i] = reg
+
+		if reg != nil {
+			registers[i] = reg.Register()
+		}
 	}
 	//
-	return accesses, errors
+	return registers, errors
 }
 
-// registersOfAccesses determines the registers underlying a given set of
-// register accesses, along with the bitwidth of each.
-func registersOfAccesses[F field.Element[F]](accesses []*mir.RegisterAccess[F]) ([]register.Id, []uint) {
-	var (
-		registers = make([]register.Id, len(accesses))
-		widths    = make([]uint, len(accesses))
-	)
-	//
-	for i, access := range accesses {
-		valrange := access.ValueRange()
-		registers[i] = access.Register()
-		widths[i], _ = valrange.BitWidth()
-	}
-	//
-	return registers, widths
-}
-
-// checkLookupVector sanity checks one side of a lookup.  Since the registers
-// making up a lookup vector are unsigned by construction, all that remains is
-// to check the selector is binary.
-func (t *translator[F]) checkLookupVector(sel *mir.RegisterAccess[F], selector ast.TypedSymbol) []SyntaxError {
+// checkVectorSelector checks that a vector's selector is binary.
+func (t *translator[F]) checkVectorSelector(sel *mir.RegisterAccess[F], selector ast.TypedSymbol) []SyntaxError {
 	// Determine bitwidth for the value range of the selector
 	valrange := sel.ValueRange()
 	bitwidth, _ := valrange.BitWidth()
