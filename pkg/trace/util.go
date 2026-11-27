@@ -20,6 +20,22 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
 )
 
+// FilterShard restricts a given trace to ensure that only modules for which
+// the given predicate holds are retained.
+func FilterShard[F field.Element[F]](shard Shard[F], predicate array.Predicate[uint]) Shard[F] {
+	var modules = shard.Modules().Collect()
+	// Restrict shard modules
+	for i := range len(modules) {
+		// Check whether module in original input set
+		if !predicate(uint(i)) {
+			// Reset modules
+			modules[i] = Module[F]{}
+		}
+	}
+	// Done
+	return NewShard(modules)
+}
+
 // QualifiedColumnName returns the fully qualified name of a given column.
 func QualifiedColumnName(module string, column string) string {
 	if module == "" {

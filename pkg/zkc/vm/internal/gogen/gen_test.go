@@ -991,7 +991,7 @@ func referenceExec(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array)
 
 	var (
 		interpreter  = vm.NewBytecodeInterpreter(p)
-		inputs, errs = vm.DecodeInputs(interpreter, in)
+		inputs, errs = vm.DecodeMachineInputs(interpreter, in)
 	)
 	if len(errs) > 0 {
 		t.Fatalf("decode inputs: %v", errs)
@@ -1005,7 +1005,7 @@ func referenceExec(t *testing.T, p vm.Program[vm.Uint], in map[string]bit.Array)
 		return nil, err
 	}
 
-	return vm.EncodeOutputs(interpreter), nil
+	return vm.EncodeMachineOutputs(interpreter), nil
 }
 
 // encodeInputs packs cell-valued inputs into the byte form the harness reads,

@@ -21,6 +21,7 @@ import (
 	"github.com/LFDT-Lineth/zkc/pkg/schema/constraint"
 	"github.com/LFDT-Lineth/zkc/pkg/trace"
 	"github.com/LFDT-Lineth/zkc/pkg/util"
+	"github.com/LFDT-Lineth/zkc/pkg/util/collection/array"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/bit"
 	"github.com/LFDT-Lineth/zkc/pkg/util/collection/hash"
 	"github.com/LFDT-Lineth/zkc/pkg/util/field"
@@ -264,10 +265,43 @@ func testConstraintsWithField[F field.Element[F], W vm.Word[W]](t *testing.T, p 
 		// Check matching outputs
 		checkMatchingOutputs(t, p, traceOutputs, test)
 	}
+	// Run trace inputs check
+	if len(traceErrors) == 0 {
+		t.Run("trace-inputs", func(t *testing.T) {
+			runTraceInputsTest(t, test, traceCfg, *binf, inputs, tr.Unwrap())
+		})
+	}
 	// Run duplication check
 	if len(traceErrors) == 0 {
 		runTraceDedupTest(t, binf.TracingProgram(), test, tr.Unwrap())
 	}
+}
+
+func runTraceInputsTest[F field.Element[F], W vm.Word[W]](t *testing.T, test TestVector, traceCfg vm.TraceConfig,
+	binf constraints.BinaryFile[F, W], inputs map[string]bit.Array, tr trace.LazyTrace[F]) {
+	var (
+		tracedInputs, err = binf.TraceInputs(inputs, traceCfg)
+		// Get first shard, since ROMs are replicated across all shards.
+		maybeShard, errs = tr.Get(0)
+	)
+	if err != nil {
+		t.Error(err)
+	} else if len(errs) != 0 {
+		t.Error(errors.Join(errs...))
+	}
+	// Restrict traces to ensure fair comparison of just those modules in the
+	// original inputs map.
+	var (
+		shard = maybeShard.Unwrap()
+		//
+		filteredTrace = trace.FilterShard(maybeShard.Unwrap(), func(mid uint) bool {
+			var _, ok = inputs[shard.Module(mid).Name()]
+			//
+			return ok
+		})
+	)
+	// Finally, run the equality check
+	checkTracesMatch(t, test, binf.TracingProgram(), tracedInputs, filteredTrace)
 }
 
 func runTraceDedupTest[F field.Element[F], W vm.Word[W]](t *testing.T, tp vm.Program[W], test TestVector,
@@ -335,6 +369,60 @@ func checkMatchingOutputs(t *testing.T, p vm.Program[vm.Uint], actuals map[strin
 	if uint(len(actuals)) != p.Outputs().Count() {
 		t.Errorf("test (%s:%d) has incorrect output (expected %d outputs, got %d)",
 			test.filename, test.line, p.Outputs().Count(), len(actuals))
+	}
+}
+
+// Check that two traces for the same program are identical.
+func checkTracesMatch[F field.Element[F], W vm.Word[W]](t *testing.T, test TestVector, p vm.Program[W],
+	lhs, rhs trace.Shard[F]) {
+	for i, m := range p.Modules() {
+		var mid = uint(i)
+		checkModulesMatch(t, test, m, lhs.Module(mid), rhs.Module(mid))
+	}
+}
+
+// Check that the relevant portions of the preflight module trace match those of the full trace exactly.
+func checkModulesMatch[F field.Element[F], W vm.Word[W]](t *testing.T, test TestVector, m vm.Module[W],
+	lhs, rhs trace.Module[F]) {
+	// Sanity check heights
+	if lhs.Height() != rhs.Height() {
+		t.Errorf("test (%s:%d) mismatched height for module %s (was %d, expected %d)", test.filename, test.line,
+			m.Name(), lhs.Height(), rhs.Height())
+	} else if lhs.Width() != rhs.Width() {
+		t.Errorf("test (%s:%d) mismatched width for module %s (was %d, expected %d)", test.filename, test.line,
+			m.Name(), lhs.Width(), rhs.Width())
+	} else {
+		for i := range lhs.Width() {
+			var (
+				pfName = lhs.Descriptor().Columns[i].Name
+				trName = rhs.Descriptor().Columns[i].Name
+			)
+			//
+			if pfName != trName {
+				t.Errorf("test (%s:%d) mismatched column %d for module %s (was %s, expected %s)", test.filename, test.line, i,
+					m.Name(), pfName, trName)
+			} else {
+				checkColumnsMatch(t, test, m, pfName, lhs.Column(i), rhs.Column(i))
+			}
+		}
+	}
+}
+
+func checkColumnsMatch[F field.Element[F], W vm.Word[W]](t *testing.T, test TestVector, m vm.Module[W], column string,
+	lhs, rhs array.Array[F]) {
+	//
+	if lhs != nil && rhs != nil {
+		for i := range lhs.Len() {
+			var (
+				pth = lhs.Get(i)
+				tth = rhs.Get(i)
+			)
+			//
+			if pth.Cmp(tth) != 0 {
+				t.Errorf("test (%s:%d) mismatched value for column %s in module %s (was 0x%s, expected 0x%s)",
+					test.filename, test.line, column, m.Name(), pth.Text(16), tth.Text(16))
+			}
+		}
 	}
 }
 

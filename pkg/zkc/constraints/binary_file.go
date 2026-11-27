@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/LFDT-Lineth/zkc/pkg/ir"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/air"
 	"github.com/LFDT-Lineth/zkc/pkg/ir/mir"
 	"github.com/LFDT-Lineth/zkc/pkg/schema"
@@ -377,6 +378,63 @@ func (p *BinaryFile[F, W]) Trace(input map[string]bit.Array, cfg vm.TraceConfig,
 	)
 	// Execute machine
 	return builder.BootAndTrace(input)
+}
+
+// TraceInputs is really a dedicated helper function which can be used to
+// construct the trace for an input memory.  Since the contents of an input
+// memory is known "a priori" to execution, it is possible to trace one without
+// actually executing the program.  This can be useful, for example, when one
+// wants to commit to the input, etc.
+//
+// NOTE: the result trace for the given module should identical to that returned
+// (in each shard) from the primary Trace() function.  Thus, it includes the
+// usual control lines required for a ROM along with padding, and whatever else
+// would normally be in its trace.
+func (p *BinaryFile[F, W]) TraceInputs(inputs map[string]bit.Array, cfg vm.TraceConfig) (trace.Shard[F], error) {
+	var (
+		errs    []error
+		program = p.TracingProgram()
+		// Construct high-level trace builder
+		tracerBuilder tracer.Builder[W, F]
+		// Construct low-level trace builder
+		irTraceBuilder = ir.NewTraceBuilder[F]().
+				WithValidation(false).
+				WithParallelism(false).
+				WithExpansion(true).
+				WithPadding(cfg.PaddingStrategy())
+		// Map for decoded inputs
+		input map[string][]W
+	)
+	// Decode inputs and check everything makes sense.
+	if input, errs = vm.DecodeInputs(program, inputs); len(errs) != 0 {
+		return trace.Shard[F]{}, errors.Join(errs...)
+	}
+	// Initialise high-level trace builder
+	tracerBuilder = tracerBuilder.Init(program)
+	// Iterate decoded inputs and trace them.
+	for name, contents := range input {
+		var romId, _ = program.HasModule(name)
+		// Extract read-only memory
+		rom := program.Module(romId).(*vm.Memory[W])
+		// Trace input memory
+		tracerBuilder.TraceMemory(romId, vm.NewReadOnlyRuntimeMemory(*rom, contents...), program.Field())
+	}
+	// Finally, expand and pad traced inputs
+	shard, errs := irTraceBuilder.BuildShard(p.AirConstraints(), tracerBuilder.Build())
+	// Sanity check
+	if len(errs) != 0 {
+		return trace.Shard[F]{}, errors.Join(errs...)
+	}
+	// Filter out all modules unrelated to the original inputs, as trace
+	// expansion can actually add various modules it thinks are necessary (e.g.
+	// for range checks).
+	shard = trace.FilterShard(shard, func(mid uint) bool {
+		var _, ok = inputs[shard.Module(mid).Name()]
+		// Done
+		return ok
+	})
+	// Done
+	return shard, nil
 }
 
 // ============================================================================
