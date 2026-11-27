@@ -19,6 +19,8 @@ import (
 	"math/big"
 	"math/bits"
 	"strconv"
+
+	"github.com/LFDT-Lineth/zkc/pkg/util/word"
 )
 
 // Uint128 represents an unsigned integer backed by a pair of native uint64
@@ -95,6 +97,21 @@ func (p Uint128) BitLen() uint {
 	}
 	//
 	return uint(bits.Len64(p.hi)) + 64
+}
+
+// Bytes implementation for word.Word interface.  This returns the minimal
+// big-endian encoding of this word (i.e. without leading zeros), such that
+// zero is encoded as the empty slice.
+func (p Uint128) Bytes() []byte {
+	var (
+		buf [16]byte
+		// number of significant bytes
+		nBytes = (p.BitLen() + 7) / 8
+	)
+	binary.BigEndian.PutUint64(buf[0:8], p.hi)
+	binary.BigEndian.PutUint64(buf[8:16], p.lo)
+	//
+	return buf[uint(len(buf))-nBytes:]
 }
 
 // Config implementation for Word interface.
@@ -391,6 +408,30 @@ func (p Uint128) Xor(w Uint128) Uint128 {
 	return Uint128{p.hi ^ w.hi, p.lo ^ w.lo}
 }
 
+// SetBytes implementation for word.Word interface.  This accepts a big-endian
+// encoding of any length, and panics if the value does not fit within 128 bits.
+func (p Uint128) SetBytes(bytes []byte) Uint128 {
+	var buf [16]byte
+	//
+	bytes = word.TrimLeadingZeros(bytes)
+	//
+	if len(bytes) > len(buf) {
+		panic(fmt.Sprintf("value 0x%x exceeds uint128 bandwidth", bytes))
+	}
+	//
+	copy(buf[len(buf)-len(bytes):], bytes)
+	//
+	return Uint128{
+		hi: binary.BigEndian.Uint64(buf[0:8]),
+		lo: binary.BigEndian.Uint64(buf[8:16]),
+	}
+}
+
+// String implementation for stringer interface
+func (p Uint128) String() string {
+	return p.Text(10)
+}
+
 // Text implementation for Word interface.
 func (p Uint128) Text(base int) string {
 	// Fast path: a single word value formats without touching big.Int.
@@ -433,17 +474,6 @@ func (p *Uint128) GobDecode(data []byte) error {
 // isZero returns true when this word is zero.
 func (p Uint128) isZero() bool {
 	return p.hi == 0 && p.lo == 0
-}
-
-// bitLen returns the number of bits required to represent this word (i.e. the
-// index of the most-significant set bit plus one, or zero when the word is
-// zero).
-func (p Uint128) bitLen() int {
-	if p.hi != 0 {
-		return 64 + bits.Len64(p.hi)
-	}
-	//
-	return bits.Len64(p.lo)
 }
 
 // mask returns the low `bitwidth` bits of this word, clearing everything at or
@@ -504,13 +534,13 @@ func (p Uint128) quoRem(v Uint128) (q, r Uint128) {
 	// Shift-subtract long division.  The alignment shift is at most 63 (since v
 	// has at least 65 significant bits and p at most 128), so the whole quotient
 	// fits in a single word.
-	shift := p.bitLen() - v.bitLen()
-	vs := v.shl128(uint(shift))
+	shift := p.BitLen() - v.BitLen()
+	vs := v.shl128(shift)
 	r = p
 	//
 	var quo uint64
 	//
-	for i := shift; i >= 0; i-- {
+	for i := int(shift); i >= 0; i-- {
 		if r.Cmp(vs) >= 0 {
 			r, _ = r.Sub(vs)
 			quo |= uint64(1) << uint(i)

@@ -703,7 +703,7 @@ func isNonZeroCheck[F field.Element[F]](t LogicalTerm[F], regs register.Map[F]) 
 		cVal   big.Int
 	)
 	// Extract big integer from field element
-	cVal.SetBytes(c.Value.Bytes())
+	cVal.Set(c.Value.BigInt())
 	//
 	if cVal.Sign() == 0 {
 		// x ≠ 0 is a non-zero check on x itself
@@ -773,7 +773,7 @@ func valueRangeOf[F field.Element[F]](term air.Term[F], regs register.Map[F]) ut
 	case *air.Constant[F]:
 		var c big.Int
 		// Extract big integer from field element
-		c.SetBytes(t.Value.Bytes())
+		c.Set(t.Value.BigInt())
 		// Return as interval
 		return util_math.NewInterval(c, c)
 	case *air.Mul[F]:

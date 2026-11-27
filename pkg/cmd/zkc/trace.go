@@ -86,6 +86,8 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		inspect = GetFlag(cmd, "inspect")
 		// extract sharding config
 		sharding = GetString(cmd, "sharding")
+		// extract preflight toggle
+		preflight = GetFlag(cmd, "preflight")
 		//
 		includes = GetStringArray(cmd, "include")
 		// create fresh gogen manager
@@ -97,6 +99,8 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 		//
 		tr      trace.LazyTrace[F]
 		outputs map[string]bit.Array
+		errors  []error
+		maybeTr util.Option[trace.LazyTrace[F]]
 	)
 	// Ensure resources held by executor released.
 	defer release()
@@ -129,9 +133,18 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	// =====================================================
 	// Parse and filter input file
 	input := filterInputs(binfile.RawProgram(), ParseInputFile(args[0]))
-	// Always trace (no fast mode).  The raw (row-major) trace is retained for
-	// statistics, since it carries the original register/limb structure.
-	outputs, maybeTr, errors := binfile.Trace(input, traceConfig)
+	//
+	if preflight {
+		var maybeShard util.Option[trace.Shard[F]]
+		// Perform preflight tracing
+		outputs, maybeShard, errors = binfile.PreFlight(input)
+		// Convert shard into lazy trace
+		maybeTr = maybeShard.Map(toLazyTrace)
+	} else {
+		// Always trace (no fast mode).  The raw (row-major) trace is retained for
+		// statistics, since it carries the original register/limb structure.
+		outputs, maybeTr, errors = binfile.Trace(input, traceConfig)
+	}
 	//
 	if maybeTr.IsEmpty() {
 		handleErrors(errors)
@@ -140,6 +153,7 @@ func runTraceCmd[F field.Element[F], W vm.Word[W]](cmd *cobra.Command, args []st
 	tr = maybeTr.Unwrap().
 		// Configure parallelism
 		WithParallelism(traceConfig.Parallelism())
+
 	// =====================================================
 	// Generate output
 	// =====================================================
@@ -259,6 +273,15 @@ func collectShards[F field.Element[F]](tr trace.LazyTrace[F]) []trace.Shard[F] {
 	return shards
 }
 
+func toLazyTrace[F field.Element[F]](shard trace.Shard[F]) trace.LazyTrace[F] {
+	// Construct future which simply returns the shard we already have.
+	var future = func() (util.Option[trace.Shard[F]], []error) {
+		return util.Some(shard), nil
+	}
+	// Done
+	return trace.NewLazyTrace(future)
+}
+
 func handleErrors(errors []error) {
 	if len(errors) > 0 {
 		// Log errors
@@ -283,11 +306,14 @@ func init() {
 		fmt.Sprintf("specify information to include in module summaries: %s", moduleSummariserOptions[koalabear.Element]()))
 	traceCmd.Flags().BoolP("print", "p", false, "print the generated trace")
 	traceCmd.Flags().Bool("sequential", false, "force sequential tracing")
+	traceCmd.Flags().Bool("preflight", false, "trace preflight data only")
 	traceCmd.Flags().Bool("inspect", false, "open the generated trace in the interactive inspector")
 	traceCmd.PersistentFlags().UintP("batch", "b", 1024, "specify batch size for constraint checking")
 	rootCmd.AddCommand(traceCmd)
 	// Enforce gogen only usable with sharding (for now).
 	traceFlags.Require("gogen", "sharding")
+	// Enforce preflight and sharding cannot run together.
+	traceFlags.Exclude("preflight", "sharding")
 }
 
 func parseShardingConfig(spec string) vm.ShardingStrategy {
