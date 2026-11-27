@@ -76,3 +76,8 @@ func NewBytecodeMemory[W word.Word[W]](name string, kind MemoryKind, timestampWi
 ) *Memory[W] {
 	return descriptor.NewMemory(name, kind, timestampWidth, registers, init)
 }
+
+// NewReadOnlyRuntimeMemory constructs a new read-only, runtime memory instance.
+func NewReadOnlyRuntimeMemory[W word.Word[W]](descriptor descriptor.Memory[W], init ...W) RuntimeMemory[W] {
+	return interpreter.NewReadOnly(descriptor, init...)
+}

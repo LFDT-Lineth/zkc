@@ -74,7 +74,7 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string]bit.Array, n uin
 		stats  = util.NewPerfStats()
 	)
 	// Execute machine in chunks of 1K steps
-	if inputs, errs = DecodeInputs(m, input); len(errs) != 0 {
+	if inputs, errs = DecodeMachineInputs(m, input); len(errs) != 0 {
 		return nil, false, errs
 	}
 	// Boot & execute
@@ -85,7 +85,7 @@ func BootAndExecute[W Word[W], M Core[W]](m M, input map[string]bit.Array, n uin
 		// Recognised failures don't prevent tracing.
 		_, traceable = err.(*Failure)
 	} else {
-		output = EncodeOutputs(m)
+		output = EncodeMachineOutputs(m)
 		traceable = true
 	}
 	// Log stats
@@ -133,7 +133,7 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 		return false
 	})
 	// Decode inputs and boot machine
-	if inputs, errors = DecodeInputs(bci, in); len(errors) != 0 {
+	if inputs, errors = DecodeMachineInputs(bci, in); len(errors) != 0 {
 		return nil, false, errors
 	} else if err := bci.Boot("main", inputs); err != nil {
 		return nil, false, append(errors, err)
@@ -148,7 +148,7 @@ func BootAndCheckpoint[W Word[W]](pr Program[W], in map[string]bit.Array, strate
 		_, traceable = err.(*Failure)
 	} else {
 		// Encode outputs
-		outputs = EncodeOutputs(bci)
+		outputs = EncodeMachineOutputs(bci)
 		traceable = true
 	}
 	// Log stats
@@ -299,6 +299,39 @@ func FilterInputs[W Word[W], T any](p Program[W], input map[string]T) (map[strin
 	return inputs, ignores
 }
 
+// DecodeInputs decodes given set of input bytes appropriately for the given
+// program.  If there are unknown or conflicting inputs, then errors are
+// returned.
+func DecodeInputs[W Word[W]](program descriptor.Program[W], data map[string]bit.Array,
+) (inputs map[string][]W, errs []error) {
+	//
+	var visited = make(map[string]bool)
+	//
+	inputs = make(map[string][]W)
+	// scan input modules
+	for iter := program.Inputs(); iter.HasNext(); {
+		var input = iter.Next()
+		// Record visited information
+		visited[input.Name()] = true
+		//
+		if bits, ok := data[input.Name()]; !ok {
+			errs = append(errs, fmt.Errorf("missing input \"%s\"", input.Name()))
+		} else if !BitsAligned(bits, input) {
+			errs = append(errs, fmt.Errorf("input \"%s\" has an incomplete row", input.Name()))
+		} else {
+			inputs[input.Name()] = DecodeBits(bits, input)
+		}
+	}
+	// sanity check for extraneous inputs
+	for k := range data {
+		if _, ok := visited[k]; !ok {
+			errs = append(errs, fmt.Errorf("unknown input \"%s\"", k))
+		}
+	}
+	//
+	return inputs, errs
+}
+
 // DecodeInputsOutputs decodes  given set of input and output bytes
 // appropriately for the given machine.  If there are unknown or conflicting
 // inputs, then errors are returned.
@@ -347,10 +380,10 @@ func DecodeInputsOutputs[W Word[W]](program descriptor.Program[W], data map[stri
 	return inputs, outputs, errs
 }
 
-// DecodeInputs configures a given set of input bytes appropriately for the
+// DecodeMachineInputs configures a given set of input bytes appropriately for the
 // given machine.  If there are unknown or conflicting inputs, then errors are
 // returned.
-func DecodeInputs[W Word[W], C Core[W]](m C, input map[string]bit.Array) (map[string][]W, []error) {
+func DecodeMachineInputs[W Word[W], C Core[W]](m C, input map[string]bit.Array) (map[string][]W, []error) {
 	var (
 		visited = make(map[string]bool)
 		inputs  = make(map[string][]W)
@@ -383,9 +416,9 @@ func DecodeInputs[W Word[W], C Core[W]](m C, input map[string]bit.Array) (map[st
 	return inputs, errs
 }
 
-// EncodeOutputs extract the output from a given machine and encodes it into
+// EncodeMachineOutputs extract the output from a given machine and encodes it into
 // byte arrays.
-func EncodeOutputs[W Word[W], M Core[W]](m M) map[string]bit.Array {
+func EncodeMachineOutputs[W Word[W], M Core[W]](m M) map[string]bit.Array {
 	var outputs = make(map[string]bit.Array)
 	// scan modules
 	// scan output modules
