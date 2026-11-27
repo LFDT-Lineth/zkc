@@ -293,6 +293,10 @@ func (r *resolver) finaliseDefLookupInModule(enclosing Scope, decl *ast.DefLooku
 		errors = append(errors, errs...)
 	}
 	//
+	if len(errors) == 0 {
+		decl.Finalise()
+	}
+	//
 	return errors
 }
 

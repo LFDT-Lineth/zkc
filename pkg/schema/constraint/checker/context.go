@@ -132,7 +132,7 @@ func buildStaticSetChunk[F field.Element[F]](id VecId, sm schema.Module[F]) Set[
 	)
 	// Insert all selected rows within this chunk
 	for _, row := range contents {
-		if isStaticSelected(id.Selector, row) {
+		if isStaticRowSelected(id.Selector, row) {
 			// Read each register of this vector
 			readStaticRegisters(id, row, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
@@ -154,9 +154,9 @@ func buildDynamicSetChunk[F field.Element[F]](id VecId, trModule trace.Module[F]
 	)
 	//
 	for i := range trModule.Height() {
-		if isRowSelected(i, id.Selector, trModule) {
+		if isTraceRowSelected(i, id.Selector, trModule) {
 			// Read each register of this vector
-			readRegisters(i, id, trModule, buffer)
+			readTraceRegisters(i, id, trModule, buffer)
 			// Insert item whilst checking whether the buffer was consumed or not
 			if !data.Insert(hash.NewArray(buffer)) {
 				// Yes, buffer consumed.  Therefore, construct fresh buffer to avoid
@@ -169,9 +169,9 @@ func buildDynamicSetChunk[F field.Element[F]](id VecId, trModule trace.Module[F]
 	return data
 }
 
-// readRegisters reads the value held in each register of the given vector on
+// readTraceRegisters reads the value held in each register of the given vector on
 // the given row into the temporary buffer.
-func readRegisters[F field.Element[F]](k uint, id VecId, trModule trace.Module[F], buffer []F) {
+func readTraceRegisters[F field.Element[F]](k uint, id VecId, trModule trace.Module[F], buffer []F) {
 	for i := range id.Len() {
 		rid := id.Ith(i)
 		buffer[i] = trModule.Column(rid.Unwrap()).Get(k)
@@ -187,10 +187,10 @@ func readStaticRegisters[F field.Element[F]](id VecId, row []F, buffer []F) {
 	}
 }
 
-// isRowSelected determines whether or not the given row of the given vector is
+// isTraceRowSelected determines whether or not the given row of the given vector is
 // selected.  A row without a selector is always selected; otherwise, it is
 // selected when its selector is non-zero.
-func isRowSelected[F field.Element[F]](k uint, selector util.Option[register.Id], trModule trace.Module[F]) bool {
+func isTraceRowSelected[F field.Element[F]](k uint, selector util.Option[register.Id], trModule trace.Module[F]) bool {
 	// If no selector, then always selected
 	if !selector.HasValue() {
 		return true
@@ -199,10 +199,10 @@ func isRowSelected[F field.Element[F]](k uint, selector util.Option[register.Id]
 	return !trModule.Column(selector.Unwrap().Unwrap()).Get(k).IsZero()
 }
 
-// isStaticSelected determines whether or not the given row of the given vector
+// isStaticRowSelected determines whether or not the given row of the given vector
 // is selected.  A row without a selector is always selected; otherwise, it is
 // selected when its selector is non-zero.
-func isStaticSelected[F field.Element[F]](selector util.Option[register.Id], row []F) bool {
+func isStaticRowSelected[F field.Element[F]](selector util.Option[register.Id], row []F) bool {
 	// If no selector, then always selected
 	if !selector.HasValue() {
 		return true
